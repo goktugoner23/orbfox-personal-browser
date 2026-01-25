@@ -40,19 +40,28 @@ add_subdirectory(${CEF_LIBCEF_DLL_WRAPPER_PATH} libcef_dll_wrapper)
 # Source files
 set(SOURCES
     src/main.cpp
-    src/app/browser_app.cpp
     src/client/browser_client.cpp
+    src/data/window_settings.cpp
+    src/browser/tab_manager.cpp
 )
 
 set(HEADERS
     include/browser_app.h
     include/browser_client.h
+    include/window_settings.h
+    include/tab.h
+    include/workspace.h
+    include/tab_manager.h
 )
 
 # Platform-specific sources
 if(APPLE)
     list(APPEND SOURCES
         src/platform/mac/main_mac.mm
+        src/app/browser_app.mm
+        src/ui/MainWindowController.mm
+        src/ui/SidebarView.mm
+        src/ui/ToolbarView.mm
     )
 endif()
 
@@ -74,6 +83,7 @@ endif()
 # Include directories
 target_include_directories(PersonalBrowser PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/ui
     ${CEF_ROOT}
 )
 
@@ -97,10 +107,14 @@ if(APPLE)
 
     target_compile_definitions(PersonalBrowser PRIVATE PLATFORM_MAC)
 
-    # Enable Objective-C++ for .mm files
+    # Enable Objective-C++ with ARC for .mm files
     set_source_files_properties(
         src/platform/mac/main_mac.mm
-        PROPERTIES COMPILE_FLAGS "-x objective-c++"
+        src/app/browser_app.mm
+        src/ui/MainWindowController.mm
+        src/ui/SidebarView.mm
+        src/ui/ToolbarView.mm
+        PROPERTIES COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
     )
 
     # ============================================================

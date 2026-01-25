@@ -22,6 +22,7 @@ class BrowserClient : public CefClient,
                       public CefKeyboardHandler {
 public:
     // Callback types for UI updates
+    using BrowserCreatedCallback = std::function<void(CefRefPtr<CefBrowser>)>;
     using TitleChangeCallback = std::function<void(const std::string&)>;
     using AddressChangeCallback = std::function<void(const std::string&)>;
     using LoadingStateCallback = std::function<void(bool isLoading, bool canGoBack, bool canGoForward)>;
@@ -30,6 +31,7 @@ public:
     BrowserClient();
 
     // Set callbacks for UI updates
+    void SetBrowserCreatedCallback(BrowserCreatedCallback callback) { on_browser_created_ = std::move(callback); }
     void SetTitleChangeCallback(TitleChangeCallback callback) { on_title_change_ = std::move(callback); }
     void SetAddressChangeCallback(AddressChangeCallback callback) { on_address_change_ = std::move(callback); }
     void SetLoadingStateCallback(LoadingStateCallback callback) { on_loading_state_change_ = std::move(callback); }
@@ -109,6 +111,7 @@ private:
     CefRefPtr<CefBrowser> browser_;
 
     // UI callbacks
+    BrowserCreatedCallback on_browser_created_;
     TitleChangeCallback on_title_change_;
     AddressChangeCallback on_address_change_;
     LoadingStateCallback on_loading_state_change_;

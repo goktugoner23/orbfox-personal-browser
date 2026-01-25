@@ -78,6 +78,12 @@ int main(int argc, char* argv[]) {
         CefSettings settings;
         settings.no_sandbox = true;  // Required for development without code signing
 
+        // Set a unique cache path to avoid singleton conflicts
+        NSString* appSupportPath = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
+        NSString* cachePath = [appSupportPath stringByAppendingPathComponent:@"PersonalBrowser"];
+        [[NSFileManager defaultManager] createDirectoryAtPath:cachePath withIntermediateDirectories:YES attributes:nil error:nil];
+        CefString(&settings.root_cache_path) = [cachePath UTF8String];
+
         // Set framework path - helps CEF find its resources
         NSString* frameworkPath = [[NSBundle mainBundle] privateFrameworksPath];
         NSString* cefPath = [frameworkPath stringByAppendingPathComponent:@"Chromium Embedded Framework.framework"];

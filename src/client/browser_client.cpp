@@ -13,6 +13,10 @@ BrowserClient::BrowserClient() = default;
 void BrowserClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
     CEF_REQUIRE_UI_THREAD();
     browser_ = browser;
+
+    if (on_browser_created_) {
+        on_browser_created_(browser);
+    }
 }
 
 bool BrowserClient::DoClose(CefRefPtr<CefBrowser> browser) {

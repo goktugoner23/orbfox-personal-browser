@@ -2,11 +2,35 @@
 
 A custom web browser built with C++ and Chromium Embedded Framework (CEF), featuring a sidebar-based UI inspired by Vivaldi and Arc.
 
+## UI Design
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ ● ● ●  Page Title                                       │
+├────┬────────────────┬───────────────────────────────────┤
+│ 📑 │ ● Personal  +  │                                   │
+│ ⭐ │────────────────│                                   │
+│ 🕐 │ Tab 1        × │         Web Content               │
+│ ⬇️ │ Tab 2        × │                                   │
+│    │                │                                   │
+│    │                │                                   │
+│    │                │                                   │
+│    │ + New Tab      │                                   │
+├────┴────────────────┼───────────────────────────────────┤
+│                     │  < > ↻  https://example.com       │
+└─────────────────────┴───────────────────────────────────┘
+```
+
+- **Left sidebar**: Panel icons, workspace selector, vertical tabs
+- **Bottom toolbar**: Navigation buttons + URL bar
+- **Dark theme** by default
+
 ## Features
 
 - Full Chromium rendering engine (CEF 144)
 - Multi-process architecture for stability and security
 - Native macOS application
+- Window position/size persistence
 - Keyboard shortcuts (Cmd+R reload, Cmd+[ back, Cmd+] forward)
 - Context menu navigation
 - Error page display
@@ -42,13 +66,16 @@ personal-browser/
 │   │   └── browser_app.cpp     # CefApp implementation
 │   ├── client/
 │   │   └── browser_client.cpp  # CefClient and handlers
+│   ├── data/
+│   │   └── window_settings.cpp # Window persistence
 │   └── platform/
 │       └── mac/
 │           ├── main_mac.mm     # macOS entry point
 │           └── process_helper_mac.cc  # Helper process entry
 ├── include/
 │   ├── browser_app.h
-│   └── browser_client.h
+│   ├── browser_client.h
+│   └── window_settings.h
 ├── resources/
 │   ├── Info.plist              # App bundle info
 │   └── helper-Info.plist.in    # Helper app template
@@ -66,19 +93,14 @@ The browser uses CEF's multi-process architecture:
 - **Network Process**: Network requests
 - **Utility Processes**: Audio, storage, etc.
 
-Helper apps in `Contents/Frameworks/` handle subprocess execution:
-- Personal Browser Helper.app
-- Personal Browser Helper (GPU).app
-- Personal Browser Helper (Renderer).app
-- Personal Browser Helper (Plugin).app
-- Personal Browser Helper (Alerts).app
+Helper apps in `Contents/Frameworks/` handle subprocess execution.
 
 ## Roadmap
 
 See [documentation/tasks.md](documentation/tasks.md) for the full implementation plan.
 
-**Current Phase**: Foundation (Phase 1)
-**Next Milestone**: Tab Management (Phase 2)
+**Current Phase**: Tab Management (Phase 2)
+**Completed**: Foundation (Phase 1)
 
 ## License
 
