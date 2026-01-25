@@ -29,11 +29,14 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 
 - Full Chromium rendering engine (CEF 144)
 - Multi-process architecture for stability and security
-- Native macOS application
+- Native macOS application with custom Cocoa UI
+- **Vivaldi-style sidebar** with vertical tabs
+- **Bottom toolbar** with navigation and URL bar
+- **Workspace support** for organizing tabs
 - Window position/size persistence
 - Keyboard shortcuts (Cmd+R reload, Cmd+[ back, Cmd+] forward)
 - Context menu navigation
-- Error page display
+- Dark theme throughout
 
 ## Requirements
 
@@ -63,11 +66,17 @@ personal-browser/
 ├── src/
 │   ├── main.cpp                # Entry point stub
 │   ├── app/
-│   │   └── browser_app.cpp     # CefApp implementation
+│   │   └── browser_app.mm      # CefApp + window creation
+│   ├── browser/
+│   │   └── tab_manager.cpp     # Tab and workspace management
 │   ├── client/
 │   │   └── browser_client.cpp  # CefClient and handlers
 │   ├── data/
 │   │   └── window_settings.cpp # Window persistence
+│   ├── ui/
+│   │   ├── MainWindowController.mm  # Main window logic
+│   │   ├── SidebarView.mm      # Sidebar with tabs/workspaces
+│   │   └── ToolbarView.mm      # Bottom navigation bar
 │   └── platform/
 │       └── mac/
 │           ├── main_mac.mm     # macOS entry point
@@ -75,7 +84,10 @@ personal-browser/
 ├── include/
 │   ├── browser_app.h
 │   ├── browser_client.h
-│   └── window_settings.h
+│   ├── tab.h                   # Tab data model
+│   ├── tab_manager.h           # Tab management interface
+│   ├── window_settings.h
+│   └── workspace.h             # Workspace data model
 ├── resources/
 │   ├── Info.plist              # App bundle info
 │   └── helper-Info.plist.in    # Helper app template
