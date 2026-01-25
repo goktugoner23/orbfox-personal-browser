@@ -98,36 +98,40 @@ static const CGFloat kButtonSpacing = 4.0;
     [self addSubview:_reloadButton];
     x += kButtonSize + 12;
 
-    // URL field with vertically centered text
-    CGFloat urlFieldHeight = 34;
-    CGFloat urlFieldY = (self.bounds.size.height - urlFieldHeight) / 2;
-    CGFloat urlFieldWidth = self.bounds.size.width - x - 12;
-    _urlField = [[NSTextField alloc] initWithFrame:NSMakeRect(x, urlFieldY, urlFieldWidth, urlFieldHeight)];
+    // URL field container - provides the visible background
+    CGFloat containerPadding = 5;
+    CGFloat containerHeight = self.bounds.size.height - (containerPadding * 2);
+    CGFloat containerWidth = self.bounds.size.width - x - 12;
 
-    // Use custom cell for vertical centering
-    VerticalCenterTextFieldCell* cell = [[VerticalCenterTextFieldCell alloc] initTextCell:@""];
-    cell.font = [NSFont systemFontOfSize:13];
-    cell.textColor = TextColor();
-    cell.drawsBackground = NO;
+    NSView* urlContainer = [[NSView alloc] initWithFrame:NSMakeRect(x, containerPadding, containerWidth, containerHeight)];
+    urlContainer.wantsLayer = YES;
+    urlContainer.layer.backgroundColor = URLFieldBackgroundColor().CGColor;
+    urlContainer.layer.cornerRadius = 6;
+    urlContainer.autoresizingMask = NSViewWidthSizable;
+    [self addSubview:urlContainer];
+
+    // URL text field inside container - vertically centered
+    CGFloat textFieldInset = 8;
+    CGFloat textFieldHeight = 20;
+    CGFloat textFieldY = (containerHeight - textFieldHeight) / 2;
+    _urlField = [[NSTextField alloc] initWithFrame:NSMakeRect(textFieldInset, textFieldY, containerWidth - (textFieldInset * 2), textFieldHeight)];
+    _urlField.bezeled = NO;
+    _urlField.drawsBackground = NO;
+    _urlField.backgroundColor = [NSColor clearColor];
+    _urlField.textColor = TextColor();
+    _urlField.font = [NSFont systemFontOfSize:13];
+    _urlField.focusRingType = NSFocusRingTypeNone;
+    _urlField.delegate = self;
+    _urlField.placeholderString = @"Search or enter URL";
+    _urlField.autoresizingMask = NSViewWidthSizable;
+
+    NSTextFieldCell* cell = _urlField.cell;
     cell.truncatesLastVisibleLine = YES;
     cell.lineBreakMode = NSLineBreakByTruncatingTail;
     cell.wraps = NO;
     cell.scrollable = YES;
-    cell.editable = YES;
-    cell.selectable = YES;
-    cell.placeholderString = @"Search or enter URL";
-    _urlField.cell = cell;
 
-    _urlField.bezeled = NO;
-    _urlField.drawsBackground = YES;
-    _urlField.backgroundColor = URLFieldBackgroundColor();
-    _urlField.focusRingType = NSFocusRingTypeNone;
-    _urlField.wantsLayer = YES;
-    _urlField.layer.cornerRadius = 6;
-    _urlField.delegate = self;
-    _urlField.autoresizingMask = NSViewWidthSizable;
-
-    [self addSubview:_urlField];
+    [urlContainer addSubview:_urlField];
 }
 
 - (NSButton*)createNavButton:(NSString*)symbolName frame:(NSRect)frame {

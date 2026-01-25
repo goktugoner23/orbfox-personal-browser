@@ -34,7 +34,7 @@ static const CGFloat kIconStripWidth = 44.0;
 static const CGFloat kSidebarWidth = 280.0;
 static const CGFloat kWorkspaceHeight = 40.0;
 static const CGFloat kTabRowHeight = 36.0;
-static const CGFloat kNewTabButtonHeight = 36.0;
+static const CGFloat kNewTabButtonHeight = 44.0;
 
 #pragma mark - TabRowView
 
@@ -249,8 +249,8 @@ static const CGFloat kNewTabButtonHeight = 36.0;
     _addWorkspaceBtn.action = @selector(addWorkspaceClicked:);
     [_workspaceSelector addSubview:_addWorkspaceBtn];
 
-    // New Tab button (at very bottom edge)
-    _newTabButton = [[NSButton alloc] initWithFrame:NSMakeRect(contentX + 8, 0, contentWidth - 16, 36)];
+    // New Tab button (at bottom, same height as address bar: 34px)
+    _newTabButton = [[NSButton alloc] initWithFrame:NSMakeRect(contentX + 8, 5, contentWidth - 16, 34)];
     _newTabButton.bezelStyle = NSBezelStyleInline;
     _newTabButton.bordered = NO;
     _newTabButton.title = @"";
