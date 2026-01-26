@@ -11,14 +11,114 @@
 // Extern function to access global history storage
 extern HistoryStorage* GetHistoryStorage();
 
-static const CGFloat kSidebarWidth = 280.0;
+static const CGFloat kSidebarDefaultWidth = 280.0;
+static const CGFloat kSidebarMinWidth = 200.0;
+static const CGFloat kSidebarMaxWidth = 450.0;
 static const CGFloat kToolbarHeight = 44.0;
+static const CGFloat kResizeHandleWidth = 6.0;
+
+// ============================================================================
+// RESIZE HANDLE VIEW
+// Draggable divider for resizing sidebar
+// ============================================================================
+
+@interface ResizeHandleView : NSView
+@property (nonatomic, weak) MainWindowController* windowController;
+@property (nonatomic, assign) CGFloat initialMouseX;
+@property (nonatomic, assign) CGFloat initialSidebarWidth;
+@property (nonatomic, assign) BOOL isDragging;
+@end
+
+@implementation ResizeHandleView {
+    NSTrackingArea* _trackingArea;
+}
+
+- (instancetype)initWithFrame:(NSRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.wantsLayer = YES;
+        self.layer.backgroundColor = [NSColor clearColor].CGColor;
+        _isDragging = NO;
+    }
+    return self;
+}
+
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (_trackingArea) {
+        [self removeTrackingArea:_trackingArea];
+    }
+    _trackingArea = [[NSTrackingArea alloc]
+        initWithRect:self.bounds
+             options:(NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow | NSTrackingCursorUpdate)
+               owner:self
+            userInfo:nil];
+    [self addTrackingArea:_trackingArea];
+}
+
+- (void)cursorUpdate:(NSEvent*)event {
+    (void)event;
+    [[NSCursor resizeLeftRightCursor] set];
+}
+
+- (void)mouseEntered:(NSEvent*)event {
+    (void)event;
+    [[NSCursor resizeLeftRightCursor] set];
+    self.layer.backgroundColor = [DSColors surfaceHover].CGColor;
+}
+
+- (void)mouseExited:(NSEvent*)event {
+    (void)event;
+    if (!_isDragging) {
+        [[NSCursor arrowCursor] set];
+        self.layer.backgroundColor = [NSColor clearColor].CGColor;
+    }
+}
+
+- (void)mouseDown:(NSEvent*)event {
+    _isDragging = YES;
+    _initialMouseX = [self.window convertPointToScreen:event.locationInWindow].x;
+    _initialSidebarWidth = _windowController.sidebarView.frame.size.width;
+    self.layer.backgroundColor = [DSColors accent].CGColor;
+}
+
+- (void)mouseDragged:(NSEvent*)event {
+    if (!_isDragging) return;
+
+    CGFloat currentX = [self.window convertPointToScreen:event.locationInWindow].x;
+    CGFloat deltaX = currentX - _initialMouseX;
+    CGFloat newWidth = _initialSidebarWidth + deltaX;
+
+    // Clamp to min/max
+    newWidth = MAX(kSidebarMinWidth, MIN(kSidebarMaxWidth, newWidth));
+
+    [_windowController resizeSidebarToWidth:newWidth];
+}
+
+- (void)mouseUp:(NSEvent*)event {
+    (void)event;
+    _isDragging = NO;
+    self.layer.backgroundColor = [NSColor clearColor].CGColor;
+    [[NSCursor arrowCursor] set];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    // Draw a subtle line in the center
+    [[DSColors border] setFill];
+    NSRect lineRect = NSMakeRect(self.bounds.size.width / 2 - 0.5, 0, 1, self.bounds.size.height);
+    NSRectFill(lineRect);
+}
+
+@end
 
 @interface MainWindowController ()
 @property (nonatomic, readwrite) TabManager* tabManager;
 @property (nonatomic, readwrite) SidebarView* sidebarView;
 @property (nonatomic, readwrite) ToolbarView* toolbarView;
 @property (nonatomic, readwrite) NSView* browserContainer;
+@property (nonatomic, strong) ResizeHandleView* resizeHandle;
+@property (nonatomic, assign) CGFloat currentSidebarWidth;
 @end
 
 @implementation MainWindowController
@@ -39,6 +139,7 @@ static const CGFloat kToolbarHeight = 44.0;
     self = [super initWithWindow:window];
     if (self) {
         _tabManager = tabManager;
+        _currentSidebarWidth = kSidebarDefaultWidth;
 
         window.delegate = self;
         window.minSize = NSMakeSize(800, 600);
@@ -68,21 +169,29 @@ static const CGFloat kToolbarHeight = 44.0;
     CGFloat contentHeight = bounds.size.height - titleBarHeight;
 
     // Sidebar - extends to bottom of window
-    _sidebarView = [[SidebarView alloc] initWithFrame:NSMakeRect(0, 0, kSidebarWidth, contentHeight)];
+    _sidebarView = [[SidebarView alloc] initWithFrame:NSMakeRect(0, 0, _currentSidebarWidth, contentHeight)];
     _sidebarView.windowController = self;
     _sidebarView.autoresizingMask = NSViewHeightSizable;
     [contentView addSubview:_sidebarView];
 
+    // Resize handle - draggable divider
+    _resizeHandle = [[ResizeHandleView alloc] initWithFrame:NSMakeRect(
+        _currentSidebarWidth - kResizeHandleWidth / 2, 0, kResizeHandleWidth, contentHeight)];
+    _resizeHandle.windowController = self;
+    _resizeHandle.autoresizingMask = NSViewHeightSizable;
+    [contentView addSubview:_resizeHandle];
+
     // Bottom toolbar
-    _toolbarView = [[ToolbarView alloc] initWithFrame:NSMakeRect(kSidebarWidth, 0, bounds.size.width - kSidebarWidth, kToolbarHeight)];
+    _toolbarView = [[ToolbarView alloc] initWithFrame:NSMakeRect(
+        _currentSidebarWidth, 0, bounds.size.width - _currentSidebarWidth, kToolbarHeight)];
     _toolbarView.windowController = self;
     _toolbarView.autoresizingMask = NSViewWidthSizable;
     [contentView addSubview:_toolbarView];
 
     // Browser container
-    CGFloat browserX = kSidebarWidth;
+    CGFloat browserX = _currentSidebarWidth;
     CGFloat browserY = kToolbarHeight;
-    CGFloat browserWidth = bounds.size.width - kSidebarWidth;
+    CGFloat browserWidth = bounds.size.width - _currentSidebarWidth;
     CGFloat browserHeight = contentHeight - kToolbarHeight;
 
     _browserContainer = [[NSView alloc] initWithFrame:NSMakeRect(browserX, browserY, browserWidth, browserHeight)];
@@ -90,13 +199,6 @@ static const CGFloat kToolbarHeight = 44.0;
     _browserContainer.layer.backgroundColor = [NSColor blackColor].CGColor;
     _browserContainer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     [contentView addSubview:_browserContainer];
-
-    // Vertical divider between sidebar and content
-    NSView* divider = [[NSView alloc] initWithFrame:NSMakeRect(kSidebarWidth - 1, 0, 1, bounds.size.height)];
-    divider.wantsLayer = YES;
-    divider.layer.backgroundColor = [NSColor colorWithRed:0.2 green:0.2 blue:0.22 alpha:1.0].CGColor;
-    divider.autoresizingMask = NSViewHeightSizable;
-    [contentView addSubview:divider];
 }
 
 - (void)setupCallbacks {
@@ -172,6 +274,19 @@ static const CGFloat kToolbarHeight = 44.0;
             if (activeTab && activeTab->id == tabId) {
                 strongSelf.window.title = [NSString stringWithUTF8String:title.c_str()];
             }
+        });
+    };
+
+    callbacks.on_workspace_changed = [weakSelf](Workspace* workspace) {
+        MainWindowController* strongSelf = weakSelf;
+        if (!strongSelf || !workspace) return;
+
+        // Capture workspace name before async
+        std::string name = workspace->name;
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [strongSelf.sidebarView updateWorkspaceButton];
+            [strongSelf.sidebarView reloadTabs];
         });
     };
 
@@ -451,13 +566,53 @@ static const CGFloat kToolbarHeight = 44.0;
 #pragma mark - Sidebar
 
 static const CGFloat kIconStripWidth = 44.0;
-static const CGFloat kSidebarExpandedWidth = 280.0;
+
+- (void)resizeSidebarToWidth:(CGFloat)newWidth {
+    // Ensure we're not collapsed
+    if (_sidebarView.isCollapsed) return;
+
+    _currentSidebarWidth = newWidth;
+
+    NSView* contentView = self.window.contentView;
+    CGFloat titleBarHeight = 28;
+
+    // Update sidebar frame
+    NSRect sidebarFrame = _sidebarView.frame;
+    sidebarFrame.size.width = newWidth;
+    _sidebarView.frame = sidebarFrame;
+
+    // Update resize handle position
+    NSRect handleFrame = _resizeHandle.frame;
+    handleFrame.origin.x = newWidth - kResizeHandleWidth / 2;
+    _resizeHandle.frame = handleFrame;
+
+    // Update toolbar position and width
+    NSRect toolbarFrame = _toolbarView.frame;
+    toolbarFrame.origin.x = newWidth;
+    toolbarFrame.size.width = contentView.bounds.size.width - newWidth;
+    _toolbarView.frame = toolbarFrame;
+
+    // Update browser container position and width
+    CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
+    _browserContainer.frame = NSMakeRect(newWidth, kToolbarHeight,
+                                          contentView.bounds.size.width - newWidth, browserHeight);
+
+    // Update sidebar internal layout
+    [_sidebarView updateLayoutForWidth:newWidth];
+
+    // Resize visible browser views to fit new container
+    for (NSView* subview in _browserContainer.subviews) {
+        if (!subview.hidden) {
+            subview.frame = _browserContainer.bounds;
+        }
+    }
+}
 
 - (void)toggleSidebarCollapse:(BOOL)collapse {
     NSView* contentView = self.window.contentView;
     CGFloat titleBarHeight = 28;
 
-    CGFloat newSidebarWidth = collapse ? kIconStripWidth : kSidebarExpandedWidth;
+    CGFloat newSidebarWidth = collapse ? kIconStripWidth : _currentSidebarWidth;
 
     [NSAnimationContext runAnimationGroup:^(NSAnimationContext* context) {
         context.duration = 0.2;
@@ -467,6 +622,14 @@ static const CGFloat kSidebarExpandedWidth = 280.0;
         NSRect sidebarFrame = _sidebarView.frame;
         sidebarFrame.size.width = newSidebarWidth;
         _sidebarView.animator.frame = sidebarFrame;
+
+        // Hide/show resize handle
+        _resizeHandle.animator.alphaValue = collapse ? 0.0 : 1.0;
+
+        // Animate resize handle position
+        NSRect handleFrame = _resizeHandle.frame;
+        handleFrame.origin.x = newSidebarWidth - kResizeHandleWidth / 2;
+        _resizeHandle.animator.frame = handleFrame;
 
         // Animate toolbar position and width
         NSRect toolbarFrame = _toolbarView.frame;
@@ -487,6 +650,9 @@ static const CGFloat kSidebarExpandedWidth = 280.0;
                 subview.frame = self->_browserContainer.bounds;
             }
         }
+
+        // Disable resize handle when collapsed
+        self->_resizeHandle.hidden = collapse;
     }];
 }
 

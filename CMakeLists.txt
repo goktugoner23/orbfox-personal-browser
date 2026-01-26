@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.15...4.0)
 
-project(PersonalBrowser
+project(OrbFox
     VERSION 0.1.0
-    DESCRIPTION "Personal browser built with CEF"
+    DESCRIPTION "OrbFox browser built with CEF"
     LANGUAGES CXX)
 
 # Prevent in-source builds
@@ -73,21 +73,21 @@ endif()
 
 # Create executable
 if(APPLE)
-    add_executable(PersonalBrowser MACOSX_BUNDLE ${SOURCES} ${HEADERS})
+    add_executable(OrbFox MACOSX_BUNDLE ${SOURCES} ${HEADERS})
 
-    set_target_properties(PersonalBrowser PROPERTIES
+    set_target_properties(OrbFox PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/resources/Info.plist"
-        MACOSX_BUNDLE_BUNDLE_NAME "Personal Browser"
+        MACOSX_BUNDLE_BUNDLE_NAME "OrbFox"
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-        MACOSX_BUNDLE_GUI_IDENTIFIER "com.personal.browser"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.orbfox.browser"
     )
 else()
-    add_executable(PersonalBrowser WIN32 ${SOURCES} ${HEADERS})
+    add_executable(OrbFox WIN32 ${SOURCES} ${HEADERS})
 endif()
 
 # Include directories
-target_include_directories(PersonalBrowser PRIVATE
+target_include_directories(OrbFox PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/ui
     ${CMAKE_SOURCE_DIR}/src/ui/components
@@ -95,7 +95,7 @@ target_include_directories(PersonalBrowser PRIVATE
 )
 
 # Link libraries
-target_link_libraries(PersonalBrowser PRIVATE
+target_link_libraries(OrbFox PRIVATE
     libcef_dll_wrapper
     ${CEF_STANDARD_LIBS}
 )
@@ -107,13 +107,13 @@ if(APPLE)
     find_library(COCOA_LIBRARY Cocoa REQUIRED)
     find_library(APPKIT_LIBRARY AppKit REQUIRED)
 
-    target_link_libraries(PersonalBrowser PRIVATE
+    target_link_libraries(OrbFox PRIVATE
         ${COCOA_LIBRARY}
         ${APPKIT_LIBRARY}
         sqlite3
     )
 
-    target_compile_definitions(PersonalBrowser PRIVATE PLATFORM_MAC)
+    target_compile_definitions(OrbFox PRIVATE PLATFORM_MAC)
 
     # Enable Objective-C++ with ARC for .mm files
     set_source_files_properties(
@@ -133,8 +133,8 @@ if(APPLE)
     # Helper Apps for multi-process architecture
     # ============================================================
 
-    set(HELPER_TARGET "PersonalBrowser_Helper")
-    set(HELPER_OUTPUT_NAME "Personal Browser Helper")
+    set(HELPER_TARGET "OrbFox_Helper")
+    set(HELPER_OUTPUT_NAME "OrbFox Helper")
 
     # Helper app source
     set(HELPER_SOURCES
@@ -195,60 +195,68 @@ if(APPLE)
             OUTPUT_NAME "${_helper_output_name}"
             MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/resources/helper-Info.plist.in"
             MACOSX_BUNDLE_BUNDLE_NAME "${_helper_output_name}"
-            MACOSX_BUNDLE_GUI_IDENTIFIER "com.personal.browser.helper${_plist_suffix}"
+            MACOSX_BUNDLE_GUI_IDENTIFIER "com.orbfox.browser.helper${_plist_suffix}"
         )
 
         # Add dependency - main app depends on helper
-        add_dependencies(PersonalBrowser ${_helper_target})
+        add_dependencies(OrbFox ${_helper_target})
 
         # Copy helper to main app's Frameworks directory after build
         # Use ditto which handles spaces and special characters properly
-        add_custom_command(TARGET PersonalBrowser POST_BUILD
+        add_custom_command(TARGET OrbFox POST_BUILD
             COMMAND ditto
                 "${CMAKE_BINARY_DIR}/${_helper_output_name}.app"
-                "$<TARGET_BUNDLE_DIR:PersonalBrowser>/Contents/Frameworks/${_helper_output_name}.app"
+                "$<TARGET_BUNDLE_DIR:OrbFox>/Contents/Frameworks/${_helper_output_name}.app"
             COMMENT "Copying ${_helper_output_name}.app to Frameworks..."
             VERBATIM
         )
     endforeach()
 
 elseif(WIN32)
-    target_link_libraries(PersonalBrowser PRIVATE
+    target_link_libraries(OrbFox PRIVATE
         user32
         gdi32
         shell32
     )
-    target_compile_definitions(PersonalBrowser PRIVATE PLATFORM_WIN)
+    target_compile_definitions(OrbFox PRIVATE PLATFORM_WIN)
 endif()
 
 # Compiler warnings
 if(MSVC)
-    target_compile_options(PersonalBrowser PRIVATE /W4)
+    target_compile_options(OrbFox PRIVATE /W4)
 else()
-    target_compile_options(PersonalBrowser PRIVATE -Wall -Wextra)
+    target_compile_options(OrbFox PRIVATE -Wall -Wextra)
 endif()
 
 # Copy CEF resources and binaries post-build
 if(APPLE)
     # Copy framework into app bundle
-    add_custom_command(TARGET PersonalBrowser POST_BUILD
+    add_custom_command(TARGET OrbFox POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CEF_ROOT}/Release/Chromium Embedded Framework.framework"
-            "$<TARGET_BUNDLE_DIR:PersonalBrowser>/Contents/Frameworks/Chromium Embedded Framework.framework"
+            "$<TARGET_BUNDLE_DIR:OrbFox>/Contents/Frameworks/Chromium Embedded Framework.framework"
         COMMENT "Copying CEF framework..."
     )
+
+    # Copy app icon to Resources
+    add_custom_command(TARGET OrbFox POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_SOURCE_DIR}/assets/AppIcon.icns"
+            "$<TARGET_BUNDLE_DIR:OrbFox>/Contents/Resources/AppIcon.icns"
+        COMMENT "Copying app icon..."
+    )
 else()
-    add_custom_command(TARGET PersonalBrowser POST_BUILD
+    add_custom_command(TARGET OrbFox POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CEF_ROOT}/Resources"
-            "$<TARGET_FILE_DIR:PersonalBrowser>/Resources"
+            "$<TARGET_FILE_DIR:OrbFox>/Resources"
         COMMENT "Copying CEF resources..."
     )
 
-    add_custom_command(TARGET PersonalBrowser POST_BUILD
+    add_custom_command(TARGET OrbFox POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CEF_ROOT}/Release"
-            "$<TARGET_FILE_DIR:PersonalBrowser>"
+            "$<TARGET_FILE_DIR:OrbFox>"
         COMMENT "Copying CEF binaries..."
     )
 endif()

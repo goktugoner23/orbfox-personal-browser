@@ -36,6 +36,7 @@
 
 // Sidebar
 - (void)toggleSidebarCollapse:(BOOL)collapse;
+- (void)resizeSidebarToWidth:(CGFloat)newWidth;
 - (void)focusURLBar;
 
 // Panel actions (for menu bar)

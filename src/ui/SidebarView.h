@@ -25,6 +25,8 @@ typedef NS_ENUM(NSInteger, SidebarPanel) {
 - (void)updateTab:(int)tabId faviconData:(NSData*)faviconData;
 - (void)toggleSidebar;
 - (void)showPanel:(SidebarPanel)panel;
+- (void)updateLayoutForWidth:(CGFloat)newWidth;
+- (void)updateWorkspaceButton;
 
 @end
 

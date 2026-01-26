@@ -38,7 +38,7 @@ std::string HistoryStorage::GetDatabasePath() {
         struct passwd* pw = getpwuid(getuid());
         home = pw ? pw->pw_dir : "/tmp";
     }
-    std::string app_support = std::string(home) + "/Library/Application Support/PersonalBrowser";
+    std::string app_support = std::string(home) + "/Library/Application Support/OrbFox";
     EnsureDirectoryExists(app_support);
     return app_support + "/history.db";
 #else

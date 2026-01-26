@@ -2,7 +2,7 @@
 
 TabManager::TabManager() {
     // Create default workspace
-    CreateWorkspace("Personal");
+    CreateWorkspace("WS 1");
 }
 
 TabManager::~TabManager() = default;

@@ -37,15 +37,15 @@
 
     // Application menu
     NSMenuItem* appMenuItem = [[NSMenuItem alloc] init];
-    NSMenu* appMenu = [[NSMenu alloc] initWithTitle:@"Personal Browser"];
-    [appMenu addItemWithTitle:@"About Personal Browser" action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
+    NSMenu* appMenu = [[NSMenu alloc] initWithTitle:@"OrbFox"];
+    [appMenu addItemWithTitle:@"About OrbFox" action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
     [appMenu addItem:[NSMenuItem separatorItem]];
-    [appMenu addItemWithTitle:@"Hide Personal Browser" action:@selector(hide:) keyEquivalent:@"h"];
+    [appMenu addItemWithTitle:@"Hide OrbFox" action:@selector(hide:) keyEquivalent:@"h"];
     NSMenuItem* hideOthers = [appMenu addItemWithTitle:@"Hide Others" action:@selector(hideOtherApplications:) keyEquivalent:@"h"];
     hideOthers.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagOption;
     [appMenu addItemWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""];
     [appMenu addItem:[NSMenuItem separatorItem]];
-    [appMenu addItemWithTitle:@"Quit Personal Browser" action:@selector(terminate:) keyEquivalent:@"q"];
+    [appMenu addItemWithTitle:@"Quit OrbFox" action:@selector(terminate:) keyEquivalent:@"q"];
     appMenuItem.submenu = appMenu;
     [mainMenu addItem:appMenuItem];
 
@@ -251,7 +251,7 @@ int main(int argc, char* argv[]) {
 
         // Set a unique cache path to avoid singleton conflicts
         NSString* appSupportPath = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
-        NSString* cachePath = [appSupportPath stringByAppendingPathComponent:@"PersonalBrowser"];
+        NSString* cachePath = [appSupportPath stringByAppendingPathComponent:@"OrbFox"];
         [[NSFileManager defaultManager] createDirectoryAtPath:cachePath withIntermediateDirectories:YES attributes:nil error:nil];
         CefString(&settings.root_cache_path) = [cachePath UTF8String];
 
@@ -269,7 +269,7 @@ int main(int argc, char* argv[]) {
         CefString(&settings.locales_dir_path) = [localesPath UTF8String];
 
         // Set the main helper app path (CEF will derive the others)
-        NSString* helperPath = [frameworkPath stringByAppendingPathComponent:@"Personal Browser Helper.app/Contents/MacOS/Personal Browser Helper"];
+        NSString* helperPath = [frameworkPath stringByAppendingPathComponent:@"OrbFox Helper.app/Contents/MacOS/OrbFox Helper"];
         CefString(&settings.browser_subprocess_path) = [helperPath UTF8String];
 
         // Create the browser application handler

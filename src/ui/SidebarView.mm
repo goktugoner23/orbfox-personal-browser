@@ -257,10 +257,13 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     // Tabs panel
     NSView* _tabsPanelContainer;
     NSView* _workspaceSelector;
+    NSScrollView* _workspaceScrollView;  // Scrollable workspace tabs
+    NSView* _workspaceTabsContainer;
     NSScrollView* _tabScrollView;
     FlippedView* _tabContainer;
     DSButton* _newTabButton;
     DSIconButton* _addWorkspaceBtn;
+    NSMutableArray<DSButton*>* _workspaceTabs;  // Array of workspace tab buttons
 
     // History panel
     NSView* _historyPanelContainer;
@@ -284,6 +287,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     if (self) {
         _activePanel = SidebarPanelTabs;
         _tabRows = [NSMutableArray array];
+        _workspaceTabs = [NSMutableArray array];
         [self setupViews];
     }
     return self;
@@ -331,6 +335,8 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
     [self updateIconSelection];
     [self updatePanelVisibility];
+
+    // Initial load of workspace tabs (will be populated when windowController is set)
 }
 
 - (DSIconButton*)createIconButton:(NSString*)symbolName y:(CGFloat)y tooltip:(NSString*)tooltip {
@@ -348,37 +354,53 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 - (void)setupTabsPanel:(CGFloat)x width:(CGFloat)width height:(CGFloat)height {
     _tabsPanelContainer = [[NSView alloc] initWithFrame:NSMakeRect(x, 0, width, height)];
     _tabsPanelContainer.autoresizingMask = NSViewHeightSizable | NSViewWidthSizable;
+    _tabsPanelContainer.wantsLayer = YES;
+    _tabsPanelContainer.layer.masksToBounds = YES;  // Clip contents when collapsed
     [self addSubview:_tabsPanelContainer];
 
-    // Workspace selector
+    CGFloat padding = [DSSpacing sm];
+    CGFloat btnSize = 28;
+
+    // Workspace selector row at top
     _workspaceSelector = [[NSView alloc] initWithFrame:NSMakeRect(
-        0, height - kWorkspaceHeight - [DSSpacing sm], width, kWorkspaceHeight)];
+        0, height - kWorkspaceHeight - padding, width, kWorkspaceHeight)];
     _workspaceSelector.autoresizingMask = NSViewMinYMargin | NSViewWidthSizable;
     [_tabsPanelContainer addSubview:_workspaceSelector];
 
-    // Workspace button
-    DSButton* workspaceBtn = [DSButton buttonWithTitle:@"Personal" variant:DSButtonVariantSubtle];
-    workspaceBtn.frame = NSMakeRect([DSSpacing sm], [DSSpacing xs], 100, 32);
-    [_workspaceSelector addSubview:workspaceBtn];
-
-    // Add workspace button
-    _addWorkspaceBtn = [DSIconButton buttonWithIcon:@"plus" tooltip:@"Add Workspace"];
-    _addWorkspaceBtn.frame = NSMakeRect(width - 36, [DSSpacing sm], 24, 24);
+    // Add workspace button - on the RIGHT side with padding
+    _addWorkspaceBtn = [DSIconButton buttonWithIcon:@"plus" tooltip:@"New Workspace"];
+    _addWorkspaceBtn.frame = NSMakeRect(width - btnSize - padding, (kWorkspaceHeight - btnSize) / 2, btnSize, btnSize);
     _addWorkspaceBtn.autoresizingMask = NSViewMinXMargin;
     _addWorkspaceBtn.target = self;
     _addWorkspaceBtn.action = @selector(addWorkspaceClicked:);
     [_workspaceSelector addSubview:_addWorkspaceBtn];
 
-    // New Tab button
+    // Workspace tabs scroll view - horizontal scrolling for workspace tabs
+    CGFloat scrollWidth = width - btnSize - padding * 2;
+    _workspaceScrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(
+        0, 0, scrollWidth, kWorkspaceHeight)];
+    _workspaceScrollView.hasHorizontalScroller = YES;
+    _workspaceScrollView.hasVerticalScroller = NO;
+    _workspaceScrollView.horizontalScroller.alphaValue = 0;  // Hide scrollbar but keep functionality
+    _workspaceScrollView.drawsBackground = NO;
+    _workspaceScrollView.autoresizingMask = NSViewWidthSizable;
+    _workspaceScrollView.horizontalScrollElasticity = NSScrollElasticityAllowed;
+    [_workspaceSelector addSubview:_workspaceScrollView];
+
+    // Container for workspace tab buttons
+    _workspaceTabsContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, scrollWidth, kWorkspaceHeight)];
+    _workspaceScrollView.documentView = _workspaceTabsContainer;
+
+    // New Tab button at bottom - full width, icon on right
     _newTabButton = [DSButton buttonWithTitle:@"New Tab" icon:@"plus" variant:DSButtonVariantGhost];
-    _newTabButton.frame = NSMakeRect([DSSpacing sm], 5, width - [DSSpacing lg], 34);
-    _newTabButton.imagePosition = NSImageTrailing;
+    _newTabButton.frame = NSMakeRect(padding, padding, width - padding * 2, 34);
+    _newTabButton.imagePosition = NSImageTrailing;  // Icon on the right
     _newTabButton.autoresizingMask = NSViewMaxYMargin | NSViewWidthSizable;
     _newTabButton.target = self;
     _newTabButton.action = @selector(newTabClicked:);
     [_tabsPanelContainer addSubview:_newTabButton];
 
-    // Tab scroll view
+    // Tab scroll view - between workspace selector and new tab button
     CGFloat tabAreaTop = height - kWorkspaceHeight - [DSSpacing lg];
     CGFloat tabAreaBottom = kNewTabButtonHeight;
     CGFloat tabAreaHeight = tabAreaTop - tabAreaBottom;
@@ -396,9 +418,29 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     _tabScrollView.documentView = _tabContainer;
 }
 
+// Called when sidebar width changes (from resize)
+- (void)updateLayoutForWidth:(CGFloat)newWidth {
+    CGFloat contentWidth = newWidth - kIconStripWidth;
+
+    // Update tab container width
+    NSRect containerFrame = _tabContainer.frame;
+    containerFrame.size.width = contentWidth;
+    _tabContainer.frame = containerFrame;
+
+    // Update history container width
+    NSRect historyFrame = _historyContainer.frame;
+    historyFrame.size.width = contentWidth;
+    _historyContainer.frame = historyFrame;
+
+    // Reload tabs to update row widths
+    [self reloadTabs];
+}
+
 - (void)setupHistoryPanel:(CGFloat)x width:(CGFloat)width height:(CGFloat)height {
     _historyPanelContainer = [[NSView alloc] initWithFrame:NSMakeRect(x, 0, width, height)];
     _historyPanelContainer.autoresizingMask = NSViewHeightSizable | NSViewWidthSizable;
+    _historyPanelContainer.wantsLayer = YES;
+    _historyPanelContainer.layer.masksToBounds = YES;  // Clip contents when collapsed
     _historyPanelContainer.hidden = YES;
     [self addSubview:_historyPanelContainer];
 
@@ -467,9 +509,303 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
 - (void)addWorkspaceClicked:(id)sender {
     (void)sender;
-    if (_windowController && _windowController.tabManager) {
-        _windowController.tabManager->CreateWorkspace("New Space");
+    if (!_windowController || !_windowController.tabManager) return;
+
+    // Count existing workspaces to generate name (WS 1, WS 2, etc.)
+    size_t count = _windowController.tabManager->GetWorkspaces().size();
+    NSString* spaceName = [NSString stringWithFormat:@"WS %zu", count + 1];
+
+    // Create new workspace
+    Workspace* newWorkspace = _windowController.tabManager->CreateWorkspace([spaceName UTF8String]);
+    if (!newWorkspace) return;
+
+    // Switch to the new workspace
+    _windowController.tabManager->SetActiveWorkspace(newWorkspace->id);
+
+    // Update UI
+    [self reloadWorkspaceTabs];
+    [self reloadTabs];
+
+    // Create initial tab in new workspace
+    [_windowController createNewTab:@""];
+}
+
+- (void)workspaceTabClicked:(id)sender {
+    if (!_windowController || !_windowController.tabManager) return;
+
+    int workspaceId = (int)[sender tag];
+
+    // Don't switch if already on this workspace
+    Workspace* currentWorkspace = _windowController.tabManager->GetActiveWorkspace();
+    if (currentWorkspace && currentWorkspace->id == workspaceId) return;
+
+    _windowController.tabManager->SetActiveWorkspace(workspaceId);
+
+    [self reloadWorkspaceTabs];
+    [self reloadTabs];
+
+    // Show the active tab's browser
+    Tab* activeTab = _windowController.tabManager->GetActiveTab();
+    if (activeTab) {
+        [_windowController activateTab:activeTab->id];
+    } else {
+        // Create a tab if workspace is empty
+        [_windowController createNewTab:@""];
     }
+}
+
+- (void)reloadWorkspaceTabs {
+    if (!_windowController || !_windowController.tabManager) return;
+
+    // Remove existing workspace tab buttons
+    for (NSView* view in _workspaceTabs) {
+        [view removeFromSuperview];
+    }
+    [_workspaceTabs removeAllObjects];
+
+    const auto& workspaces = _windowController.tabManager->GetWorkspaces();
+    Workspace* activeWorkspace = _windowController.tabManager->GetActiveWorkspace();
+
+    CGFloat padding = [DSSpacing sm];
+    CGFloat tabHeight = 32;
+    CGFloat x = padding;
+    CGFloat closeSize = 16;
+
+    for (const auto& workspace : workspaces) {
+        BOOL isActive = (activeWorkspace && workspace->id == activeWorkspace->id);
+        int workspaceId = workspace->id;
+
+        // Create container view for the workspace tab
+        NSView* tabContainer = [[NSView alloc] init];
+        tabContainer.wantsLayer = YES;
+        tabContainer.layer.cornerRadius = [DSLayout cornerRadiusMedium];
+        tabContainer.layer.backgroundColor = isActive ? [DSColors surfaceActive].CGColor : [NSColor clearColor].CGColor;
+
+        // Calculate total width: padding + text + gap + close button + padding
+        NSString* title = [NSString stringWithUTF8String:workspace->name.c_str()];
+        NSDictionary* attrs = @{NSFontAttributeName: [NSFont systemFontOfSize:13 weight:NSFontWeightMedium]};
+        CGFloat textWidth = [title sizeWithAttributes:attrs].width;
+        CGFloat innerPadding = 10;
+        CGFloat totalWidth = innerPadding + textWidth + 6 + closeSize + innerPadding;
+        totalWidth = MAX(70, totalWidth);
+
+        tabContainer.frame = NSMakeRect(x, (kWorkspaceHeight - tabHeight) / 2, totalWidth, tabHeight);
+
+        // Title label
+        NSTextField* label = [[NSTextField alloc] initWithFrame:NSMakeRect(
+            innerPadding, (tabHeight - 18) / 2, textWidth + 4, 18)];
+        label.stringValue = title;
+        label.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
+        label.textColor = [DSColors textPrimary];
+        label.bezeled = NO;
+        label.drawsBackground = NO;
+        label.editable = NO;
+        label.selectable = NO;
+        [tabContainer addSubview:label];
+
+        // Close button inside the tab (always visible)
+        DSIconButton* closeBtn = [DSIconButton buttonWithIcon:@"xmark"];
+        closeBtn.frame = NSMakeRect(totalWidth - innerPadding - closeSize, (tabHeight - closeSize) / 2, closeSize, closeSize);
+        closeBtn.tag = workspaceId;
+        closeBtn.target = self;
+        closeBtn.action = @selector(closeWorkspace:);
+        closeBtn.alphaValue = 0.5;
+        [tabContainer addSubview:closeBtn];
+
+        // Make the container clickable (excluding close button area)
+        NSButton* clickArea = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, totalWidth - closeSize - 6, tabHeight)];
+        clickArea.transparent = YES;
+        clickArea.bordered = NO;
+        clickArea.tag = workspaceId;
+        clickArea.target = self;
+        clickArea.action = @selector(workspaceTabClicked:);
+        [tabContainer addSubview:clickArea positioned:NSWindowBelow relativeTo:nil];
+
+        // Add right-click menu to container (delete always enabled)
+        NSMenu* contextMenu = [self createWorkspaceContextMenu:workspaceId canDelete:YES];
+        tabContainer.menu = contextMenu;
+
+        [_workspaceTabsContainer addSubview:tabContainer];
+        [_workspaceTabs addObject:tabContainer];
+
+        x += totalWidth + [DSSpacing xs];
+    }
+
+    // Update container width to fit all tabs
+    NSRect containerFrame = _workspaceTabsContainer.frame;
+    containerFrame.size.width = MAX(x, _workspaceScrollView.bounds.size.width);
+    _workspaceTabsContainer.frame = containerFrame;
+}
+
+- (NSMenu*)createWorkspaceContextMenu:(int)workspaceId canDelete:(BOOL)canDelete {
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Workspace"];
+
+    // Rename
+    NSMenuItem* renameItem = [[NSMenuItem alloc] initWithTitle:@"Rename Space"
+                                                         action:@selector(renameWorkspace:)
+                                                  keyEquivalent:@""];
+    renameItem.target = self;
+    renameItem.tag = workspaceId;
+    [menu addItem:renameItem];
+
+    // Duplicate
+    NSMenuItem* duplicateItem = [[NSMenuItem alloc] initWithTitle:@"Duplicate Space"
+                                                            action:@selector(duplicateWorkspace:)
+                                                     keyEquivalent:@""];
+    duplicateItem.target = self;
+    duplicateItem.tag = workspaceId;
+    [menu addItem:duplicateItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    // Delete (only if more than 1 workspace)
+    NSMenuItem* deleteItem = [[NSMenuItem alloc] initWithTitle:@"Delete Space"
+                                                         action:canDelete ? @selector(deleteWorkspace:) : nil
+                                                  keyEquivalent:@""];
+    deleteItem.target = self;
+    deleteItem.tag = workspaceId;
+    if (!canDelete) {
+        deleteItem.enabled = NO;
+    }
+    [menu addItem:deleteItem];
+
+    return menu;
+}
+
+- (void)closeWorkspace:(DSIconButton*)sender {
+    [self deleteWorkspaceById:(int)sender.tag];
+}
+
+- (void)deleteWorkspace:(NSMenuItem*)sender {
+    [self deleteWorkspaceById:(int)sender.tag];
+}
+
+- (void)deleteWorkspaceById:(int)workspaceId {
+    if (!_windowController || !_windowController.tabManager) return;
+
+    // If this is the last workspace, quit the app
+    if (_windowController.tabManager->GetWorkspaces().size() <= 1) {
+        [_windowController.window close];
+        return;
+    }
+
+    // Find the workspace and close its browser views
+    for (const auto& workspace : _windowController.tabManager->GetWorkspaces()) {
+        if (workspace->id == workspaceId) {
+            for (const auto& tab : workspace->tabs) {
+                if (tab->browser) {
+                    // Remove the browser view from superview first
+                    CefRefPtr<CefBrowserHost> host = tab->browser->GetHost();
+                    if (host) {
+                        NSView* browserView = (__bridge NSView*)host->GetWindowHandle();
+                        if (browserView) {
+                            [browserView removeFromSuperview];
+                        }
+                        // Now close the browser
+                        host->CloseBrowser(true);
+                    }
+                }
+            }
+            break;
+        }
+    }
+
+    // Delete the workspace from tab manager
+    _windowController.tabManager->DeleteWorkspace(workspaceId);
+
+    // Update UI
+    [self reloadWorkspaceTabs];
+    [self reloadTabs];
+
+    // Show the active workspace's active tab
+    Tab* activeTab = _windowController.tabManager->GetActiveTab();
+    if (activeTab && activeTab->browser) {
+        [_windowController activateTab:activeTab->id];
+    } else {
+        // If no active tab, create one in the current workspace
+        Workspace* activeWorkspace = _windowController.tabManager->GetActiveWorkspace();
+        if (activeWorkspace && activeWorkspace->tabs.empty()) {
+            [_windowController createNewTab:@""];
+        }
+    }
+}
+
+- (void)renameWorkspace:(NSMenuItem*)sender {
+    int workspaceId = (int)sender.tag;
+    if (!_windowController || !_windowController.tabManager) return;
+
+    // Find the workspace
+    Workspace* workspace = nullptr;
+    for (const auto& ws : _windowController.tabManager->GetWorkspaces()) {
+        if (ws->id == workspaceId) {
+            workspace = ws.get();
+            break;
+        }
+    }
+    if (!workspace) return;
+
+    // Show rename alert
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = @"Rename Space";
+    alert.informativeText = @"Enter a new name for this space:";
+    [alert addButtonWithTitle:@"Rename"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    NSTextField* input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 200, 24)];
+    input.stringValue = [NSString stringWithUTF8String:workspace->name.c_str()];
+    alert.accessoryView = input;
+
+    [alert beginSheetModalForWindow:_windowController.window completionHandler:^(NSModalResponse response) {
+        if (response == NSAlertFirstButtonReturn) {
+            NSString* newName = input.stringValue;
+            if (newName.length > 0) {
+                workspace->name = [newName UTF8String];
+                [self reloadWorkspaceTabs];
+            }
+        }
+    }];
+}
+
+- (void)duplicateWorkspace:(NSMenuItem*)sender {
+    int workspaceId = (int)sender.tag;
+    if (!_windowController || !_windowController.tabManager) return;
+
+    // Find the workspace to duplicate
+    Workspace* sourceWorkspace = nullptr;
+    for (const auto& ws : _windowController.tabManager->GetWorkspaces()) {
+        if (ws->id == workspaceId) {
+            sourceWorkspace = ws.get();
+            break;
+        }
+    }
+    if (!sourceWorkspace) return;
+
+    // Create new workspace with copied name
+    size_t count = _windowController.tabManager->GetWorkspaces().size();
+    NSString* newName = [NSString stringWithFormat:@"%s Copy", sourceWorkspace->name.c_str()];
+
+    Workspace* newWorkspace = _windowController.tabManager->CreateWorkspace([newName UTF8String]);
+    if (!newWorkspace) return;
+
+    // Copy tabs (create new tabs with same URLs)
+    _windowController.tabManager->SetActiveWorkspace(newWorkspace->id);
+
+    for (const auto& tab : sourceWorkspace->tabs) {
+        [_windowController createNewTab:[NSString stringWithUTF8String:tab->url.c_str()]];
+    }
+
+    // If no tabs were copied, create a default one
+    if (sourceWorkspace->tabs.empty()) {
+        [_windowController createNewTab:@""];
+    }
+
+    [self reloadWorkspaceTabs];
+    [self reloadTabs];
+}
+
+- (void)updateWorkspaceButton {
+    // Now we just reload the workspace tabs instead
+    [self reloadWorkspaceTabs];
 }
 
 #pragma mark - UI Updates
@@ -512,10 +848,16 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
     if (!_windowController || !_windowController.tabManager) return;
 
+    // Also reload workspace tabs if needed
+    if (_workspaceTabs.count == 0) {
+        [self reloadWorkspaceTabs];
+    }
+
     Workspace* workspace = _windowController.tabManager->GetActiveWorkspace();
     if (!workspace) return;
 
-    CGFloat contentWidth = kSidebarWidth - kIconStripWidth;
+    // Use current sidebar width instead of constant
+    CGFloat contentWidth = self.bounds.size.width - kIconStripWidth;
     CGFloat rowHeight = [DSLayout rowHeight];
     CGFloat totalHeight = workspace->tabs.size() * rowHeight;
     CGFloat minHeight = _tabScrollView.bounds.size.height;
