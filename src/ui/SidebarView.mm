@@ -32,6 +32,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     NSTrackingArea* _trackingArea;
     BOOL _isHovered;
     DSIconButton* _closeButton;
+    NSImageView* _pinIconView;
     NSProgressIndicator* _loadingIndicator;
     NSImageView* _faviconView;
 }
@@ -44,6 +45,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
         _isHovered = NO;
         _isSelected = NO;
         _isLoading = NO;
+        _isPinned = NO;
 
         CGFloat iconSize = [DSLayout iconSizeSmall];
         CGFloat padding = [DSSpacing sm];
@@ -66,6 +68,16 @@ static const CGFloat kNewTabButtonHeight = 44.0;
         // Close button
         _closeButton = [DSIconButton buttonWithIcon:@"xmark"];
         _closeButton.frame = NSMakeRect(frame.size.width - 28, (frame.size.height - 20) / 2, 20, 20);
+
+        // Pin icon (same position as close button - they swap based on hover)
+        _pinIconView = [[NSImageView alloc] initWithFrame:NSMakeRect(
+            frame.size.width - 25, (frame.size.height - 14) / 2, 14, 14)];
+        _pinIconView.image = [NSImage imageWithSystemSymbolName:@"pin.fill" accessibilityDescription:@"Pinned"];
+        _pinIconView.contentTintColor = [DSColors textSecondary];
+        _pinIconView.imageScaling = NSImageScaleProportionallyUpOrDown;
+        _pinIconView.autoresizingMask = NSViewMinXMargin;
+        _pinIconView.hidden = YES;
+        [self addSubview:_pinIconView];
         _closeButton.autoresizingMask = NSViewMinXMargin;
         _closeButton.hidden = YES;
         _closeButton.target = self;
@@ -92,6 +104,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     (void)event;
     _isHovered = YES;
     _closeButton.hidden = NO;
+    _pinIconView.hidden = YES;  // Hide pin icon, show close button on hover
     [self setNeedsDisplay:YES];
 }
 
@@ -99,6 +112,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     (void)event;
     _isHovered = NO;
     _closeButton.hidden = YES;
+    _pinIconView.hidden = !_isPinned;  // Show pin icon when not hovering (if pinned)
     [self setNeedsDisplay:YES];
 }
 
@@ -113,6 +127,16 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
 - (void)showContextMenu:(NSEvent*)event {
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Tab"];
+
+    // Pin/Unpin option
+    NSString* pinTitle = _isPinned ? @"Unpin Tab" : @"Pin Tab";
+    NSMenuItem* pinItem = [[NSMenuItem alloc] initWithTitle:pinTitle
+                                                     action:@selector(togglePinTab:)
+                                              keyEquivalent:@""];
+    pinItem.target = self;
+    [menu addItem:pinItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
 
     NSMenuItem* closeItem = [[NSMenuItem alloc] initWithTitle:@"Close Tab"
                                                        action:@selector(closeTab:)
@@ -143,6 +167,17 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     [menu addItem:closeOthersItem];
 
     [NSMenu popUpContextMenu:menu withEvent:event forView:self];
+}
+
+- (void)togglePinTab:(id)sender {
+    (void)sender;
+    Tab* tab = _sidebarView.windowController.tabManager->GetTabById(_tabId);
+    if (tab) {
+        tab->is_pinned = !tab->is_pinned;
+        _isPinned = tab->is_pinned;
+        _pinIconView.hidden = !_isPinned || _isHovered;  // Show pin icon only when pinned and not hovering
+        [self setNeedsDisplay:YES];
+    }
 }
 
 - (void)closeTab:(id)sender {
@@ -242,6 +277,12 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     _favicon = favicon;
     _faviconView.image = favicon;
     _faviconView.hidden = (_isLoading || favicon == nil);
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setIsPinned:(BOOL)isPinned {
+    _isPinned = isPinned;
+    _pinIconView.hidden = !isPinned || _isHovered;  // Show pin icon only when pinned and not hovering
     [self setNeedsDisplay:YES];
 }
 
@@ -689,6 +730,42 @@ static const CGFloat kNewTabButtonHeight = 44.0;
         return;
     }
 
+    // Check for pinned tabs in this workspace
+    BOOL hasPinnedTabs = NO;
+    Workspace* workspaceToDelete = nullptr;
+    for (const auto& workspace : _windowController.tabManager->GetWorkspaces()) {
+        if (workspace->id == workspaceId) {
+            workspaceToDelete = workspace.get();
+            for (const auto& tab : workspace->tabs) {
+                if (tab->is_pinned) {
+                    hasPinnedTabs = YES;
+                    break;
+                }
+            }
+            break;
+        }
+    }
+
+    if (hasPinnedTabs) {
+        // Show warning dialog
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = @"Close Space with Pinned Tabs?";
+        alert.informativeText = @"This space contains pinned tabs. Are you sure you want to close it?";
+        [alert addButtonWithTitle:@"Close Space"];
+        [alert addButtonWithTitle:@"Cancel"];
+        alert.alertStyle = NSAlertStyleWarning;
+
+        [alert beginSheetModalForWindow:_windowController.window completionHandler:^(NSModalResponse response) {
+            if (response == NSAlertFirstButtonReturn) {
+                [self performWorkspaceDeletion:workspaceId];
+            }
+        }];
+    } else {
+        [self performWorkspaceDeletion:workspaceId];
+    }
+}
+
+- (void)performWorkspaceDeletion:(int)workspaceId {
     // Find the workspace and close its browser views
     for (const auto& workspace : _windowController.tabManager->GetWorkspaces()) {
         if (workspace->id == workspaceId) {
@@ -873,6 +950,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
         row.title = [NSString stringWithUTF8String:tab->title.c_str()];
         row.isSelected = (tab->id == activeTabId);
         row.isLoading = tab->is_loading;
+        row.isPinned = tab->is_pinned;
         row.sidebarView = self;
 
         if (!tab->favicon_data.empty()) {

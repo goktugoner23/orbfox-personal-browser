@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-26
+
+### Added
+- **App Renamed** - Renamed from "Personal Browser" to "OrbFox"
+- **Resizable Sidebar** - Drag handle to resize sidebar (200-400px range)
+- **Arc-style Workspace Tabs** - Horizontal scrollable workspace tabs
+  - Workspaces named "WS 1", "WS 2", etc. instead of "Personal"
+  - Close button on each workspace tab
+  - Right-click context menu (Rename, Duplicate, Delete)
+  - Closing last workspace quits the browser
+- **Session Persistence** - Vivaldi-style session restore
+  - Saves workspaces and tabs on quit
+  - Restores previous session on launch
+  - Stored in `~/Library/Application Support/OrbFox/session.json`
+- **Tab Pinning** - Pin/unpin tabs via right-click menu
+  - Pin icon shown on pinned tabs (swaps with close button on hover)
+  - Warning dialog when closing workspace with pinned tabs
+
+### Changed
+- Workspace selector changed from dropdown to horizontal tab bar
+- Default workspace renamed from "Personal" to "WS 1"
+- Pin icon and close button share same position (swap on hover)
+
+### Technical
+- New `session_storage.h/cpp` for JSON-based session persistence
+- Added resize handle view for sidebar resizing
+- Workspace tabs use horizontal NSScrollView
+
 ## [0.3.0] - 2026-01-26
 
 ### Added

@@ -4,6 +4,7 @@
 #include "tab_manager.h"
 #include "window_settings.h"
 #include "history_storage.h"
+#include "session_storage.h"
 
 #import "MainWindowController.h"
 
@@ -14,11 +15,46 @@
 // Global references (owned by the app)
 static std::unique_ptr<TabManager> g_tab_manager;
 static std::unique_ptr<HistoryStorage> g_history_storage;
+static std::unique_ptr<SessionStorage> g_session_storage;
 static MainWindowController* g_window_controller = nil;
 
 // Access global history storage
 HistoryStorage* GetHistoryStorage() {
     return g_history_storage.get();
+}
+
+// Save current session
+void SaveSession() {
+    if (!g_tab_manager || !g_session_storage) return;
+
+    SavedSession session;
+    session.active_workspace_index = 0;
+
+    const auto& workspaces = g_tab_manager->GetWorkspaces();
+    Workspace* activeWorkspace = g_tab_manager->GetActiveWorkspace();
+
+    for (size_t i = 0; i < workspaces.size(); ++i) {
+        const auto& ws = workspaces[i];
+        SavedWorkspace savedWs;
+        savedWs.name = ws->name;
+        savedWs.active_tab_index = ws->active_tab_index;
+
+        if (activeWorkspace && ws->id == activeWorkspace->id) {
+            session.active_workspace_index = static_cast<int>(i);
+        }
+
+        for (const auto& tab : ws->tabs) {
+            SavedTab savedTab;
+            savedTab.url = tab->url;
+            savedTab.title = tab->title;
+            savedTab.is_pinned = tab->is_pinned;
+            savedWs.tabs.push_back(savedTab);
+        }
+
+        session.workspaces.push_back(savedWs);
+    }
+
+    g_session_storage->Save(session);
 }
 
 BrowserApp::BrowserApp() = default;
@@ -40,7 +76,10 @@ void BrowserApp::OnContextInitialized() {
     g_history_storage = std::make_unique<HistoryStorage>();
     g_history_storage->Initialize();
 
-    // Create tab manager
+    // Initialize session storage
+    g_session_storage = std::make_unique<SessionStorage>();
+
+    // Create tab manager (creates default "WS 1" workspace)
     g_tab_manager = std::make_unique<TabManager>();
 
     // Create the main window controller with native UI
@@ -59,8 +98,61 @@ void BrowserApp::OnContextInitialized() {
     // Show the window
     [window makeKeyAndOrderFront:nil];
 
-    // Create initial tab
-    g_tab_manager->CreateTab("https://www.google.com");
+    // Try to restore session, otherwise create default tab
+    bool sessionRestored = false;
+    if (g_session_storage->HasSavedSession()) {
+        SavedSession session = g_session_storage->Load();
+        if (!session.workspaces.empty()) {
+            // Clear default workspace created by TabManager
+            while (!g_tab_manager->GetWorkspaces().empty()) {
+                g_tab_manager->DeleteWorkspace(g_tab_manager->GetWorkspaces()[0]->id);
+            }
+
+            // Restore workspaces and tabs
+            for (size_t wi = 0; wi < session.workspaces.size(); ++wi) {
+                const auto& savedWs = session.workspaces[wi];
+                Workspace* ws = g_tab_manager->CreateWorkspace(savedWs.name);
+
+                if (static_cast<int>(wi) == session.active_workspace_index) {
+                    g_tab_manager->SetActiveWorkspace(ws->id);
+                }
+
+                // Create tabs in this workspace
+                for (const auto& savedTab : savedWs.tabs) {
+                    // Temporarily switch to this workspace to create tab in it
+                    int currentWsId = g_tab_manager->GetActiveWorkspace() ? g_tab_manager->GetActiveWorkspace()->id : ws->id;
+                    g_tab_manager->SetActiveWorkspace(ws->id);
+
+                    Tab* tab = g_tab_manager->CreateTab(savedTab.url);
+                    if (tab) {
+                        tab->title = savedTab.title;
+                        tab->is_pinned = savedTab.is_pinned;
+                    }
+
+                    g_tab_manager->SetActiveWorkspace(currentWsId);
+                }
+
+                // Set active tab index
+                if (savedWs.active_tab_index >= 0 && savedWs.active_tab_index < static_cast<int>(ws->tabs.size())) {
+                    ws->active_tab_index = savedWs.active_tab_index;
+                }
+            }
+
+            // Switch to the saved active workspace
+            if (session.active_workspace_index >= 0 &&
+                session.active_workspace_index < static_cast<int>(g_tab_manager->GetWorkspaces().size())) {
+                g_tab_manager->SetActiveWorkspace(
+                    g_tab_manager->GetWorkspaces()[session.active_workspace_index]->id);
+            }
+
+            sessionRestored = true;
+        }
+    }
+
+    // If no session restored, create default tab
+    if (!sessionRestored) {
+        g_tab_manager->CreateTab("https://www.google.com");
+    }
 
     // Set up window bounds change notification for persistence
     [[NSNotificationCenter defaultCenter] addObserverForName:NSWindowDidResizeNotification
@@ -115,5 +207,14 @@ void BrowserApp::OnContextInitialized() {
             settings.height = static_cast<int>(frame.size.height);
         }
         settings.Save();
+    }];
+
+    // Save session when window is about to close
+    [[NSNotificationCenter defaultCenter] addObserverForName:NSWindowWillCloseNotification
+                                                      object:window
+                                                       queue:nil
+                                                  usingBlock:^(NSNotification* note) {
+        (void)note;
+        SaveSession();
     }];
 }

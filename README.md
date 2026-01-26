@@ -1,4 +1,4 @@
-# Personal Browser
+# OrbFox Browser
 
 A custom web browser built with C++ and Chromium Embedded Framework (CEF), featuring a sidebar-based UI inspired by Vivaldi and Arc.
 
@@ -8,9 +8,9 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 ┌─────────────────────────────────────────────────────────┐
 │ ● ● ●  Page Title                                       │
 ├────┬────────────────┬───────────────────────────────────┤
-│ 📑 │ ● Personal  +  │                                   │
+│ 📑 │ WS 1  WS 2  +  │                                   │
 │ ⭐ │────────────────│                                   │
-│ 🕐 │ Tab 1        × │         Web Content               │
+│ 🕐 │ 📌 Tab 1     × │         Web Content               │
 │ ⬇️ │ Tab 2        × │                                   │
 │    │                │                                   │
 │    │                │                                   │
@@ -21,7 +21,8 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 └─────────────────────┴───────────────────────────────────┘
 ```
 
-- **Left sidebar**: Panel icons, workspace selector, vertical tabs
+- **Left sidebar**: Panel icons, horizontal workspace tabs, vertical tabs
+- **Resizable sidebar**: Drag to resize between 200-400px
 - **Bottom toolbar**: Navigation buttons + URL bar with security indicator
 - **Dark theme** by default with consistent design system
 
@@ -31,8 +32,14 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 - Multi-process architecture for stability and security
 - Native macOS application with custom Cocoa UI
 - **Vivaldi-style sidebar** with vertical tabs
+- **Resizable sidebar** - drag to resize (200-400px)
 - **Bottom toolbar** with navigation and URL bar
-- **Workspace support** for organizing tabs
+- **Arc-style workspaces** - horizontal scrollable workspace tabs
+  - Create, rename, duplicate, delete workspaces
+  - Right-click context menu on workspace tabs
+  - Close button on each workspace tab
+- **Tab pinning** - pin tabs with visual indicator, warning on workspace close
+- **Session persistence** - restore workspaces and tabs on restart (Vivaldi-style)
 - **Collapsible sidebar** - click active panel icon to toggle
 - **History panel** with browsing history
 - **Favicons** displayed in tab list
@@ -58,7 +65,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j8
 
 # Run
-open build/PersonalBrowser.app
+open build/OrbFox.app
 ```
 
 ## Project Structure
@@ -77,7 +84,8 @@ personal-browser/
 │   │   └── browser_client.cpp  # CefClient and handlers
 │   ├── data/
 │   │   ├── window_settings.cpp # Window persistence
-│   │   └── history_storage.cpp # Browsing history (SQLite)
+│   │   ├── history_storage.cpp # Browsing history (SQLite)
+│   │   └── session_storage.cpp # Session persistence (JSON)
 │   ├── ui/
 │   │   ├── components/         # Reusable UI components
 │   │   │   ├── DesignSystem.h/mm   # Colors, typography, spacing
@@ -98,6 +106,7 @@ personal-browser/
 │   ├── tab.h                   # Tab data model
 │   ├── tab_manager.h           # Tab management interface
 │   ├── history_storage.h       # History storage interface
+│   ├── session_storage.h       # Session persistence interface
 │   ├── window_settings.h
 │   └── workspace.h             # Workspace data model
 ├── resources/
