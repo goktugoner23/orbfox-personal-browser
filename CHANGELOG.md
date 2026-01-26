@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-01-26
+
+### Added
+- **Download Progress Ring** - Rounded rectangle progress indicator around downloads icon
+  - Matches icon button shape (not circular)
+  - Only shows when file size is known
+  - Fills from top-center going clockwise
+- **Download Persistence** - Download history saved to disk
+  - Stored in `~/Library/Application Support/OrbFox/downloads.json`
+  - Completed/stopped downloads restored on app launch
+- **File Existence Checking** - Detects when downloaded files are deleted
+  - Shows "File deleted - double-click to re-download" status
+  - Grayed out filename and remove button (no folder button)
+  - Double-click to restart download
+- **Download Restart Improvements**
+  - Stopped downloads can be restarted with double-click
+  - Remembers Save/Save As preference for restarts
+  - New downloads always show confirmation dialog
+  - Original URL preserved for display and restart
+- **Downloads in History** - Download URLs added to browsing history
+- **Responsive Sidebar Panels** - Download and history rows resize with sidebar
+  - All elements properly anchored for resize
+
+### Changed
+- Progress bar only shown when download size is known
+- Progress ring hidden when size is unknown (no fake progress)
+- Stop button keeps download in list as "Stopped" (not removed)
+- "Remove from List" only removes entry, doesn't cancel active download
+- Status text shows only received bytes and speed when size unknown
+
+### Fixed
+- Fixed display of "-1%" when download percentage unknown
+- Fixed deprecated `openFile:` warning (now uses `openURL:`)
+- Fixed unused variable warnings in SidebarView
+
 ## [0.4.0] - 2026-01-26
 
 ### Added
@@ -25,11 +60,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Warning dialog when closing workspace with pinned tabs
 - **Bookmarks Panel** - Full bookmark management
   - SQLite-based bookmark storage (`~/Library/Application Support/OrbFox/bookmarks.db`)
-  - Add current page with + button
+  - Add current page with + button in panel
   - Click bookmark to open, close button to delete
   - Empty state message when no bookmarks
+- **Toolbar Bookmark Button** - Quick bookmark toggle in address bar
+  - Bookmark ribbon icon in actions area (right of URL bar)
+  - Filled icon when page is bookmarked
+  - Click to toggle bookmark state
+- **Real-time History** - History panel updates live as you browse
+  - New entries appear immediately when navigating to pages
+  - No need to reopen panel to see recent history
+- **Downloads Panel** - Full download management (Vivaldi-style)
+  - Download confirmation dialog before download starts
+    - Shows filename and file size
+    - Save button (saves to ~/Downloads)
+    - Save As button (opens file dialog)
+    - Cancel button
+    - Auto-renames file if exists (adds number suffix)
+  - Real-time progress bar with percentage
+  - Download speed display (KB/s, MB/s)
+  - File size info (received/total bytes)
+  - Show in Finder button for completed downloads
+  - Clear completed button to clean up list
+  - Status indicators (in progress, complete, canceled, failed)
 
 ### Changed
+- Sidebar bookmark icon changed from star to ribbon (matches toolbar)
+- Sidebar icons use `selected` state for active panel (persistent background)
+- Sidebar icons don't show hover background (only tint change on hover)
 - Workspace selector changed from dropdown to horizontal tab bar
 - Default workspace renamed from "Personal" to "WS 1"
 - Pin icon and close button share same position (swap on hover)
@@ -37,8 +95,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Technical
 - New `session_storage.h/cpp` for JSON-based session persistence
 - New `bookmark_storage.h/cpp` for SQLite-based bookmark storage
+- New `download_manager.h/cpp` for tracking downloads across browsers
 - Added resize handle view for sidebar resizing
 - Workspace tabs use horizontal NSScrollView
+- `DSIconButton` gains `selected` and `showsHoverBackground` properties
+- `DSButton` gains `resetHoverState` method
+- Toolbar has actions area for bookmark button and future extensions
+- `BrowserClient` implements `CefDownloadHandler` for download support
+- Download callbacks stored for cancel/pause/resume functionality
 
 ## [0.3.0] - 2026-01-26
 

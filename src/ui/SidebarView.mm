@@ -1,8 +1,10 @@
 #import "SidebarView.h"
 #import "MainWindowController.h"
 #import "Components.h"
+#import <objc/runtime.h>
 #include "history_storage.h"
 #include "bookmark_storage.h"
+#include "download_manager.h"
 
 // Extern function to access global storage
 extern HistoryStorage* GetHistoryStorage();
@@ -24,6 +26,466 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
 @implementation FlippedView
 - (BOOL)isFlipped { return YES; }
+@end
+
+// ============================================================================
+// ROUNDED RECT PROGRESS VIEW
+// Rounded rectangle progress ring for downloads icon (matches icon button shape)
+// ============================================================================
+
+@interface CircularProgressView : NSView
+@property (nonatomic, assign) CGFloat progress;  // 0.0 to 1.0
+@property (nonatomic, strong) NSColor* trackColor;
+@property (nonatomic, strong) NSColor* progressColor;
+@property (nonatomic, assign) CGFloat lineWidth;
+@property (nonatomic, assign) CGFloat cornerRadius;
+@end
+
+@implementation CircularProgressView
+
+- (instancetype)initWithFrame:(NSRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        _progress = 0.0;
+        _trackColor = [[DSColors textSecondary] colorWithAlphaComponent:0.3];
+        _progressColor = [DSColors accent];
+        _lineWidth = 2.5;
+        _cornerRadius = [DSLayout cornerRadiusMedium];
+        self.wantsLayer = YES;
+        self.layer.backgroundColor = [NSColor clearColor].CGColor;
+    }
+    return self;
+}
+
+- (BOOL)isOpaque {
+    return NO;
+}
+
+- (void)setProgress:(CGFloat)progress {
+    _progress = progress;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+
+    NSRect insetRect = NSInsetRect(self.bounds, _lineWidth / 2.0, _lineWidth / 2.0);
+    CGFloat cr = MIN(_cornerRadius, MIN(insetRect.size.width, insetRect.size.height) / 2.0);
+
+    // Draw track (background rounded rect)
+    NSBezierPath* trackPath = [NSBezierPath bezierPathWithRoundedRect:insetRect
+                                                              xRadius:cr
+                                                              yRadius:cr];
+    [_trackColor setStroke];
+    trackPath.lineWidth = _lineWidth;
+    [trackPath stroke];
+
+    // Draw progress starting from top-center, going clockwise
+    if (_progress > 0.001) {
+        CGFloat x = NSMinX(insetRect);
+        CGFloat y = NSMinY(insetRect);
+        CGFloat w = NSWidth(insetRect);
+        CGFloat h = NSHeight(insetRect);
+
+        // Calculate perimeter segments (clockwise from top-center)
+        // Segments: top-right half, top-right corner arc, right side, bottom-right corner arc,
+        //           bottom side, bottom-left corner arc, left side, top-left corner arc, top-left half
+        CGFloat arcLength = cr * M_PI / 2.0;  // Quarter circle arc length
+        CGFloat topHalf = (w - 2 * cr) / 2.0;
+        CGFloat rightSide = h - 2 * cr;
+        CGFloat bottomSide = w - 2 * cr;
+        CGFloat leftSide = h - 2 * cr;
+
+        CGFloat totalPerimeter = 2 * topHalf + 4 * arcLength + rightSide + bottomSide + leftSide;
+        CGFloat targetLength = _progress * totalPerimeter;
+
+        NSBezierPath* progressPath = [NSBezierPath bezierPath];
+        progressPath.lineWidth = _lineWidth;
+        progressPath.lineCapStyle = NSLineCapStyleRound;
+
+        CGFloat midTopX = x + w / 2.0;
+        CGFloat topY = y + h;
+        [progressPath moveToPoint:NSMakePoint(midTopX, topY)];
+
+        CGFloat drawn = 0;
+
+        // Segment 1: Top-right half line
+        if (drawn < targetLength) {
+            CGFloat segLen = topHalf;
+            CGFloat endX = x + w - cr;
+            if (drawn + segLen <= targetLength) {
+                [progressPath lineToPoint:NSMakePoint(endX, topY)];
+                drawn += segLen;
+            } else {
+                CGFloat ratio = (targetLength - drawn) / segLen;
+                [progressPath lineToPoint:NSMakePoint(midTopX + (topHalf * ratio), topY)];
+                drawn = targetLength;
+            }
+        }
+
+        // Segment 2: Top-right corner arc
+        if (drawn < targetLength) {
+            CGFloat segLen = arcLength;
+            CGFloat arcCenterX = x + w - cr;
+            CGFloat arcCenterY = y + h - cr;
+            if (drawn + segLen <= targetLength) {
+                [progressPath appendBezierPathWithArcWithCenter:NSMakePoint(arcCenterX, arcCenterY)
+                                                         radius:cr
+                                                     startAngle:90
+                                                       endAngle:0
+                                                      clockwise:YES];
+                drawn += segLen;
+            } else {
+                CGFloat ratio = (targetLength - drawn) / segLen;
+                CGFloat endAngle = 90 - 90 * ratio;
+                [progressPath appendBezierPathWithArcWithCenter:NSMakePoint(arcCenterX, arcCenterY)
+                                                         radius:cr
+                                                     startAngle:90
+                                                       endAngle:endAngle
+                                                      clockwise:YES];
+                drawn = targetLength;
+            }
+        }
+
+        // Segment 3: Right side
+        if (drawn < targetLength) {
+            CGFloat segLen = rightSide;
+            CGFloat endY = y + cr;
+            CGFloat rightX = x + w;
+            if (drawn + segLen <= targetLength) {
+                [progressPath lineToPoint:NSMakePoint(rightX, endY)];
+                drawn += segLen;
+            } else {
+                CGFloat ratio = (targetLength - drawn) / segLen;
+                [progressPath lineToPoint:NSMakePoint(rightX, (y + h - cr) - rightSide * ratio)];
+                drawn = targetLength;
+            }
+        }
+
+        // Segment 4: Bottom-right corner arc
+        if (drawn < targetLength) {
+            CGFloat segLen = arcLength;
+            CGFloat arcCenterX = x + w - cr;
+            CGFloat arcCenterY = y + cr;
+            if (drawn + segLen <= targetLength) {
+                [progressPath appendBezierPathWithArcWithCenter:NSMakePoint(arcCenterX, arcCenterY)
+                                                         radius:cr
+                                                     startAngle:0
+                                                       endAngle:-90
+                                                      clockwise:YES];
+                drawn += segLen;
+            } else {
+                CGFloat ratio = (targetLength - drawn) / segLen;
+                CGFloat endAngle = -90 * ratio;
+                [progressPath appendBezierPathWithArcWithCenter:NSMakePoint(arcCenterX, arcCenterY)
+                                                         radius:cr
+                                                     startAngle:0
+                                                       endAngle:endAngle
+                                                      clockwise:YES];
+                drawn = targetLength;
+            }
+        }
+
+        // Segment 5: Bottom side
+        if (drawn < targetLength) {
+            CGFloat segLen = bottomSide;
+            CGFloat endX = x + cr;
+            if (drawn + segLen <= targetLength) {
+                [progressPath lineToPoint:NSMakePoint(endX, y)];
+                drawn += segLen;
+            } else {
+                CGFloat ratio = (targetLength - drawn) / segLen;
+                [progressPath lineToPoint:NSMakePoint((x + w - cr) - bottomSide * ratio, y)];
+                drawn = targetLength;
+            }
+        }
+
+        // Segment 6: Bottom-left corner arc
+        if (drawn < targetLength) {
+            CGFloat segLen = arcLength;
+            CGFloat arcCenterX = x + cr;
+            CGFloat arcCenterY = y + cr;
+            if (drawn + segLen <= targetLength) {
+                [progressPath appendBezierPathWithArcWithCenter:NSMakePoint(arcCenterX, arcCenterY)
+                                                         radius:cr
+                                                     startAngle:-90
+                                                       endAngle:-180
+                                                      clockwise:YES];
+                drawn += segLen;
+            } else {
+                CGFloat ratio = (targetLength - drawn) / segLen;
+                CGFloat endAngle = -90 - 90 * ratio;
+                [progressPath appendBezierPathWithArcWithCenter:NSMakePoint(arcCenterX, arcCenterY)
+                                                         radius:cr
+                                                     startAngle:-90
+                                                       endAngle:endAngle
+                                                      clockwise:YES];
+                drawn = targetLength;
+            }
+        }
+
+        // Segment 7: Left side
+        if (drawn < targetLength) {
+            CGFloat segLen = leftSide;
+            CGFloat endY = y + h - cr;
+            if (drawn + segLen <= targetLength) {
+                [progressPath lineToPoint:NSMakePoint(x, endY)];
+                drawn += segLen;
+            } else {
+                CGFloat ratio = (targetLength - drawn) / segLen;
+                [progressPath lineToPoint:NSMakePoint(x, (y + cr) + leftSide * ratio)];
+                drawn = targetLength;
+            }
+        }
+
+        // Segment 8: Top-left corner arc
+        if (drawn < targetLength) {
+            CGFloat segLen = arcLength;
+            CGFloat arcCenterX = x + cr;
+            CGFloat arcCenterY = y + h - cr;
+            if (drawn + segLen <= targetLength) {
+                [progressPath appendBezierPathWithArcWithCenter:NSMakePoint(arcCenterX, arcCenterY)
+                                                         radius:cr
+                                                     startAngle:180
+                                                       endAngle:90
+                                                      clockwise:YES];
+                drawn += segLen;
+            } else {
+                CGFloat ratio = (targetLength - drawn) / segLen;
+                CGFloat endAngle = 180 - 90 * ratio;
+                [progressPath appendBezierPathWithArcWithCenter:NSMakePoint(arcCenterX, arcCenterY)
+                                                         radius:cr
+                                                     startAngle:180
+                                                       endAngle:endAngle
+                                                      clockwise:YES];
+                drawn = targetLength;
+            }
+        }
+
+        // Segment 9: Top-left half line
+        if (drawn < targetLength) {
+            CGFloat segLen = topHalf;
+            if (drawn + segLen <= targetLength) {
+                [progressPath lineToPoint:NSMakePoint(midTopX, topY)];
+            } else {
+                CGFloat ratio = (targetLength - drawn) / segLen;
+                [progressPath lineToPoint:NSMakePoint((x + cr) + topHalf * ratio, topY)];
+            }
+        }
+
+        [_progressColor setStroke];
+        [progressPath stroke];
+    }
+}
+
+@end
+
+// ============================================================================
+// DOWNLOAD ROW VIEW
+// Row view with right-click context menu, selection, and double-click for downloads
+// ============================================================================
+
+@interface DownloadRowView : NSView
+@property (nonatomic, assign) uint32_t downloadId;
+@property (nonatomic, copy) NSString* downloadPath;
+@property (nonatomic, copy) NSString* downloadUrl;
+@property (nonatomic, assign) BOOL isInProgress;
+@property (nonatomic, assign) BOOL isStopped;
+@property (nonatomic, assign) BOOL isComplete;
+@property (nonatomic, assign) BOOL isFileMissing;  // File was downloaded but deleted from disk
+@property (nonatomic, assign) BOOL isSelected;
+@property (nonatomic, weak) SidebarView* sidebarView;
+@end
+
+@implementation DownloadRowView {
+    NSTrackingArea* _trackingArea;
+    BOOL _isHovered;
+}
+
+- (instancetype)initWithFrame:(NSRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        _isSelected = NO;
+        _isHovered = NO;
+    }
+    return self;
+}
+
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (_trackingArea) {
+        [self removeTrackingArea:_trackingArea];
+    }
+    _trackingArea = [[NSTrackingArea alloc] initWithRect:self.bounds
+                                                 options:(NSTrackingMouseEnteredAndExited |
+                                                         NSTrackingActiveInKeyWindow)
+                                                   owner:self
+                                                userInfo:nil];
+    [self addTrackingArea:_trackingArea];
+}
+
+- (void)mouseEntered:(NSEvent*)event {
+    (void)event;
+    _isHovered = YES;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)mouseExited:(NSEvent*)event {
+    (void)event;
+    _isHovered = NO;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)mouseDown:(NSEvent*)event {
+    // Select this row
+    [_sidebarView selectDownloadRow:self];
+    [super mouseDown:event];
+}
+
+- (void)mouseUp:(NSEvent*)event {
+    if (event.clickCount == 2) {
+        [self handleDoubleClick];
+    }
+    [super mouseUp:event];
+}
+
+- (void)handleDoubleClick {
+    if (_isFileMissing) {
+        // File was deleted - restart download with previous choice
+        if (_downloadUrl) {
+            [_sidebarView restartDownload:_downloadUrl removingDownloadId:_downloadId];
+        }
+    } else if (_isComplete) {
+        // Open completed download
+        if (_downloadPath) {
+            [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:_downloadPath]];
+        }
+    } else if (_isStopped) {
+        // Restart stopped download - open URL in browser
+        if (_downloadUrl) {
+            [_sidebarView restartDownload:_downloadUrl removingDownloadId:_downloadId];
+        }
+    }
+    // For in-progress downloads, double-click does nothing
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    [super drawRect:dirtyRect];
+
+    // Draw selection/hover background
+    if (_isSelected) {
+        [[DSColors accent] colorWithAlphaComponent:0.2].set;
+        NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:self.bounds
+                                                            xRadius:self.layer.cornerRadius
+                                                            yRadius:self.layer.cornerRadius];
+        [path fill];
+    } else if (_isHovered) {
+        [[DSColors surface] colorWithAlphaComponent:0.5].set;
+        NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:self.bounds
+                                                            xRadius:self.layer.cornerRadius
+                                                            yRadius:self.layer.cornerRadius];
+        [path fill];
+    }
+}
+
+- (NSMenu*)menuForEvent:(NSEvent*)event {
+    // Select the row when right-clicking
+    [_sidebarView selectDownloadRow:self];
+
+    NSMenu* menu = [[NSMenu alloc] init];
+
+    if (_isInProgress) {
+        // In-progress download menu
+        NSMenuItem* stopItem = [[NSMenuItem alloc] initWithTitle:@"Stop"
+                                                          action:@selector(stopDownload:)
+                                                   keyEquivalent:@""];
+        stopItem.target = self;
+        [menu addItem:stopItem];
+    } else if (_isComplete) {
+        // Completed download menu
+        NSMenuItem* openItem = [[NSMenuItem alloc] initWithTitle:@"Open"
+                                                          action:@selector(openDownload:)
+                                                   keyEquivalent:@""];
+        openItem.target = self;
+        [menu addItem:openItem];
+
+        NSMenuItem* showItem = [[NSMenuItem alloc] initWithTitle:@"Show in Finder"
+                                                          action:@selector(showInFinder:)
+                                                   keyEquivalent:@""];
+        showItem.target = self;
+        [menu addItem:showItem];
+    } else if (_isStopped) {
+        // Stopped download menu
+        NSMenuItem* restartItem = [[NSMenuItem alloc] initWithTitle:@"Restart Download"
+                                                             action:@selector(restartDownloadAction:)
+                                                      keyEquivalent:@""];
+        restartItem.target = self;
+        [menu addItem:restartItem];
+    }
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* copyUrlItem = [[NSMenuItem alloc] initWithTitle:@"Copy Download Address"
+                                                         action:@selector(copyDownloadUrl:)
+                                                  keyEquivalent:@""];
+    copyUrlItem.target = self;
+    [menu addItem:copyUrlItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* removeItem = [[NSMenuItem alloc] initWithTitle:@"Remove from List"
+                                                        action:@selector(removeDownload:)
+                                                 keyEquivalent:@""];
+    removeItem.target = self;
+    [menu addItem:removeItem];
+
+    return menu;
+}
+
+- (void)openDownload:(id)sender {
+    (void)sender;
+    if (_downloadPath) {
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:_downloadPath]];
+    }
+}
+
+- (void)showInFinder:(id)sender {
+    (void)sender;
+    if (_downloadPath) {
+        [[NSWorkspace sharedWorkspace] selectFile:_downloadPath inFileViewerRootedAtPath:@""];
+    }
+}
+
+- (void)stopDownload:(id)sender {
+    (void)sender;
+    // Cancel the download through the manager (which calls CEF cancel callback)
+    DownloadManager::GetInstance().CancelDownload(_downloadId);
+    [_sidebarView reloadDownloads];
+}
+
+- (void)restartDownloadAction:(id)sender {
+    (void)sender;
+    if (_downloadUrl) {
+        [_sidebarView restartDownload:_downloadUrl removingDownloadId:_downloadId];
+    }
+}
+
+- (void)copyDownloadUrl:(id)sender {
+    (void)sender;
+    if (_downloadUrl) {
+        NSPasteboard* pb = [NSPasteboard generalPasteboard];
+        [pb clearContents];
+        [pb setString:_downloadUrl forType:NSPasteboardTypeString];
+    }
+}
+
+- (void)removeDownload:(id)sender {
+    (void)sender;
+    // Just remove from list, don't cancel if in progress
+    DownloadManager::GetInstance().RemoveDownload(_downloadId);
+    [_sidebarView reloadDownloads];
+}
+
 @end
 
 // ============================================================================
@@ -306,7 +768,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     FlippedView* _tabContainer;
     DSButton* _newTabButton;
     DSIconButton* _addWorkspaceBtn;
-    NSMutableArray<DSButton*>* _workspaceTabs;  // Array of workspace tab buttons
+    NSMutableArray<NSView*>* _workspaceTabs;  // Array of workspace tab containers
 
     // History panel
     NSView* _historyPanelContainer;
@@ -318,11 +780,18 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     NSScrollView* _bookmarksScrollView;
     FlippedView* _bookmarksContainer;
 
+    // Downloads panel
+    NSView* _downloadsPanelContainer;
+    NSScrollView* _downloadsScrollView;
+    FlippedView* _downloadsContainer;
+    DownloadRowView* _selectedDownloadRow;
+
     // Icon buttons
     DSIconButton* _tabsIcon;
     DSIconButton* _favoritesIcon;
     DSIconButton* _historyIcon;
     DSIconButton* _downloadsIcon;
+    CircularProgressView* _downloadProgressRing;  // Progress ring around downloads icon
 
     NSMutableArray<TabRowView*>* _tabRows;
     BOOL _isCollapsed;
@@ -373,6 +842,13 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     _downloadsIcon.tag = SidebarPanelDownloads;
     [_iconStrip addSubview:_downloadsIcon];
 
+    // Rounded rect progress ring around downloads icon (same size as icon)
+    _downloadProgressRing = [[CircularProgressView alloc] initWithFrame:NSMakeRect(
+        iconX, iconY, iconSize, iconSize)];
+    _downloadProgressRing.hidden = YES;
+    _downloadProgressRing.autoresizingMask = NSViewMinYMargin;
+    [_iconStrip addSubview:_downloadProgressRing positioned:NSWindowAbove relativeTo:_downloadsIcon];
+
     // Content area
     CGFloat contentX = kIconStripWidth;
     CGFloat contentWidth = kSidebarWidth - kIconStripWidth;
@@ -381,6 +857,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     [self setupTabsPanel:contentX width:contentWidth height:contentHeight];
     [self setupBookmarksPanel:contentX width:contentWidth height:contentHeight];
     [self setupHistoryPanel:contentX width:contentWidth height:contentHeight];
+    [self setupDownloadsPanel:contentX width:contentWidth height:contentHeight];
 
     [self updatePanelVisibility];
 
@@ -573,7 +1050,84 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     [_historyPanelContainer addSubview:_historyScrollView];
 
     _historyContainer = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, width, height - 50)];
+    _historyContainer.autoresizingMask = NSViewWidthSizable;
     _historyScrollView.documentView = _historyContainer;
+}
+
+- (void)setupDownloadsPanel:(CGFloat)x width:(CGFloat)width height:(CGFloat)height {
+    _downloadsPanelContainer = [[NSView alloc] initWithFrame:NSMakeRect(x, 0, width, height)];
+    _downloadsPanelContainer.autoresizingMask = NSViewHeightSizable | NSViewWidthSizable;
+    _downloadsPanelContainer.wantsLayer = YES;
+    _downloadsPanelContainer.layer.masksToBounds = YES;
+    _downloadsPanelContainer.hidden = YES;
+    [self addSubview:_downloadsPanelContainer];
+
+    // Downloads title
+    NSTextField* downloadsTitle = [[NSTextField alloc] initWithFrame:NSMakeRect(
+        [DSSpacing md], height - 40, width - [DSSpacing xl] - 32, 24)];
+    downloadsTitle.stringValue = @"Downloads";
+    downloadsTitle.font = [DSTypography fontWithStyle:DSFontStyleHeadline];
+    downloadsTitle.textColor = [DSColors textPrimary];
+    downloadsTitle.bezeled = NO;
+    downloadsTitle.drawsBackground = NO;
+    downloadsTitle.editable = NO;
+    downloadsTitle.selectable = NO;
+    downloadsTitle.autoresizingMask = NSViewMinYMargin;
+    [_downloadsPanelContainer addSubview:downloadsTitle];
+
+    // Clear completed button
+    DSIconButton* clearBtn = [DSIconButton buttonWithIcon:@"trash" tooltip:@"Clear completed"];
+    clearBtn.frame = NSMakeRect(width - 36, height - 40, 28, 28);
+    clearBtn.autoresizingMask = NSViewMinYMargin | NSViewMinXMargin;
+    clearBtn.target = self;
+    clearBtn.action = @selector(clearCompletedDownloads:);
+    [_downloadsPanelContainer addSubview:clearBtn];
+
+    // Downloads scroll view
+    _downloadsScrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(
+        0, 0, width, height - 50)];
+    _downloadsScrollView.hasVerticalScroller = YES;
+    _downloadsScrollView.hasHorizontalScroller = NO;
+    _downloadsScrollView.autohidesScrollers = YES;
+    _downloadsScrollView.drawsBackground = NO;
+    _downloadsScrollView.autoresizingMask = NSViewHeightSizable | NSViewWidthSizable;
+    [_downloadsPanelContainer addSubview:_downloadsScrollView];
+
+    _downloadsContainer = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, width, height - 50)];
+    _downloadsContainer.autoresizingMask = NSViewWidthSizable;
+    _downloadsScrollView.documentView = _downloadsContainer;
+
+    // Load download history from disk
+    DownloadManager::GetInstance().LoadFromDisk();
+
+    // Set up download manager callback for real-time updates
+    __weak SidebarView* weakSelf = self;
+    DownloadManager::GetInstance().SetUpdateCallback([weakSelf]() {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SidebarView* strongSelf = weakSelf;
+            if (!strongSelf) return;
+
+            // Update downloads panel if visible
+            if (strongSelf->_activePanel == SidebarPanelDownloads) {
+                [strongSelf reloadDownloads];
+            }
+
+            // Update progress indicator on downloads icon
+            [strongSelf updateDownloadProgressIndicator];
+        });
+    });
+}
+
+- (void)updateDownloadProgressIndicator {
+    float progress = DownloadManager::GetInstance().GetOverallProgress();
+
+    if (progress < 0) {
+        // No active downloads OR unknown size - hide progress ring
+        _downloadProgressRing.hidden = YES;
+    } else {
+        _downloadProgressRing.hidden = NO;
+        _downloadProgressRing.progress = progress;
+    }
 }
 
 #pragma mark - Actions
@@ -796,10 +1350,8 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
     // Check for pinned tabs in this workspace
     BOOL hasPinnedTabs = NO;
-    Workspace* workspaceToDelete = nullptr;
     for (const auto& workspace : _windowController.tabManager->GetWorkspaces()) {
         if (workspace->id == workspaceId) {
-            workspaceToDelete = workspace.get();
             for (const auto& tab : workspace->tabs) {
                 if (tab->is_pinned) {
                     hasPinnedTabs = YES;
@@ -922,7 +1474,6 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     if (!sourceWorkspace) return;
 
     // Create new workspace with copied name
-    size_t count = _windowController.tabManager->GetWorkspaces().size();
     NSString* newName = [NSString stringWithFormat:@"%s Copy", sourceWorkspace->name.c_str()];
 
     Workspace* newWorkspace = _windowController.tabManager->CreateWorkspace([newName UTF8String]);
@@ -955,6 +1506,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     _tabsPanelContainer.hidden = YES;
     _bookmarksPanelContainer.hidden = YES;
     _historyPanelContainer.hidden = YES;
+    _downloadsPanelContainer.hidden = YES;
 
     switch (_activePanel) {
         case SidebarPanelTabs:
@@ -968,7 +1520,9 @@ static const CGFloat kNewTabButtonHeight = 44.0;
             _historyPanelContainer.hidden = NO;
             [self reloadHistory];
             break;
-        default:
+        case SidebarPanelDownloads:
+            _downloadsPanelContainer.hidden = NO;
+            [self reloadDownloads];
             break;
     }
 }
@@ -1077,9 +1631,6 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     BookmarkStorage* bookmarks = GetBookmarkStorage();
     if (!bookmarks) return;
 
-    NSString* url = [NSString stringWithUTF8String:activeTab->url.c_str()];
-    NSString* title = [NSString stringWithUTF8String:activeTab->title.c_str()];
-
     // Toggle bookmark - remove if exists, add if not
     if (bookmarks->IsBookmarked(activeTab->url)) {
         bookmarks->DeleteBookmarkByUrl(activeTab->url);
@@ -1138,7 +1689,8 @@ static const CGFloat kNewTabButtonHeight = 44.0;
         row.onClick = ^{
             SidebarView* strongSelf = weakSelf;
             if (!strongSelf) return;
-            [strongSelf.windowController navigateToURL:urlCopy];
+            // Open as new tab in active workspace
+            [strongSelf.windowController createNewTab:urlCopy];
             strongSelf->_activePanel = SidebarPanelTabs;
             [strongSelf updateIconSelection];
             [strongSelf updatePanelVisibility];
@@ -1214,6 +1766,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
             dateHeader.drawsBackground = NO;
             dateHeader.editable = NO;
             dateHeader.selectable = NO;
+            dateHeader.autoresizingMask = NSViewWidthSizable;
             [_historyContainer addSubview:dateHeader];
             y += 28;
             lastDateString = dateString;
@@ -1222,6 +1775,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
         // History row using DSHistoryRow
         DSHistoryRow* row = [[DSHistoryRow alloc] initWithFrame:NSMakeRect(
             [DSSpacing xs], y, contentWidth - [DSSpacing sm], rowHeight)];
+        row.autoresizingMask = NSViewWidthSizable;
         row.title = [NSString stringWithUTF8String:entry.title.empty()
             ? entry.url.c_str() : entry.title.c_str()];
         row.url = [NSString stringWithUTF8String:entry.url.c_str()];
@@ -1232,7 +1786,8 @@ static const CGFloat kNewTabButtonHeight = 44.0;
         row.onClick = ^{
             SidebarView* strongSelf = weakSelf;
             if (!strongSelf) return;
-            [strongSelf.windowController navigateToURL:urlCopy];
+            // Open as new tab in active workspace
+            [strongSelf.windowController createNewTab:urlCopy];
             strongSelf->_activePanel = SidebarPanelTabs;
             [strongSelf updateIconSelection];
             [strongSelf updatePanelVisibility];
@@ -1243,6 +1798,326 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     }
 
     _historyContainer.frame = NSMakeRect(0, 0, contentWidth, MAX(y, _historyScrollView.bounds.size.height));
+}
+
+#pragma mark - Downloads
+
+- (void)clearCompletedDownloads:(id)sender {
+    (void)sender;
+    DownloadManager::GetInstance().ClearCompleted();
+    [self reloadDownloads];
+}
+
+- (NSString*)formatBytes:(int64_t)bytes {
+    if (bytes < 0) {
+        return @"Unknown";
+    } else if (bytes < 1024) {
+        return [NSString stringWithFormat:@"%lld B", bytes];
+    } else if (bytes < 1024 * 1024) {
+        return [NSString stringWithFormat:@"%.1f KB", bytes / 1024.0];
+    } else if (bytes < 1024 * 1024 * 1024) {
+        return [NSString stringWithFormat:@"%.1f MB", bytes / (1024.0 * 1024.0)];
+    } else {
+        return [NSString stringWithFormat:@"%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0)];
+    }
+}
+
+- (NSString*)formatSpeed:(int64_t)bytesPerSec {
+    if (bytesPerSec < 1024) {
+        return [NSString stringWithFormat:@"%lld B/s", bytesPerSec];
+    } else if (bytesPerSec < 1024 * 1024) {
+        return [NSString stringWithFormat:@"%.1f KB/s", bytesPerSec / 1024.0];
+    } else {
+        return [NSString stringWithFormat:@"%.1f MB/s", bytesPerSec / (1024.0 * 1024.0)];
+    }
+}
+
+- (void)reloadDownloads {
+    // Clear selection since views are being recreated
+    _selectedDownloadRow = nil;
+
+    for (NSView* subview in _downloadsContainer.subviews.copy) {
+        [subview removeFromSuperview];
+    }
+
+    std::vector<DownloadItem> downloads = DownloadManager::GetInstance().GetDownloads();
+    CGFloat contentWidth = _downloadsContainer.bounds.size.width;
+    CGFloat y = 0;
+    CGFloat rowHeight = 72;  // Taller to fit progress bar
+
+    if (downloads.empty()) {
+        // Show empty state
+        NSTextField* emptyLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(
+            [DSSpacing md], y + 20, contentWidth - [DSSpacing xl], 40)];
+        emptyLabel.stringValue = @"No downloads yet.\nDownloaded files will appear here.";
+        emptyLabel.font = [DSTypography fontWithStyle:DSFontStyleBody];
+        emptyLabel.textColor = [DSColors textSecondary];
+        emptyLabel.bezeled = NO;
+        emptyLabel.drawsBackground = NO;
+        emptyLabel.editable = NO;
+        emptyLabel.selectable = NO;
+        emptyLabel.alignment = NSTextAlignmentCenter;
+        [_downloadsContainer addSubview:emptyLabel];
+        return;
+    }
+
+    for (const auto& download : downloads) {
+        // Create row container with right-click support
+        DownloadRowView* row = [[DownloadRowView alloc] initWithFrame:NSMakeRect(
+            [DSSpacing xs], y, contentWidth - [DSSpacing sm], rowHeight)];
+        row.wantsLayer = YES;
+        row.layer.cornerRadius = [DSLayout cornerRadiusMedium];
+        row.autoresizingMask = NSViewWidthSizable;
+        row.downloadId = download.id;
+        row.downloadPath = [NSString stringWithUTF8String:download.full_path.c_str()];
+        // Use original_url for display/copy (the URL user sees), fallback to url
+        std::string display_url = download.original_url.empty() ? download.url : download.original_url;
+        row.downloadUrl = [NSString stringWithUTF8String:display_url.c_str()];
+        row.isInProgress = (download.state == DownloadState::InProgress ||
+                            download.state == DownloadState::Paused);
+        row.isStopped = (download.state == DownloadState::Canceled ||
+                         download.state == DownloadState::Interrupted);
+        row.isComplete = (download.state == DownloadState::Complete);
+        row.sidebarView = self;
+
+        // Check if completed file still exists on disk
+        BOOL fileMissing = NO;
+        if (row.isComplete && row.downloadPath.length > 0) {
+            NSFileManager* fm = [NSFileManager defaultManager];
+            if (![fm fileExistsAtPath:row.downloadPath]) {
+                fileMissing = YES;
+                row.isFileMissing = YES;
+            }
+        }
+
+        // Filename
+        NSString* filename = [NSString stringWithUTF8String:download.filename.c_str()];
+        if (!filename || filename.length == 0) {
+            // Extract from URL if no filename
+            NSString* url = [NSString stringWithUTF8String:download.url.c_str()];
+            filename = [url lastPathComponent];
+            if (!filename || filename.length == 0) {
+                filename = @"download";
+            }
+        }
+
+        NSTextField* filenameLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(
+            [DSSpacing sm], rowHeight - 24, contentWidth - [DSSpacing xl] - 40, 18)];
+        filenameLabel.stringValue = filename ?: @"Unknown";
+        filenameLabel.font = [DSTypography fontWithStyle:DSFontStyleBody];
+        filenameLabel.textColor = [DSColors textPrimary];
+        filenameLabel.bezeled = NO;
+        filenameLabel.drawsBackground = NO;
+        filenameLabel.editable = NO;
+        filenameLabel.selectable = NO;
+        filenameLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
+        filenameLabel.autoresizingMask = NSViewWidthSizable;
+        [row addSubview:filenameLabel];
+
+        // Status icon/button on right
+        DSIconButton* actionBtn = nil;
+        if (download.state == DownloadState::InProgress || download.state == DownloadState::Paused) {
+            actionBtn = [DSIconButton buttonWithIcon:@"xmark.circle" tooltip:@"Cancel"];
+        } else if (download.state == DownloadState::Complete && !fileMissing) {
+            actionBtn = [DSIconButton buttonWithIcon:@"folder" tooltip:@"Show in Finder"];
+        } else {
+            // Stopped, failed, or file missing - show remove button
+            actionBtn = [DSIconButton buttonWithIcon:@"xmark.circle" tooltip:@"Remove"];
+        }
+
+        if (actionBtn) {
+            actionBtn.frame = NSMakeRect(contentWidth - [DSSpacing sm] - 28, rowHeight - 28, 24, 24);
+            actionBtn.autoresizingMask = NSViewMinXMargin;  // Anchor to right edge
+            [row addSubview:actionBtn];
+
+            // Set action based on state
+            if (download.state == DownloadState::InProgress || download.state == DownloadState::Paused) {
+                actionBtn.target = self;
+                actionBtn.action = @selector(cancelDownload:);
+                objc_setAssociatedObject(actionBtn, "downloadId",
+                    [NSNumber numberWithUnsignedInt:download.id], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            } else if (download.state == DownloadState::Complete && !fileMissing) {
+                NSString* path = [NSString stringWithUTF8String:download.full_path.c_str()];
+                actionBtn.target = self;
+                actionBtn.action = @selector(revealDownload:);
+                objc_setAssociatedObject(actionBtn, "downloadPath", path, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            } else {
+                // Stopped, failed, or file missing - remove from list
+                actionBtn.target = self;
+                actionBtn.action = @selector(removeDownloadFromList:);
+                objc_setAssociatedObject(actionBtn, "downloadId",
+                    [NSNumber numberWithUnsignedInt:download.id], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+        }
+
+        // Progress bar and status (only for in-progress downloads)
+        if (download.state == DownloadState::InProgress || download.state == DownloadState::Paused) {
+            BOOL sizeKnown = (download.total_bytes > 0 && download.percent_complete >= 0);
+
+            // Only show progress bar when size is known
+            if (sizeKnown) {
+                // Progress background
+                NSView* progressBg = [[NSView alloc] initWithFrame:NSMakeRect(
+                    [DSSpacing sm], 28, contentWidth - [DSSpacing xl] - 8, 6)];
+                progressBg.wantsLayer = YES;
+                progressBg.layer.backgroundColor = [DSColors surface].CGColor;
+                progressBg.layer.cornerRadius = 3;
+                progressBg.autoresizingMask = NSViewWidthSizable;
+                [row addSubview:progressBg];
+
+                // Progress fill - use percentage of parent width
+                CGFloat progressPercent = download.percent_complete / 100.0;
+                CGFloat progressWidth = (contentWidth - [DSSpacing xl] - 8) * progressPercent;
+                NSView* progressFill = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, progressWidth, 6)];
+                progressFill.wantsLayer = YES;
+                progressFill.layer.backgroundColor = download.state == DownloadState::Paused
+                    ? [DSColors warning].CGColor : [DSColors accent].CGColor;
+                progressFill.layer.cornerRadius = 3;
+                progressFill.autoresizingMask = NSViewWidthSizable;
+                [progressBg addSubview:progressFill];
+            }
+
+            // Status text: percentage, speed, size
+            NSString* statusText;
+            if (download.state == DownloadState::Paused) {
+                if (sizeKnown) {
+                    statusText = [NSString stringWithFormat:@"Paused - %d%% of %@",
+                        download.percent_complete, [self formatBytes:download.total_bytes]];
+                } else {
+                    statusText = [NSString stringWithFormat:@"Paused - %@",
+                        [self formatBytes:download.received_bytes]];
+                }
+            } else {
+                // In progress
+                if (sizeKnown) {
+                    // Known total size
+                    statusText = [NSString stringWithFormat:@"%d%% - %@ - %@ of %@",
+                        download.percent_complete,
+                        [self formatSpeed:download.current_speed],
+                        [self formatBytes:download.received_bytes],
+                        [self formatBytes:download.total_bytes]];
+                } else {
+                    // Unknown total size - just show downloaded amount and speed
+                    statusText = [NSString stringWithFormat:@"%@ - %@",
+                        [self formatBytes:download.received_bytes],
+                        [self formatSpeed:download.current_speed]];
+                }
+            }
+
+            // Adjust status label position based on whether progress bar is shown
+            CGFloat statusY = sizeKnown ? 8 : 20;
+            NSTextField* statusLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(
+                [DSSpacing sm], statusY, contentWidth - [DSSpacing xl], 16)];
+            statusLabel.stringValue = statusText;
+            statusLabel.font = [DSTypography fontWithStyle:DSFontStyleCaption];
+            statusLabel.textColor = [DSColors textSecondary];
+            statusLabel.bezeled = NO;
+            statusLabel.drawsBackground = NO;
+            statusLabel.autoresizingMask = NSViewWidthSizable;
+            statusLabel.editable = NO;
+            statusLabel.selectable = NO;
+            [row addSubview:statusLabel];
+        } else {
+            // Completed/stopped/failed status
+            NSString* statusText;
+            NSColor* statusColor;
+            if (fileMissing) {
+                // File was downloaded but deleted from disk
+                statusText = @"File deleted - double-click to re-download";
+                statusColor = [DSColors textSecondary];
+                // Gray out the filename too
+                filenameLabel.textColor = [DSColors textSecondary];
+            } else if (download.state == DownloadState::Complete) {
+                statusText = [NSString stringWithFormat:@"Completed - %@",
+                    [self formatBytes:download.total_bytes > 0 ? download.total_bytes : download.received_bytes]];
+                statusColor = [DSColors success];
+            } else if (download.state == DownloadState::Canceled) {
+                if (download.received_bytes > 0) {
+                    statusText = [NSString stringWithFormat:@"Stopped - %@ downloaded",
+                        [self formatBytes:download.received_bytes]];
+                } else {
+                    statusText = @"Stopped";
+                }
+                statusColor = [DSColors textSecondary];
+            } else {
+                statusText = @"Failed";
+                statusColor = [DSColors error];
+            }
+
+            NSTextField* statusLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(
+                [DSSpacing sm], 20, contentWidth - [DSSpacing xl], 16)];
+            statusLabel.stringValue = statusText;
+            statusLabel.font = [DSTypography fontWithStyle:DSFontStyleCaption];
+            statusLabel.textColor = statusColor;
+            statusLabel.bezeled = NO;
+            statusLabel.drawsBackground = NO;
+            statusLabel.editable = NO;
+            statusLabel.selectable = NO;
+            statusLabel.autoresizingMask = NSViewWidthSizable;
+            [row addSubview:statusLabel];
+        }
+
+        [_downloadsContainer addSubview:row];
+        y += rowHeight + [DSSpacing xs];
+    }
+
+    _downloadsContainer.frame = NSMakeRect(0, 0, contentWidth, MAX(y, _downloadsScrollView.bounds.size.height));
+}
+
+- (void)revealDownload:(DSIconButton*)sender {
+    NSString* path = objc_getAssociatedObject(sender, "downloadPath");
+    if (path) {
+        [[NSWorkspace sharedWorkspace] selectFile:path inFileViewerRootedAtPath:@""];
+    }
+}
+
+- (void)cancelDownload:(DSIconButton*)sender {
+    NSNumber* downloadIdNum = objc_getAssociatedObject(sender, "downloadId");
+    if (downloadIdNum) {
+        uint32_t downloadId = [downloadIdNum unsignedIntValue];
+        DownloadManager::GetInstance().CancelDownload(downloadId);
+        [self reloadDownloads];
+    }
+}
+
+- (void)removeDownloadFromList:(DSIconButton*)sender {
+    NSNumber* downloadIdNum = objc_getAssociatedObject(sender, "downloadId");
+    if (downloadIdNum) {
+        uint32_t downloadId = [downloadIdNum unsignedIntValue];
+        DownloadManager::GetInstance().RemoveDownload(downloadId);
+        [self reloadDownloads];
+    }
+}
+
+- (void)selectDownloadRow:(DownloadRowView*)row {
+    // Deselect previous
+    if (_selectedDownloadRow && _selectedDownloadRow != row) {
+        _selectedDownloadRow.isSelected = NO;
+        [_selectedDownloadRow setNeedsDisplay:YES];
+    }
+
+    // Select new
+    _selectedDownloadRow = row;
+    row.isSelected = YES;
+    [row setNeedsDisplay:YES];
+}
+
+- (void)restartDownload:(NSString*)url {
+    [self restartDownload:url removingDownloadId:0];
+}
+
+- (void)restartDownload:(NSString*)url removingDownloadId:(uint32_t)downloadId {
+    (void)downloadId;  // Not removing anymore - new download will appear as separate entry
+    if (!_windowController || !url) return;
+
+    // Set pending original URL for the new download
+    DownloadManager::GetInstance().SetPendingOriginalUrl([url UTF8String]);
+
+    // Mark this as a restart so the saved download preference is used
+    DownloadManager::GetInstance().SetIsRestart(true);
+
+    // Navigate to the URL to restart the download
+    [_windowController navigateToURL:url];
 }
 
 #pragma mark - Drawing

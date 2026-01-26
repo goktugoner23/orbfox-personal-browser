@@ -43,8 +43,14 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 - **Bookmarks panel** - add/remove bookmarks, SQLite storage
 - **Collapsible sidebar** - click active panel icon to toggle
 - **History panel** with browsing history
+- **Downloads panel** - full download management
+  - Progress bar and icon ring (only when size is known)
+  - Stop/restart downloads, remembered save preferences
+  - Detects deleted files, allows re-download
+  - Persistent download history
 - **Favicons** displayed in tab list
 - **Loading indicators** with animated progress bar
+- **Responsive sidebar** - panels resize with sidebar width
 - Window position/size persistence
 - Keyboard shortcuts (Cmd+T, Cmd+W, Cmd+L, Cmd+1-9, etc.)
 - Context menu navigation

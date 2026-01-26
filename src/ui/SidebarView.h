@@ -3,6 +3,7 @@
 #import <Cocoa/Cocoa.h>
 
 @class MainWindowController;
+@class DownloadRowView;
 
 // Sidebar panel type
 typedef NS_ENUM(NSInteger, SidebarPanel) {
@@ -29,6 +30,11 @@ typedef NS_ENUM(NSInteger, SidebarPanel) {
 - (void)updateLayoutForWidth:(CGFloat)newWidth;
 - (void)updateWorkspaceButton;
 - (void)reloadBookmarks;
+- (void)reloadHistory;
+- (void)reloadDownloads;
+- (void)selectDownloadRow:(DownloadRowView*)row;
+- (void)restartDownload:(NSString*)url;
+- (void)restartDownload:(NSString*)url removingDownloadId:(uint32_t)downloadId;
 
 @end
 

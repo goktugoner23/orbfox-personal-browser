@@ -1,4 +1,6 @@
 #include "browser_client.h"
+#include "download_manager.h"
+#include "history_storage.h"
 
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
@@ -6,6 +8,10 @@
 #include "include/wrapper/cef_helpers.h"
 
 #include <sstream>
+#include <filesystem>
+
+// Extern function to access global history storage
+extern HistoryStorage* GetHistoryStorage();
 
 // Callback for favicon download
 class FaviconDownloadCallback : public CefDownloadImageCallback {
@@ -309,4 +315,154 @@ bool BrowserClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
         }
     }
     return false;
+}
+
+// CefDownloadHandler methods
+
+bool BrowserClient::OnBeforeDownload(CefRefPtr<CefBrowser> browser,
+                                     CefRefPtr<CefDownloadItem> download_item,
+                                     const CefString& suggested_name,
+                                     CefRefPtr<CefBeforeDownloadCallback> callback) {
+    (void)browser;
+    CEF_REQUIRE_UI_THREAD();
+
+    // If we have a dialog callback, show the download dialog
+    if (on_download_dialog_) {
+        on_download_dialog_(
+            suggested_name.ToString(),
+            download_item->GetTotalBytes(),
+            callback
+        );
+        return true;
+    }
+
+    // Fallback: direct download to ~/Downloads
+    std::string downloads_path;
+    const char* home = getenv("HOME");
+    if (home) {
+        downloads_path = std::string(home) + "/Downloads/" + suggested_name.ToString();
+    } else {
+        downloads_path = "/tmp/" + suggested_name.ToString();
+    }
+
+    callback->Continue(downloads_path, false);
+    return true;
+}
+
+void BrowserClient::OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
+                                      CefRefPtr<CefDownloadItem> download_item,
+                                      CefRefPtr<CefDownloadItemCallback> callback) {
+    (void)browser;
+    CEF_REQUIRE_UI_THREAD();
+
+    uint32_t download_id = download_item->GetId();
+    std::string full_path = download_item->GetFullPath().ToString();
+
+    // Only track downloads that have been confirmed (have a save path)
+    // This prevents showing downloads before user clicks Save/Save As
+    if (full_path.empty()) {
+        // Download not yet confirmed or was canceled before starting
+        if (download_item->IsCanceled()) {
+            download_callbacks_.erase(download_id);
+        }
+        return;
+    }
+
+    // Check if this is a new download (first time we see it with valid path)
+    bool is_new_download = (download_callbacks_.find(download_id) == download_callbacks_.end());
+
+    // Store callback for later use (cancel/pause/resume)
+    download_callbacks_[download_id] = callback;
+
+    // Register cancel callback with DownloadManager
+    CefRefPtr<CefDownloadItemCallback> cancel_cb = callback;
+    DownloadManager::GetInstance().SetCancelCallback(download_id, [cancel_cb]() {
+        if (cancel_cb) {
+            cancel_cb->Cancel();
+        }
+    });
+
+    // Add to history when download starts (first time only)
+    if (is_new_download) {
+        std::string url = download_item->GetURL().ToString();
+        if (!url.empty()) {
+            HistoryStorage* history = GetHistoryStorage();
+            if (history) {
+                // Extract filename for title
+                std::string filename;
+                size_t lastSlash = full_path.find_last_of('/');
+                if (lastSlash != std::string::npos) {
+                    filename = full_path.substr(lastSlash + 1);
+                } else {
+                    filename = full_path;
+                }
+                std::string title = "Download: " + filename;
+                history->AddEntry(url, title);
+            }
+        }
+    }
+
+    // Update download item
+    DownloadItem item;
+    item.id = download_id;
+    item.url = download_item->GetURL().ToString();
+
+    // Set original URL - check for pending URL first (for restarts), then use CEF's URL
+    if (is_new_download) {
+        std::string pending_url = DownloadManager::GetInstance().GetAndClearPendingOriginalUrl();
+        if (!pending_url.empty()) {
+            item.original_url = pending_url;
+        } else {
+            // For new downloads triggered by clicking a link, use the original URL from CEF if available
+            std::string cef_original = download_item->GetOriginalUrl().ToString();
+            if (!cef_original.empty()) {
+                item.original_url = cef_original;
+            } else {
+                item.original_url = item.url;
+            }
+        }
+    }
+
+    item.full_path = full_path;
+    item.mime_type = download_item->GetMimeType().ToString();
+    item.total_bytes = download_item->GetTotalBytes();
+    item.received_bytes = download_item->GetReceivedBytes();
+    item.percent_complete = download_item->GetPercentComplete();
+    item.current_speed = download_item->GetCurrentSpeed();
+
+    // Get filename - extract from path (most reliable)
+    size_t lastSlash = full_path.find_last_of('/');
+    if (lastSlash != std::string::npos) {
+        item.filename = full_path.substr(lastSlash + 1);
+    } else {
+        item.filename = full_path;
+    }
+
+    // Determine state
+    bool should_save = false;
+    if (download_item->IsComplete()) {
+        item.state = DownloadState::Complete;
+        item.end_time = std::time(nullptr);
+        download_callbacks_.erase(download_id);  // No longer need callback
+        should_save = true;
+    } else if (download_item->IsCanceled()) {
+        item.state = DownloadState::Canceled;
+        item.end_time = std::time(nullptr);
+        download_callbacks_.erase(download_id);
+        should_save = true;
+    } else if (download_item->IsInterrupted()) {
+        item.state = DownloadState::Interrupted;
+        should_save = true;
+    } else if (download_item->IsPaused()) {
+        item.state = DownloadState::Paused;
+    } else if (download_item->IsInProgress()) {
+        item.state = DownloadState::InProgress;
+    }
+
+    DownloadManager::GetInstance().UpdateDownload(item);
+
+    // Save to disk when download finishes (complete, canceled, or interrupted)
+    if (should_save) {
+        DownloadManager::GetInstance().SaveToDisk();
+    }
 }

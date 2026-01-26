@@ -41,6 +41,7 @@ add_subdirectory(${CEF_LIBCEF_DLL_WRAPPER_PATH} libcef_dll_wrapper)
 set(SOURCES
     src/main.cpp
     src/client/browser_client.cpp
+    src/client/download_manager.cpp
     src/data/window_settings.cpp
     src/data/history_storage.cpp
     src/data/bookmark_storage.cpp
@@ -51,6 +52,7 @@ set(SOURCES
 set(HEADERS
     include/browser_app.h
     include/browser_client.h
+    include/download_manager.h
     include/window_settings.h
     include/history_storage.h
     include/bookmark_storage.h

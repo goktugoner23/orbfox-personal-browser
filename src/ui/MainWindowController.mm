@@ -8,6 +8,7 @@
 #include "include/views/cef_browser_view.h"
 #include "history_storage.h"
 #include "bookmark_storage.h"
+#include "download_manager.h"
 
 // Extern functions to access global storage
 extern HistoryStorage* GetHistoryStorage();
@@ -360,12 +361,14 @@ static const CGFloat kResizeHandleWidth = 6.0;
             strongSelf.tabManager->UpdateTabLoadingState(tabId, isLoading);
 
             // Record history when page finishes loading
+            BOOL historyAdded = NO;
             if (!isLoading) {
                 Tab* tab = strongSelf.tabManager->GetTabById(tabId);
                 if (tab && !tab->url.empty() && tab->url.find("data:") != 0) {
                     HistoryStorage* history = GetHistoryStorage();
                     if (history) {
                         history->AddEntry(tab->url, tab->title);
+                        historyAdded = YES;
                     }
                 }
             }
@@ -375,6 +378,11 @@ static const CGFloat kResizeHandleWidth = 6.0;
                     strongSelf.tabManager->GetActiveTab()->id == tabId) {
                     [strongSelf.toolbarView setCanGoBack:canGoBack canGoForward:canGoForward];
                     [strongSelf.toolbarView setLoading:isLoading];
+                }
+
+                // Refresh history panel if visible and history was just added
+                if (historyAdded) {
+                    [strongSelf reloadHistoryPanelIfVisible];
                 }
             });
         }
@@ -396,6 +404,26 @@ static const CGFloat kResizeHandleWidth = 6.0;
         if (strongSelf && strongSelf.tabManager) {
             strongSelf.tabManager->UpdateTabFavicon(tabId, url, png_data);
         }
+    });
+
+    // Handle download dialog
+    client->SetDownloadDialogCallback([weakSelf](const std::string& suggested_name,
+                                                  int64_t total_bytes,
+                                                  CefRefPtr<CefBeforeDownloadCallback> callback) {
+        MainWindowController* strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        // Get filename - use suggested_name or generate one
+        NSString* filename = nil;
+        if (!suggested_name.empty()) {
+            filename = [NSString stringWithUTF8String:suggested_name.c_str()];
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [strongSelf showDownloadDialogForFile:filename
+                                             size:total_bytes
+                                         callback:callback];
+        });
     });
 
     // Create browser settings
@@ -695,6 +723,130 @@ static const CGFloat kIconStripWidth = 44.0;
 
     BOOL isBookmarked = bookmarks->IsBookmarked(activeTab->url);
     [_toolbarView setBookmarked:isBookmarked];
+}
+
+#pragma mark - History
+
+- (void)reloadHistoryPanelIfVisible {
+    if (_sidebarView.activePanel == SidebarPanelHistory) {
+        [_sidebarView reloadHistory];
+    }
+}
+
+#pragma mark - Downloads
+
+- (NSString*)formatBytesForDialog:(int64_t)bytes {
+    if (bytes < 0) {
+        return @"Unknown size";
+    } else if (bytes < 1024) {
+        return [NSString stringWithFormat:@"%lld bytes", bytes];
+    } else if (bytes < 1024 * 1024) {
+        return [NSString stringWithFormat:@"%.1f KB", bytes / 1024.0];
+    } else if (bytes < 1024 * 1024 * 1024) {
+        return [NSString stringWithFormat:@"%.1f MB", bytes / (1024.0 * 1024.0)];
+    } else {
+        return [NSString stringWithFormat:@"%.2f GB", bytes / (1024.0 * 1024.0 * 1024.0)];
+    }
+}
+
+- (void)showDownloadDialogForFile:(NSString*)filename
+                             size:(int64_t)totalBytes
+                         callback:(CefRefPtr<CefBeforeDownloadCallback>)callback {
+    // Ensure we have a valid filename
+    NSString* safeName = filename;
+    if (!safeName || safeName.length == 0) {
+        safeName = @"download";
+    }
+
+    // Check if this is a restart (resuming a stopped download)
+    bool isRestart = DownloadManager::GetInstance().GetAndClearIsRestart();
+    if (isRestart) {
+        // For restarts, use saved preference if available
+        NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+        NSString* lastChoice = [defaults stringForKey:@"DownloadAction"];
+
+        if ([lastChoice isEqualToString:@"save"]) {
+            [self saveDownloadToDefaultLocation:safeName callback:callback];
+            return;
+        } else if ([lastChoice isEqualToString:@"saveAs"]) {
+            [self showSavePanelForFile:safeName callback:callback rememberChoice:NO];
+            return;
+        }
+        // No saved preference, fall through to show dialog
+    }
+
+    // Show the dialog for new downloads or when no preference saved
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = @"Download File";
+
+    NSString* sizeStr = (totalBytes > 0) ? [self formatBytesForDialog:totalBytes] : @"Unknown";
+    alert.informativeText = [NSString stringWithFormat:@"File: %@\nSize: %@\n\nWhere would you like to save this file?",
+                             safeName, sizeStr];
+
+    // Add buttons (in order: Save, Save As..., Cancel)
+    [alert addButtonWithTitle:@"Save"];
+    [alert addButtonWithTitle:@"Save As..."];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    // Set button key equivalents
+    alert.buttons[0].keyEquivalent = @"\r";  // Return key for Save
+    alert.buttons[2].keyEquivalent = @"\033";  // Escape for Cancel
+
+    // Show as sheet
+    [alert beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse response) {
+        if (response == NSAlertFirstButtonReturn) {
+            // Remember choice for restarts
+            [[NSUserDefaults standardUserDefaults] setObject:@"save" forKey:@"DownloadAction"];
+            [self saveDownloadToDefaultLocation:safeName callback:callback];
+
+        } else if (response == NSAlertSecondButtonReturn) {
+            // Remember choice for restarts
+            [[NSUserDefaults standardUserDefaults] setObject:@"saveAs" forKey:@"DownloadAction"];
+            [self showSavePanelForFile:safeName callback:callback rememberChoice:NO];
+        }
+        // Cancel - don't call Continue, download is canceled
+    }];
+}
+
+- (void)saveDownloadToDefaultLocation:(NSString*)filename callback:(CefRefPtr<CefBeforeDownloadCallback>)callback {
+    NSString* downloadsPath = [NSHomeDirectory() stringByAppendingPathComponent:@"Downloads"];
+    NSString* fullPath = [downloadsPath stringByAppendingPathComponent:filename];
+
+    // Check if file exists and add number suffix if needed
+    NSFileManager* fm = [NSFileManager defaultManager];
+    if ([fm fileExistsAtPath:fullPath]) {
+        NSString* baseName = [filename stringByDeletingPathExtension];
+        NSString* ext = [filename pathExtension];
+        int counter = 1;
+        do {
+            NSString* newName;
+            if (ext.length > 0) {
+                newName = [NSString stringWithFormat:@"%@ (%d).%@", baseName, counter, ext];
+            } else {
+                newName = [NSString stringWithFormat:@"%@ (%d)", baseName, counter];
+            }
+            fullPath = [downloadsPath stringByAppendingPathComponent:newName];
+            counter++;
+        } while ([fm fileExistsAtPath:fullPath]);
+    }
+
+    callback->Continue([fullPath UTF8String], false);
+}
+
+- (void)showSavePanelForFile:(NSString*)filename
+                    callback:(CefRefPtr<CefBeforeDownloadCallback>)callback
+              rememberChoice:(BOOL)remember {
+    (void)remember;
+    NSSavePanel* savePanel = [NSSavePanel savePanel];
+    savePanel.nameFieldStringValue = filename;
+    savePanel.directoryURL = [NSURL fileURLWithPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Downloads"]];
+
+    [savePanel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse panelResponse) {
+        if (panelResponse == NSModalResponseOK && savePanel.URL) {
+            callback->Continue([savePanel.URL.path UTF8String], false);
+        }
+        // If canceled, don't call Continue - download is canceled
+    }];
 }
 
 #pragma mark - Keyboard Shortcuts

@@ -7,10 +7,12 @@
 #include "include/cef_request_handler.h"
 #include "include/cef_context_menu_handler.h"
 #include "include/cef_keyboard_handler.h"
+#include "include/cef_download_handler.h"
 
 #include <functional>
 #include <string>
 #include <vector>
+#include <map>
 
 // BrowserClient: Per-browser CEF callbacks
 // Handles all browser-level events (lifecycle, loading, display, etc.)
@@ -20,7 +22,8 @@ class BrowserClient : public CefClient,
                       public CefDisplayHandler,
                       public CefRequestHandler,
                       public CefContextMenuHandler,
-                      public CefKeyboardHandler {
+                      public CefKeyboardHandler,
+                      public CefDownloadHandler {
 public:
     // Callback types for UI updates
     using BrowserCreatedCallback = std::function<void(CefRefPtr<CefBrowser>)>;
@@ -30,6 +33,12 @@ public:
     using CloseCallback = std::function<void()>;
     using PopupRequestCallback = std::function<void(const std::string& url)>;
     using FaviconChangeCallback = std::function<void(const std::string& url, const std::vector<unsigned char>& png_data)>;
+
+    // Download dialog callback: filename, size, callback to continue with path (empty = cancel)
+    using DownloadDialogCallback = std::function<void(
+        const std::string& suggested_name,
+        int64_t total_bytes,
+        CefRefPtr<CefBeforeDownloadCallback> callback)>;
 
     BrowserClient();
 
@@ -41,6 +50,7 @@ public:
     void SetCloseCallback(CloseCallback callback) { on_close_ = std::move(callback); }
     void SetPopupRequestCallback(PopupRequestCallback callback) { on_popup_request_ = std::move(callback); }
     void SetFaviconChangeCallback(FaviconChangeCallback callback) { on_favicon_change_ = std::move(callback); }
+    void SetDownloadDialogCallback(DownloadDialogCallback callback) { on_download_dialog_ = std::move(callback); }
 
     // CefClient methods - return handler references
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
@@ -49,6 +59,7 @@ public:
     CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
     CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
     CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
+    CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
 
     // CefLifeSpanHandler methods
     void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
@@ -111,6 +122,15 @@ public:
                        CefEventHandle os_event,
                        bool* is_keyboard_shortcut) override;
 
+    // CefDownloadHandler methods
+    bool OnBeforeDownload(CefRefPtr<CefBrowser> browser,
+                          CefRefPtr<CefDownloadItem> download_item,
+                          const CefString& suggested_name,
+                          CefRefPtr<CefBeforeDownloadCallback> callback) override;
+    void OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
+                           CefRefPtr<CefDownloadItem> download_item,
+                           CefRefPtr<CefDownloadItemCallback> callback) override;
+
     // Get the browser instance
     CefRefPtr<CefBrowser> GetBrowser() const { return browser_; }
 
@@ -125,6 +145,10 @@ private:
     CloseCallback on_close_;
     PopupRequestCallback on_popup_request_;
     FaviconChangeCallback on_favicon_change_;
+    DownloadDialogCallback on_download_dialog_;
+
+    // Download callbacks (keyed by download ID)
+    std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> download_callbacks_;
 
     // Context menu command IDs
     enum MenuCommand {

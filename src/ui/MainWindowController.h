@@ -4,6 +4,7 @@
 
 #include "tab_manager.h"
 #include "browser_client.h"
+#include "include/cef_download_handler.h"
 
 @class SidebarView;
 @class ToolbarView;
@@ -48,5 +49,13 @@
 // Bookmarks
 - (void)reloadBookmarksPanel;
 - (void)updateBookmarkState;
+
+// History
+- (void)reloadHistoryPanelIfVisible;
+
+// Downloads
+- (void)showDownloadDialogForFile:(NSString*)filename
+                             size:(int64_t)totalBytes
+                         callback:(CefRefPtr<CefBeforeDownloadCallback>)callback;
 
 @end
