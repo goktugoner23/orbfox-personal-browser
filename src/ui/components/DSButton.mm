@@ -204,18 +204,29 @@
     [super mouseUp:event];
 }
 
+- (void)resetHoverState {
+    _isHovered = NO;
+    _isPressed = NO;
+    [self updateAppearance];
+}
+
 @end
 
 // ============================================================================
 // DS ICON BUTTON IMPLEMENTATION
 // ============================================================================
 
-@implementation DSIconButton
+@implementation DSIconButton {
+    BOOL _selected;
+    BOOL _showsHoverBackground;
+}
 
 - (void)commonInit {
     [super commonInit];
     self.imagePosition = NSImageOnly;
     self.size = DSButtonSizeMedium;
+    _selected = NO;
+    _showsHoverBackground = YES;  // Default to showing hover background
 }
 
 + (instancetype)buttonWithIcon:(NSString*)symbolName {
@@ -238,6 +249,47 @@
     _symbolName = [symbolName copy];
     self.image = [NSImage imageWithSystemSymbolName:symbolName
                            accessibilityDescription:symbolName];
+}
+
+- (BOOL)selected {
+    return _selected;
+}
+
+- (void)setSelected:(BOOL)selected {
+    _selected = selected;
+    [self updateAppearance];
+}
+
+- (BOOL)showsHoverBackground {
+    return _showsHoverBackground;
+}
+
+- (void)setShowsHoverBackground:(BOOL)showsHoverBackground {
+    _showsHoverBackground = showsHoverBackground;
+    [self updateAppearance];
+}
+
+- (void)updateAppearance {
+    // If selected, show hover-style background (persists even when not hovering)
+    if (_selected) {
+        self.layer.backgroundColor = [DSColors surfaceHover].CGColor;
+        self.contentTintColor = [DSColors textPrimary];
+        return;
+    }
+
+    // If hover background disabled, clear background and just update tint
+    if (!_showsHoverBackground) {
+        self.layer.backgroundColor = [NSColor clearColor].CGColor;
+        if (self.isHovered) {
+            self.contentTintColor = [DSColors textPrimary];
+        } else {
+            self.contentTintColor = [DSColors textSecondary];
+        }
+        return;
+    }
+
+    // Otherwise use parent's appearance logic
+    [super updateAppearance];
 }
 
 @end

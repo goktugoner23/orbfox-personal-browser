@@ -1,6 +1,9 @@
 #import "ToolbarView.h"
 #import "MainWindowController.h"
 #import "Components.h"
+#include "bookmark_storage.h"
+
+extern BookmarkStorage* GetBookmarkStorage();
 
 // ============================================================================
 // TOOLBAR VIEW
@@ -17,6 +20,10 @@
     NSTimer* _loadingAnimationTimer;
     CGFloat _loadingProgress;
     BOOL _isLoading;
+    // Actions area
+    NSView* _actionsArea;
+    DSIconButton* _bookmarkButton;
+    BOOL _isBookmarked;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -56,10 +63,29 @@
     [self addSubview:_reloadButton];
     x += buttonSize + [DSSpacing md];
 
-    // URL container
+    // Actions area (right side with bookmark, extensions, etc.)
+    CGFloat actionsWidth = 44;  // Space for bookmark button
+    CGFloat actionsX = self.bounds.size.width - actionsWidth - [DSSpacing sm];
+
+    _actionsArea = [[NSView alloc] initWithFrame:NSMakeRect(actionsX, 0, actionsWidth, self.bounds.size.height)];
+    _actionsArea.autoresizingMask = NSViewMinXMargin;
+    [self addSubview:_actionsArea];
+
+    // Bookmark button (ribbon/flag icon like Vivaldi)
+    _bookmarkButton = [DSIconButton buttonWithIcon:@"bookmark" tooltip:@"Bookmark this page"];
+    _bookmarkButton.frame = NSMakeRect(
+        (actionsWidth - buttonSize) / 2,
+        (self.bounds.size.height - buttonSize) / 2,
+        buttonSize, buttonSize);
+    _bookmarkButton.showsHoverBackground = NO;  // No hover background, just tint change
+    _bookmarkButton.target = self;
+    _bookmarkButton.action = @selector(toggleBookmark:);
+    [_actionsArea addSubview:_bookmarkButton];
+
+    // URL container (now narrower to make room for actions)
     CGFloat containerPadding = 7;
     CGFloat containerHeight = self.bounds.size.height - (containerPadding * 2);
-    CGFloat containerWidth = self.bounds.size.width - x - [DSSpacing md];
+    CGFloat containerWidth = self.bounds.size.width - x - actionsWidth - [DSSpacing md] - [DSSpacing sm];
 
     _urlContainer = [[NSView alloc] initWithFrame:NSMakeRect(x, containerPadding, containerWidth, containerHeight)];
     _urlContainer.wantsLayer = YES;
@@ -130,6 +156,30 @@
     [_windowController reload];
 }
 
+- (void)toggleBookmark:(id)sender {
+    (void)sender;
+    if (!_windowController) return;
+
+    Tab* activeTab = _windowController.tabManager->GetActiveTab();
+    if (!activeTab) return;
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    if (bookmarks->IsBookmarked(activeTab->url)) {
+        bookmarks->DeleteBookmarkByUrl(activeTab->url);
+        _isBookmarked = NO;
+    } else {
+        bookmarks->AddBookmark(activeTab->url, activeTab->title);
+        _isBookmarked = YES;
+    }
+
+    [self updateBookmarkButtonAppearance];
+
+    // Also reload bookmarks panel if visible
+    [_windowController reloadBookmarksPanel];
+}
+
 #pragma mark - Public Methods
 
 - (void)setURL:(NSString*)url {
@@ -194,6 +244,23 @@
                 [self updateLoadingProgressView];
             }];
         });
+    }
+}
+
+- (void)setBookmarked:(BOOL)isBookmarked {
+    _isBookmarked = isBookmarked;
+    [self updateBookmarkButtonAppearance];
+}
+
+- (void)updateBookmarkButtonAppearance {
+    if (_isBookmarked) {
+        _bookmarkButton.image = [NSImage imageWithSystemSymbolName:@"bookmark.fill"
+                                          accessibilityDescription:@"Bookmarked"];
+        _bookmarkButton.contentTintColor = [DSColors accent];
+    } else {
+        _bookmarkButton.image = [NSImage imageWithSystemSymbolName:@"bookmark"
+                                          accessibilityDescription:@"Bookmark"];
+        _bookmarkButton.contentTintColor = [DSColors textSecondary];
     }
 }
 

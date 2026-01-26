@@ -4,6 +4,7 @@
 #include "tab_manager.h"
 #include "window_settings.h"
 #include "history_storage.h"
+#include "bookmark_storage.h"
 #include "session_storage.h"
 
 #import "MainWindowController.h"
@@ -15,12 +16,18 @@
 // Global references (owned by the app)
 static std::unique_ptr<TabManager> g_tab_manager;
 static std::unique_ptr<HistoryStorage> g_history_storage;
+static std::unique_ptr<BookmarkStorage> g_bookmark_storage;
 static std::unique_ptr<SessionStorage> g_session_storage;
 static MainWindowController* g_window_controller = nil;
 
 // Access global history storage
 HistoryStorage* GetHistoryStorage() {
     return g_history_storage.get();
+}
+
+// Access global bookmark storage
+BookmarkStorage* GetBookmarkStorage() {
+    return g_bookmark_storage.get();
 }
 
 // Save current session
@@ -75,6 +82,10 @@ void BrowserApp::OnContextInitialized() {
     // Initialize history storage
     g_history_storage = std::make_unique<HistoryStorage>();
     g_history_storage->Initialize();
+
+    // Initialize bookmark storage
+    g_bookmark_storage = std::make_unique<BookmarkStorage>();
+    g_bookmark_storage->Initialize();
 
     // Initialize session storage
     g_session_storage = std::make_unique<SessionStorage>();

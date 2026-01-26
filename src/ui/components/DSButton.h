@@ -26,6 +26,8 @@ typedef NS_ENUM(NSInteger, DSButtonSize) {
 @property (nonatomic, assign) DSButtonSize size;
 @property (nonatomic, assign, readonly) BOOL isHovered;
 
+- (void)resetHoverState;  // Clears hover effect
+
 // Factory methods
 + (instancetype)buttonWithTitle:(NSString*)title
                         variant:(DSButtonVariant)variant;
@@ -47,6 +49,8 @@ typedef NS_ENUM(NSInteger, DSButtonSize) {
 @interface DSIconButton : DSButton
 
 @property (nonatomic, copy) NSString* symbolName;
+@property (nonatomic, assign) BOOL selected;  // Shows accent color when selected
+@property (nonatomic, assign) BOOL showsHoverBackground;  // Default YES
 
 + (instancetype)buttonWithIcon:(NSString*)symbolName;
 + (instancetype)buttonWithIcon:(NSString*)symbolName tooltip:(NSString*)tooltip;

@@ -23,6 +23,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Tab Pinning** - Pin/unpin tabs via right-click menu
   - Pin icon shown on pinned tabs (swaps with close button on hover)
   - Warning dialog when closing workspace with pinned tabs
+- **Bookmarks Panel** - Full bookmark management
+  - SQLite-based bookmark storage (`~/Library/Application Support/OrbFox/bookmarks.db`)
+  - Add current page with + button
+  - Click bookmark to open, close button to delete
+  - Empty state message when no bookmarks
 
 ### Changed
 - Workspace selector changed from dropdown to horizontal tab bar
@@ -31,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Technical
 - New `session_storage.h/cpp` for JSON-based session persistence
+- New `bookmark_storage.h/cpp` for SQLite-based bookmark storage
 - Added resize handle view for sidebar resizing
 - Workspace tabs use horizontal NSScrollView
 

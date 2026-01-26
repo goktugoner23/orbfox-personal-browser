@@ -43,6 +43,7 @@ set(SOURCES
     src/client/browser_client.cpp
     src/data/window_settings.cpp
     src/data/history_storage.cpp
+    src/data/bookmark_storage.cpp
     src/data/session_storage.cpp
     src/browser/tab_manager.cpp
 )
@@ -52,6 +53,7 @@ set(HEADERS
     include/browser_client.h
     include/window_settings.h
     include/history_storage.h
+    include/bookmark_storage.h
     include/session_storage.h
     include/tab.h
     include/workspace.h

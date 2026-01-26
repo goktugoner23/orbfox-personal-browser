@@ -40,6 +40,7 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
   - Close button on each workspace tab
 - **Tab pinning** - pin tabs with visual indicator, warning on workspace close
 - **Session persistence** - restore workspaces and tabs on restart (Vivaldi-style)
+- **Bookmarks panel** - add/remove bookmarks, SQLite storage
 - **Collapsible sidebar** - click active panel icon to toggle
 - **History panel** with browsing history
 - **Favicons** displayed in tab list

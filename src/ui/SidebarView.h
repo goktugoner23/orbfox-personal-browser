@@ -7,7 +7,8 @@
 // Sidebar panel type
 typedef NS_ENUM(NSInteger, SidebarPanel) {
     SidebarPanelTabs,
-    SidebarPanelFavorites,
+    SidebarPanelBookmarks,  // Renamed from Favorites
+    SidebarPanelFavorites = SidebarPanelBookmarks,  // Alias for compatibility
     SidebarPanelHistory,
     SidebarPanelDownloads
 };
@@ -27,6 +28,7 @@ typedef NS_ENUM(NSInteger, SidebarPanel) {
 - (void)showPanel:(SidebarPanel)panel;
 - (void)updateLayoutForWidth:(CGFloat)newWidth;
 - (void)updateWorkspaceButton;
+- (void)reloadBookmarks;
 
 @end
 

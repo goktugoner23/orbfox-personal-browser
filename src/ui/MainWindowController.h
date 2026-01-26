@@ -45,4 +45,8 @@
 - (void)showBookmarksPanel;
 - (void)showDownloadsPanel;
 
+// Bookmarks
+- (void)reloadBookmarksPanel;
+- (void)updateBookmarkState;
+
 @end

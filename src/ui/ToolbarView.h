@@ -16,6 +16,7 @@
 - (void)setURL:(NSString*)url;
 - (void)setCanGoBack:(BOOL)canGoBack canGoForward:(BOOL)canGoForward;
 - (void)setLoading:(BOOL)isLoading;
+- (void)setBookmarked:(BOOL)isBookmarked;
 - (void)focusURLField;
 
 @end

@@ -2,9 +2,11 @@
 #import "MainWindowController.h"
 #import "Components.h"
 #include "history_storage.h"
+#include "bookmark_storage.h"
 
-// Extern function to access global history storage
+// Extern function to access global storage
 extern HistoryStorage* GetHistoryStorage();
+extern BookmarkStorage* GetBookmarkStorage();
 
 // Layout constants
 static const CGFloat kIconStripWidth = 44.0;
@@ -311,6 +313,11 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     NSScrollView* _historyScrollView;
     FlippedView* _historyContainer;
 
+    // Bookmarks panel
+    NSView* _bookmarksPanelContainer;
+    NSScrollView* _bookmarksScrollView;
+    FlippedView* _bookmarksContainer;
+
     // Icon buttons
     DSIconButton* _tabsIcon;
     DSIconButton* _favoritesIcon;
@@ -352,7 +359,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     [_iconStrip addSubview:_tabsIcon];
 
     iconY -= 40;
-    _favoritesIcon = [self createIconButton:@"star" y:iconY tooltip:@"Bookmarks"];
+    _favoritesIcon = [self createIconButton:@"bookmark" y:iconY tooltip:@"Bookmarks"];
     _favoritesIcon.tag = SidebarPanelFavorites;
     [_iconStrip addSubview:_favoritesIcon];
 
@@ -372,12 +379,20 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     CGFloat contentHeight = self.bounds.size.height;
 
     [self setupTabsPanel:contentX width:contentWidth height:contentHeight];
+    [self setupBookmarksPanel:contentX width:contentWidth height:contentHeight];
     [self setupHistoryPanel:contentX width:contentWidth height:contentHeight];
 
-    [self updateIconSelection];
     [self updatePanelVisibility];
 
     // Initial load of workspace tabs (will be populated when windowController is set)
+}
+
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    if (self.window) {
+        // Update icon selection when view is added to window
+        [self updateIconSelection];
+    }
 }
 
 - (DSIconButton*)createIconButton:(NSString*)symbolName y:(CGFloat)y tooltip:(NSString*)tooltip {
@@ -386,6 +401,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
     DSIconButton* btn = [DSIconButton buttonWithIcon:symbolName tooltip:tooltip];
     btn.frame = NSMakeRect(iconX, y, iconSize, iconSize);
+    btn.showsHoverBackground = NO;  // Only selected icon shows background
     btn.target = self;
     btn.action = @selector(iconClicked:);
     btn.autoresizingMask = NSViewMinYMargin;
@@ -468,6 +484,11 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     containerFrame.size.width = contentWidth;
     _tabContainer.frame = containerFrame;
 
+    // Update bookmarks container width
+    NSRect bookmarksFrame = _bookmarksContainer.frame;
+    bookmarksFrame.size.width = contentWidth;
+    _bookmarksContainer.frame = bookmarksFrame;
+
     // Update history container width
     NSRect historyFrame = _historyContainer.frame;
     historyFrame.size.width = contentWidth;
@@ -475,6 +496,49 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
     // Reload tabs to update row widths
     [self reloadTabs];
+}
+
+- (void)setupBookmarksPanel:(CGFloat)x width:(CGFloat)width height:(CGFloat)height {
+    _bookmarksPanelContainer = [[NSView alloc] initWithFrame:NSMakeRect(x, 0, width, height)];
+    _bookmarksPanelContainer.autoresizingMask = NSViewHeightSizable | NSViewWidthSizable;
+    _bookmarksPanelContainer.wantsLayer = YES;
+    _bookmarksPanelContainer.layer.masksToBounds = YES;
+    _bookmarksPanelContainer.hidden = YES;
+    [self addSubview:_bookmarksPanelContainer];
+
+    // Bookmarks title
+    NSTextField* bookmarksTitle = [[NSTextField alloc] initWithFrame:NSMakeRect(
+        [DSSpacing md], height - 40, width - [DSSpacing xl] - 32, 24)];
+    bookmarksTitle.stringValue = @"Bookmarks";
+    bookmarksTitle.font = [DSTypography fontWithStyle:DSFontStyleHeadline];
+    bookmarksTitle.textColor = [DSColors textPrimary];
+    bookmarksTitle.bezeled = NO;
+    bookmarksTitle.drawsBackground = NO;
+    bookmarksTitle.editable = NO;
+    bookmarksTitle.selectable = NO;
+    bookmarksTitle.autoresizingMask = NSViewMinYMargin;
+    [_bookmarksPanelContainer addSubview:bookmarksTitle];
+
+    // Add bookmark button (star icon)
+    DSIconButton* addBookmarkBtn = [DSIconButton buttonWithIcon:@"plus" tooltip:@"Bookmark this page"];
+    addBookmarkBtn.frame = NSMakeRect(width - 36, height - 40, 28, 28);
+    addBookmarkBtn.autoresizingMask = NSViewMinYMargin | NSViewMinXMargin;
+    addBookmarkBtn.target = self;
+    addBookmarkBtn.action = @selector(addBookmarkClicked:);
+    [_bookmarksPanelContainer addSubview:addBookmarkBtn];
+
+    // Bookmarks scroll view
+    _bookmarksScrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(
+        0, 0, width, height - 50)];
+    _bookmarksScrollView.hasVerticalScroller = YES;
+    _bookmarksScrollView.hasHorizontalScroller = NO;
+    _bookmarksScrollView.autohidesScrollers = YES;
+    _bookmarksScrollView.drawsBackground = NO;
+    _bookmarksScrollView.autoresizingMask = NSViewHeightSizable | NSViewWidthSizable;
+    [_bookmarksPanelContainer addSubview:_bookmarksScrollView];
+
+    _bookmarksContainer = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, width, height - 50)];
+    _bookmarksScrollView.documentView = _bookmarksContainer;
 }
 
 - (void)setupHistoryPanel:(CGFloat)x width:(CGFloat)width height:(CGFloat)height {
@@ -889,11 +953,16 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
 - (void)updatePanelVisibility {
     _tabsPanelContainer.hidden = YES;
+    _bookmarksPanelContainer.hidden = YES;
     _historyPanelContainer.hidden = YES;
 
     switch (_activePanel) {
         case SidebarPanelTabs:
             _tabsPanelContainer.hidden = NO;
+            break;
+        case SidebarPanelFavorites:  // Bookmarks panel
+            _bookmarksPanelContainer.hidden = NO;
+            [self reloadBookmarks];
             break;
         case SidebarPanelHistory:
             _historyPanelContainer.hidden = NO;
@@ -905,14 +974,11 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 }
 
 - (void)updateIconSelection {
-    _tabsIcon.contentTintColor = (_activePanel == SidebarPanelTabs)
-        ? [DSColors accent] : [DSColors textSecondary];
-    _favoritesIcon.contentTintColor = (_activePanel == SidebarPanelFavorites)
-        ? [DSColors accent] : [DSColors textSecondary];
-    _historyIcon.contentTintColor = (_activePanel == SidebarPanelHistory)
-        ? [DSColors accent] : [DSColors textSecondary];
-    _downloadsIcon.contentTintColor = (_activePanel == SidebarPanelDownloads)
-        ? [DSColors accent] : [DSColors textSecondary];
+    // Set selected state - selected icon shows persistent hover background
+    _tabsIcon.selected = (_activePanel == SidebarPanelTabs);
+    _favoritesIcon.selected = (_activePanel == SidebarPanelFavorites);
+    _historyIcon.selected = (_activePanel == SidebarPanelHistory);
+    _downloadsIcon.selected = (_activePanel == SidebarPanelDownloads);
 }
 
 #pragma mark - Tabs
@@ -996,6 +1062,103 @@ static const CGFloat kNewTabButtonHeight = 44.0;
             break;
         }
     }
+}
+
+#pragma mark - Bookmarks
+
+- (void)addBookmarkClicked:(id)sender {
+    (void)sender;
+    if (!_windowController) return;
+
+    // Get current tab's URL and title
+    Tab* activeTab = _windowController.tabManager->GetActiveTab();
+    if (!activeTab) return;
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    NSString* url = [NSString stringWithUTF8String:activeTab->url.c_str()];
+    NSString* title = [NSString stringWithUTF8String:activeTab->title.c_str()];
+
+    // Toggle bookmark - remove if exists, add if not
+    if (bookmarks->IsBookmarked(activeTab->url)) {
+        bookmarks->DeleteBookmarkByUrl(activeTab->url);
+    } else {
+        bookmarks->AddBookmark(activeTab->url, activeTab->title);
+    }
+
+    [self reloadBookmarks];
+}
+
+- (void)reloadBookmarks {
+    for (NSView* subview in _bookmarksContainer.subviews.copy) {
+        [subview removeFromSuperview];
+    }
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    std::vector<Bookmark> entries = bookmarks->GetAllBookmarks();
+    CGFloat contentWidth = _bookmarksContainer.bounds.size.width;
+    CGFloat y = 0;
+    CGFloat rowHeight = 44;
+
+    if (entries.empty()) {
+        // Show empty state
+        NSTextField* emptyLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(
+            [DSSpacing md], y + 20, contentWidth - [DSSpacing xl], 40)];
+        emptyLabel.stringValue = @"No bookmarks yet.\nClick + to bookmark the current page.";
+        emptyLabel.font = [DSTypography fontWithStyle:DSFontStyleBody];
+        emptyLabel.textColor = [DSColors textSecondary];
+        emptyLabel.bezeled = NO;
+        emptyLabel.drawsBackground = NO;
+        emptyLabel.editable = NO;
+        emptyLabel.selectable = NO;
+        emptyLabel.alignment = NSTextAlignmentCenter;
+        [_bookmarksContainer addSubview:emptyLabel];
+        return;
+    }
+
+    for (const auto& entry : entries) {
+        // Bookmark row using DSRow
+        DSRow* row = [[DSRow alloc] initWithFrame:NSMakeRect(
+            [DSSpacing xs], y, contentWidth - [DSSpacing sm], rowHeight)];
+
+        NSString* title = [NSString stringWithUTF8String:entry.title.empty()
+            ? entry.url.c_str() : entry.title.c_str()];
+        NSString* urlStr = [NSString stringWithUTF8String:entry.url.c_str()];
+
+        row.title = title;
+        row.showsCloseButton = YES;
+
+        __weak SidebarView* weakSelf = self;
+        NSString* urlCopy = urlStr;
+        int64_t bookmarkId = entry.id;
+
+        row.onClick = ^{
+            SidebarView* strongSelf = weakSelf;
+            if (!strongSelf) return;
+            [strongSelf.windowController navigateToURL:urlCopy];
+            strongSelf->_activePanel = SidebarPanelTabs;
+            [strongSelf updateIconSelection];
+            [strongSelf updatePanelVisibility];
+        };
+
+        row.onClose = ^{
+            SidebarView* strongSelf = weakSelf;
+            if (!strongSelf) return;
+            BookmarkStorage* bm = GetBookmarkStorage();
+            if (bm) {
+                bm->DeleteBookmark(bookmarkId);
+                [strongSelf reloadBookmarks];
+            }
+        };
+
+        [_bookmarksContainer addSubview:row];
+        y += rowHeight;
+    }
+
+    _bookmarksContainer.frame = NSMakeRect(0, 0, contentWidth, MAX(y, _bookmarksScrollView.bounds.size.height));
 }
 
 #pragma mark - History

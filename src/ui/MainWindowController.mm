@@ -7,9 +7,11 @@
 #include "include/cef_browser.h"
 #include "include/views/cef_browser_view.h"
 #include "history_storage.h"
+#include "bookmark_storage.h"
 
-// Extern function to access global history storage
+// Extern functions to access global storage
 extern HistoryStorage* GetHistoryStorage();
+extern BookmarkStorage* GetBookmarkStorage();
 
 static const CGFloat kSidebarDefaultWidth = 280.0;
 static const CGFloat kSidebarMinWidth = 200.0;
@@ -553,6 +555,7 @@ static const CGFloat kResizeHandleWidth = 6.0;
 
 - (void)updateURLBar:(NSString*)url {
     [_toolbarView setURL:url];
+    [self updateBookmarkState];
 }
 
 - (void)updateNavigationButtons:(BOOL)canGoBack canGoForward:(BOOL)canGoForward {
@@ -672,6 +675,26 @@ static const CGFloat kIconStripWidth = 44.0;
 
 - (void)showDownloadsPanel {
     [_sidebarView showPanel:SidebarPanelDownloads];
+}
+
+#pragma mark - Bookmarks
+
+- (void)reloadBookmarksPanel {
+    [_sidebarView reloadBookmarks];
+}
+
+- (void)updateBookmarkState {
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    Tab* activeTab = _tabManager->GetActiveTab();
+    if (!activeTab) {
+        [_toolbarView setBookmarked:NO];
+        return;
+    }
+
+    BOOL isBookmarked = bookmarks->IsBookmarked(activeTab->url);
+    [_toolbarView setBookmarked:isBookmarked];
 }
 
 #pragma mark - Keyboard Shortcuts
