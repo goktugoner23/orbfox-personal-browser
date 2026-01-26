@@ -75,6 +75,29 @@ cmake --build build -j8
 open build/OrbFox.app
 ```
 
+## Testing
+
+Unit tests cover core components without requiring CEF runtime:
+
+```bash
+# Configure with tests
+cmake -B build-test -DCMAKE_BUILD_TYPE=Debug
+
+# Build tests
+cmake --build build-test --target OrbFoxTests
+
+# Run all tests
+./build-test/OrbFoxTests
+
+# Run specific test suite
+./build-test/OrbFoxTests --gtest_filter="DownloadManagerTest.*"
+```
+
+**Test coverage:**
+- Download manager (36 tests) - progress calculation, state transitions, cancel/pause
+- Tab manager (48 tests) - workspace/tab CRUD, active tracking, callbacks
+- Persistence (17 tests) - history storage, window settings, session storage
+
 ## Project Structure
 
 ```
@@ -119,6 +142,10 @@ personal-browser/
 ├── resources/
 │   ├── Info.plist              # App bundle info
 │   └── helper-Info.plist.in    # Helper app template
+├── tests/
+│   ├── download_manager_test.cpp  # Download state/progress tests
+│   ├── tab_manager_test.cpp       # Tab/workspace management tests
+│   └── persistence_test.cpp       # Storage layer tests
 └── .claude/
     └── skills/                 # Claude Code skills
         ├── native-ui-design/   # UI design guidelines

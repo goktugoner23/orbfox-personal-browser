@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-01-26
+
+### Added
+- **Unit Testing Infrastructure** - GoogleTest-based test suite
+  - 101 unit tests covering core components
+  - Tests run without CEF runtime dependencies
+  - Download manager tests (36 tests) - progress calculation, state transitions
+  - Tab manager tests (48 tests) - workspace/tab CRUD, callbacks
+  - Persistence tests (17 tests) - history, window settings, session storage
+- **Test Build Target** - `OrbFoxTests` executable
+  - GoogleTest fetched via CMake FetchContent
+  - Isolated from main app with `UNIT_TEST` preprocessor guards
+
+### Technical
+- New `tests/` directory with test files
+- `UNIT_TEST` guards in `tab.h` and `tab_manager.h` to exclude CEF types
+- CMakeLists.txt updated with test configuration
+
 ## [0.5.0] - 2026-01-26
 
 ### Added
