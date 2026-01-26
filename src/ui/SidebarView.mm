@@ -20,20 +20,82 @@ static const CGFloat kWorkspaceHeight = 40.0;
 static const CGFloat kNewTabButtonHeight = 44.0;
 
 // ============================================================================
-// FAVICON CACHE
-// Caches favicons by domain for use in bookmarks/history
+// FAVICON & TITLE CACHE
+// Persistent cache for favicons and page titles by domain
+// Stored in ~/Library/Application Support/OrbFox/cache/
 // ============================================================================
 
 static NSMutableDictionary<NSString*, NSImage*>* sFaviconCache = nil;
+static NSMutableDictionary<NSString*, NSString*>* sTitleCache = nil;
+static BOOL sCacheInitialized = NO;
+
+static NSString* GetCacheDirectory() {
+    NSString* home = NSHomeDirectory();
+    NSString* cacheDir = [home stringByAppendingPathComponent:@"Library/Application Support/OrbFox/cache"];
+
+    // Create directory if it doesn't exist
+    NSFileManager* fm = [NSFileManager defaultManager];
+    if (![fm fileExistsAtPath:cacheDir]) {
+        [fm createDirectoryAtPath:cacheDir withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+    return cacheDir;
+}
+
+static NSString* GetFaviconPath(NSString* domain) {
+    return [[GetCacheDirectory() stringByAppendingPathComponent:domain] stringByAppendingPathExtension:@"png"];
+}
+
+static NSString* GetTitleCachePath() {
+    return [GetCacheDirectory() stringByAppendingPathComponent:@"titles.plist"];
+}
 
 static NSString* GetDomainFromURL(NSString* urlString) {
     if (!urlString || urlString.length == 0) return nil;
     NSURL* url = [NSURL URLWithString:urlString];
-    return url.host;
+    NSString* host = url.host;
+    if (!host) return nil;
+    // Remove www. prefix for consistent matching
+    if ([host hasPrefix:@"www."]) {
+        host = [host substringFromIndex:4];
+    }
+    return host;
+}
+
+static void LoadCachedFaviconsAndTitles() {
+    if (sCacheInitialized) return;
+    sCacheInitialized = YES;
+
+    sFaviconCache = [NSMutableDictionary dictionary];
+    sTitleCache = [NSMutableDictionary dictionary];
+
+    NSString* cacheDir = GetCacheDirectory();
+    NSFileManager* fm = [NSFileManager defaultManager];
+
+    // Load favicons
+    NSArray* files = [fm contentsOfDirectoryAtPath:cacheDir error:nil];
+    for (NSString* file in files) {
+        if ([file.pathExtension isEqualToString:@"png"]) {
+            NSString* domain = [file stringByDeletingPathExtension];
+            NSString* path = [cacheDir stringByAppendingPathComponent:file];
+            NSImage* favicon = [[NSImage alloc] initWithContentsOfFile:path];
+            if (favicon) {
+                sFaviconCache[domain] = favicon;
+            }
+        }
+    }
+
+    // Load titles
+    NSString* titlesPath = GetTitleCachePath();
+    if ([fm fileExistsAtPath:titlesPath]) {
+        NSDictionary* titles = [NSDictionary dictionaryWithContentsOfFile:titlesPath];
+        if (titles) {
+            [sTitleCache addEntriesFromDictionary:titles];
+        }
+    }
 }
 
 static NSImage* GetCachedFavicon(NSString* urlString) {
-    if (!sFaviconCache) return nil;
+    LoadCachedFaviconsAndTitles();
     NSString* domain = GetDomainFromURL(urlString);
     if (!domain) return nil;
     return sFaviconCache[domain];
@@ -41,13 +103,83 @@ static NSImage* GetCachedFavicon(NSString* urlString) {
 
 static void CacheFavicon(NSString* urlString, NSImage* favicon) {
     if (!favicon || !urlString) return;
-    if (!sFaviconCache) {
-        sFaviconCache = [NSMutableDictionary dictionary];
-    }
+    LoadCachedFaviconsAndTitles();
+
     NSString* domain = GetDomainFromURL(urlString);
-    if (domain) {
-        sFaviconCache[domain] = favicon;
-    }
+    if (!domain) return;
+
+    // Check if already cached (avoid redundant disk writes)
+    if (sFaviconCache[domain]) return;
+
+    sFaviconCache[domain] = favicon;
+
+    // Save to disk asynchronously
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+        NSString* path = GetFaviconPath(domain);
+        NSBitmapImageRep* rep = nil;
+
+        // Get bitmap representation
+        for (NSImageRep* imageRep in favicon.representations) {
+            if ([imageRep isKindOfClass:[NSBitmapImageRep class]]) {
+                rep = (NSBitmapImageRep*)imageRep;
+                break;
+            }
+        }
+
+        if (!rep) {
+            // Create bitmap from image
+            NSSize size = favicon.size;
+            if (size.width == 0 || size.height == 0) {
+                size = NSMakeSize(32, 32);
+            }
+            rep = [[NSBitmapImageRep alloc]
+                initWithBitmapDataPlanes:NULL
+                              pixelsWide:(NSInteger)size.width
+                              pixelsHigh:(NSInteger)size.height
+                           bitsPerSample:8
+                         samplesPerPixel:4
+                                hasAlpha:YES
+                                isPlanar:NO
+                          colorSpaceName:NSCalibratedRGBColorSpace
+                             bytesPerRow:0
+                            bitsPerPixel:0];
+
+            NSGraphicsContext* ctx = [NSGraphicsContext graphicsContextWithBitmapImageRep:rep];
+            [NSGraphicsContext saveGraphicsState];
+            [NSGraphicsContext setCurrentContext:ctx];
+            [favicon drawInRect:NSMakeRect(0, 0, size.width, size.height)];
+            [NSGraphicsContext restoreGraphicsState];
+        }
+
+        NSData* pngData = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+        [pngData writeToFile:path atomically:YES];
+    });
+}
+
+static NSString* GetCachedTitle(NSString* urlString) {
+    LoadCachedFaviconsAndTitles();
+    NSString* domain = GetDomainFromURL(urlString);
+    if (!domain) return nil;
+    return sTitleCache[domain];
+}
+
+static void CacheTitle(NSString* urlString, NSString* title) {
+    if (!title || title.length == 0 || !urlString) return;
+    LoadCachedFaviconsAndTitles();
+
+    NSString* domain = GetDomainFromURL(urlString);
+    if (!domain) return;
+
+    // Check if already cached with same title
+    if ([sTitleCache[domain] isEqualToString:title]) return;
+
+    sTitleCache[domain] = title;
+
+    // Save to disk asynchronously
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
+        NSString* path = GetTitleCachePath();
+        [sTitleCache writeToFile:path atomically:YES];
+    });
 }
 
 // ============================================================================
@@ -2387,6 +2519,20 @@ static void CacheFavicon(NSString* urlString, NSImage* favicon) {
             break;
         }
     }
+
+    // Cache title by URL for bookmarks
+    if (title.length > 0 && _windowController) {
+        Tab* tab = _windowController.tabManager->GetTabById(tabId);
+        if (tab) {
+            NSString* url = [NSString stringWithUTF8String:tab->url.c_str()];
+            CacheTitle(url, title);
+
+            // Update bookmark titles if viewing bookmarks panel
+            if (_activePanel == SidebarPanelFavorites) {
+                [self updateBookmarkTitlesForUrl:url title:title];
+            }
+        }
+    }
 }
 
 - (void)updateTab:(int)tabId faviconData:(NSData*)faviconData {
@@ -2396,11 +2542,12 @@ static void CacheFavicon(NSString* urlString, NSImage* favicon) {
     if (!favicon) return;
 
     // Cache by URL for bookmarks/history
+    NSString* cachedUrl = nil;
     if (_windowController) {
         Tab* tab = _windowController.tabManager->GetTabById(tabId);
         if (tab) {
-            NSString* url = [NSString stringWithUTF8String:tab->url.c_str()];
-            CacheFavicon(url, favicon);
+            cachedUrl = [NSString stringWithUTF8String:tab->url.c_str()];
+            CacheFavicon(cachedUrl, favicon);
         }
     }
 
@@ -2408,6 +2555,52 @@ static void CacheFavicon(NSString* urlString, NSImage* favicon) {
         if (row.tabId == tabId) {
             row.favicon = favicon;
             break;
+        }
+    }
+
+    // Update bookmark rows if visible and favicon was cached
+    if (_activePanel == SidebarPanelFavorites && cachedUrl) {
+        [self updateBookmarkFaviconsForUrl:cachedUrl favicon:favicon];
+    }
+}
+
+- (void)updateBookmarkFaviconsForUrl:(NSString*)url favicon:(NSImage*)favicon {
+    NSString* domain = GetDomainFromURL(url);
+    if (!domain) return;
+
+    for (NSView* subview in _bookmarksContainer.subviews) {
+        if ([subview isKindOfClass:[DSRow class]]) {
+            DSRow* row = (DSRow*)subview;
+            // Check if this bookmark's URL matches the domain
+            NSString* bmUrl = objc_getAssociatedObject(row, "bookmarkUrl");
+            if (bmUrl) {
+                NSString* bmDomain = GetDomainFromURL(bmUrl);
+                if (bmDomain && [bmDomain isEqualToString:domain]) {
+                    row.icon = favicon;
+                }
+            }
+        }
+    }
+}
+
+- (void)updateBookmarkTitlesForUrl:(NSString*)url title:(NSString*)title {
+    NSString* domain = GetDomainFromURL(url);
+    if (!domain || !title) return;
+
+    for (NSView* subview in _bookmarksContainer.subviews) {
+        if ([subview isKindOfClass:[DSRow class]]) {
+            DSRow* row = (DSRow*)subview;
+            NSString* bmUrl = objc_getAssociatedObject(row, "bookmarkUrl");
+            if (bmUrl) {
+                NSString* bmDomain = GetDomainFromURL(bmUrl);
+                if (bmDomain && [bmDomain isEqualToString:domain]) {
+                    // Only update if the current title looks like a URL/domain
+                    NSString* currentTitle = row.title;
+                    if ([currentTitle containsString:@"."] && ![currentTitle containsString:@" "]) {
+                        row.title = title;
+                    }
+                }
+            }
         }
     }
 }
@@ -2604,19 +2797,55 @@ static void CacheFavicon(NSString* urlString, NSImage* favicon) {
     CGFloat rowHeight = 44;
     DSRow* row = [[DSRow alloc] initWithFrame:NSMakeRect(
         [DSSpacing xs] + indent, y, width - [DSSpacing sm] - indent, rowHeight)];
+    row.autoresizingMask = NSViewWidthSizable;
 
-    NSString* title = [NSString stringWithUTF8String:entry.title.empty()
-        ? entry.url.c_str() : entry.title.c_str()];
     NSString* urlStr = [NSString stringWithUTF8String:entry.url.c_str()];
     NSString* folderStr = [NSString stringWithUTF8String:entry.folder.c_str()];
+
+    // Title display priority: nickname (title field) > cached page title > domain name
+    NSString* title;
+    if (!entry.title.empty()) {
+        NSString* savedTitle = [NSString stringWithUTF8String:entry.title.c_str()];
+        // Check if saved title looks like a URL/domain (auto-generated)
+        if ([savedTitle containsString:@"."] && ![savedTitle containsString:@" "]) {
+            // Try to get cached page title instead
+            NSString* cachedTitle = GetCachedTitle(urlStr);
+            title = cachedTitle ?: savedTitle;
+        } else {
+            title = savedTitle;
+        }
+    } else {
+        // Try cached page title first
+        NSString* cachedTitle = GetCachedTitle(urlStr);
+        if (cachedTitle) {
+            title = cachedTitle;
+        } else {
+            // Fall back to domain name
+            NSURL* url = [NSURL URLWithString:urlStr];
+            NSString* host = url.host;
+            if (host) {
+                // Remove "www." prefix if present
+                if ([host hasPrefix:@"www."]) {
+                    host = [host substringFromIndex:4];
+                }
+                title = host;
+            } else {
+                title = urlStr;
+            }
+        }
+    }
 
     row.title = title;
     row.showsCloseButton = YES;
 
-    // Set favicon from cache if available
+    // Set favicon from cache if available, otherwise show globe icon
     NSImage* favicon = GetCachedFavicon(urlStr);
     if (favicon) {
         row.icon = favicon;
+    } else {
+        // Default globe icon for bookmarks without cached favicon
+        NSImage* globeIcon = [NSImage imageWithSystemSymbolName:@"globe" accessibilityDescription:nil];
+        row.icon = globeIcon;
     }
 
     __weak SidebarView* weakSelf = self;
@@ -2625,8 +2854,9 @@ static void CacheFavicon(NSString* urlString, NSImage* favicon) {
     NSString* folderCopy = folderStr;
     int64_t bookmarkId = entry.id;
 
-    // Associate bookmark ID with row for later lookup
+    // Associate bookmark ID and URL with row for later lookup
     objc_setAssociatedObject(row, "bookmarkId", @(bookmarkId), OBJC_ASSOCIATION_RETAIN);
+    objc_setAssociatedObject(row, "bookmarkUrl", urlStr, OBJC_ASSOCIATION_RETAIN);
 
     // Single click = select bookmark
     row.onClick = ^{
@@ -2914,16 +3144,19 @@ static void CacheFavicon(NSString* urlString, NSImage* favicon) {
     NSView* header = [[NSView alloc] initWithFrame:NSMakeRect(0, y, width, headerHeight)];
     header.wantsLayer = YES;
     header.layer.cornerRadius = [DSLayout cornerRadiusMedium];
+    header.autoresizingMask = NSViewWidthSizable;
 
     CGFloat padding = [DSSpacing sm];
     CGFloat verticalCenter = (headerHeight - 16) / 2;  // Center 16px icons vertically
 
-    // Chevron icon (expand/collapse indicator)
+    // Chevron button (expand/collapse)
     NSString* chevronName = isCollapsed ? @"chevron.right" : @"chevron.down";
-    NSImageView* chevron = [[NSImageView alloc] initWithFrame:NSMakeRect(padding, verticalCenter, 14, 14)];
-    chevron.image = [NSImage imageWithSystemSymbolName:chevronName accessibilityDescription:nil];
-    chevron.contentTintColor = [DSColors textSecondary];
-    [header addSubview:chevron];
+    DSIconButton* chevronBtn = [DSIconButton buttonWithIcon:chevronName tooltip:isCollapsed ? @"Expand" : @"Collapse"];
+    chevronBtn.frame = NSMakeRect(padding - 4, (headerHeight - 20) / 2, 20, 20);
+    chevronBtn.target = self;
+    chevronBtn.action = @selector(folderHeaderClicked:);
+    objc_setAssociatedObject(chevronBtn, "folderName", folderName, OBJC_ASSOCIATION_RETAIN);
+    [header addSubview:chevronBtn];
 
     // Folder icon (gray, not blue)
     NSImageView* folderIcon = [[NSImageView alloc] initWithFrame:NSMakeRect(padding + 20, verticalCenter, 16, 16)];
@@ -2941,34 +3174,18 @@ static void CacheFavicon(NSString* urlString, NSImage* favicon) {
     nameLabel.drawsBackground = NO;
     nameLabel.editable = NO;
     nameLabel.selectable = NO;
+    nameLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    nameLabel.autoresizingMask = NSViewWidthSizable;
     [header addSubview:nameLabel];
 
-    // "Open All" button (right side, hidden by default, shown on hover)
+    // "Open All" button (right side, always visible, above click area)
     DSIconButton* openAllBtn = [DSIconButton buttonWithIcon:@"arrow.up.right.square" tooltip:@"Open all in new tabs"];
     openAllBtn.frame = NSMakeRect(width - padding - 24, (headerHeight - 20) / 2, 20, 20);
     openAllBtn.target = self;
     openAllBtn.action = @selector(openAllInFolder:);
-    openAllBtn.hidden = YES;  // Hidden by default
+    openAllBtn.autoresizingMask = NSViewMinXMargin;  // Anchor to right side
     objc_setAssociatedObject(openAllBtn, "folderName", folderName, OBJC_ASSOCIATION_RETAIN);
-    objc_setAssociatedObject(header, "openAllButton", openAllBtn, OBJC_ASSOCIATION_RETAIN);
     [header addSubview:openAllBtn];
-
-    // Tracking area for hover
-    NSTrackingArea* trackingArea = [[NSTrackingArea alloc]
-        initWithRect:header.bounds
-             options:(NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow)
-               owner:self
-            userInfo:@{@"header": header, @"openAllBtn": openAllBtn}];
-    [header addTrackingArea:trackingArea];
-
-    // Click area for expand/collapse (covers left part, not the button)
-    NSButton* clickArea = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, width - 40, headerHeight)];
-    clickArea.transparent = YES;
-    clickArea.bordered = NO;
-    clickArea.target = self;
-    clickArea.action = @selector(toggleFolderCollapse:);
-    objc_setAssociatedObject(clickArea, "folderName", folderName, OBJC_ASSOCIATION_RETAIN);
-    [header addSubview:clickArea positioned:NSWindowBelow relativeTo:nil];
 
     // Right-click context menu
     NSMenu* contextMenu = [self createFolderContextMenu:folderName];
@@ -3006,7 +3223,7 @@ static void CacheFavicon(NSString* urlString, NSImage* favicon) {
     return menu;
 }
 
-- (void)toggleFolderCollapse:(NSButton*)sender {
+- (void)folderHeaderClicked:(id)sender {
     NSString* folderName = objc_getAssociatedObject(sender, "folderName");
     if (!folderName) return;
 
@@ -3550,28 +3767,6 @@ static void CacheFavicon(NSString* urlString, NSImage* favicon) {
 
     // Navigate to the URL to restart the download
     [_windowController navigateToURL:url];
-}
-
-#pragma mark - Folder Header Hover
-
-- (void)mouseEntered:(NSEvent*)event {
-    NSDictionary* userInfo = event.trackingArea.userInfo;
-    if (userInfo[@"openAllBtn"]) {
-        DSIconButton* openAllBtn = userInfo[@"openAllBtn"];
-        NSView* header = userInfo[@"header"];
-        openAllBtn.hidden = NO;
-        header.layer.backgroundColor = [DSColors surfaceHover].CGColor;
-    }
-}
-
-- (void)mouseExited:(NSEvent*)event {
-    NSDictionary* userInfo = event.trackingArea.userInfo;
-    if (userInfo[@"openAllBtn"]) {
-        DSIconButton* openAllBtn = userInfo[@"openAllBtn"];
-        NSView* header = userInfo[@"header"];
-        openAllBtn.hidden = YES;
-        header.layer.backgroundColor = nil;
-    }
 }
 
 #pragma mark - Drawing

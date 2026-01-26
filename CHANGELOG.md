@@ -7,6 +7,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Persistent Favicon Cache** - Favicons saved to disk and restored on app launch
+  - Stored in `~/Library/Application Support/OrbFox/cache/{domain}.png`
+  - Automatically cached when visiting pages in tabs
+  - Shared across bookmarks and history with same domain
+- **Persistent Title Cache** - Page titles saved for bookmark display
+  - Stored in `~/Library/Application Support/OrbFox/cache/titles.plist`
+  - Bookmarks show page title (e.g., "Google") instead of URL
+- **Add Bookmark Popover** - Full bookmark creation dialog
+  - URL field (Address)
+  - Nickname field (custom display name)
+  - Description field (notes)
+  - Folder picker dropdown
+  - Accessible via "+" button → "Add Bookmark..."
+- **Plus Button Context Menu** in bookmarks panel
+  - "Add Bookmark..." - opens bookmark creation popover
+  - "New Folder..." - creates new bookmark folder
+- **Bookmark Double-Click** - Opens bookmark URL in new tab
+- **Bookmark Right-Click Menu** - Context menu with Open, Edit, Move, Delete options
 - **New Folder Button** in bookmarks panel
   - Creates empty bookmark folders for organization
   - Modal dialog with folder name input
@@ -21,7 +39,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - GetNextFolderNumber() for "Collection N" naming
 
 ### Changed
+- **Folder Header Design** - Improved collection folder appearance
+  - Gray folder icons (was blue)
+  - Chevron button for collapse/expand (clickable)
+  - "Open All" button on right side (opens all bookmarks in new tabs)
+  - Proper vertical alignment of icons and text
+- **Bookmark Row Display** - Shows domain name when no nickname set
+  - Falls back to cached page title, then domain name
+  - Globe icon for bookmarks without cached favicon
+- **Real-time Bookmark Updates** - Favicons and titles update live
+  - When visiting a page, matching bookmarks update immediately
+  - No need to reload bookmarks panel
 - Total tests: 189 (was 171) - added 18 folder management tests
+
+### Fixed
+- **Folder Deletion** - Now properly deletes folders and their bookmarks
+- **Empty Folder Deletion** - Deletes without confirmation dialog
+- **Bookmark List Refresh** - List no longer disappears after folder deletion
 
 ## [0.7.0] - 2026-01-26
 

@@ -40,7 +40,11 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
   - Close button on each workspace tab
 - **Tab pinning** - pin tabs with visual indicator, warning on workspace close
 - **Session persistence** - restore workspaces and tabs on restart (Vivaldi-style)
-- **Bookmarks panel** - add/remove bookmarks, folder organization, SQLite storage
+- **Bookmarks panel** - full bookmark management
+  - Add bookmarks via popover with URL, nickname, description
+  - Folder organization with collapsible collections
+  - Persistent favicon and title cache
+  - Double-click to open, right-click for context menu
 - **Collapsible sidebar** - click active panel icon to toggle
 - **History panel** with browsing history
 - **Downloads panel** - full download management
@@ -98,7 +102,7 @@ cmake --build build-test --target OrbFoxTests
 - Tab manager (48 tests) - workspace/tab CRUD, active tracking, callbacks
 - Tab manager integration (25 tests) - multi-workspace operations, callback sequences
 - Persistence (17 tests) - history storage, window settings, session storage
-- Bookmark storage (45 tests) - CRUD, folders, positions, edge cases
+- Bookmark storage (63 tests) - CRUD, folders, positions, edge cases
 
 ## Project Structure
 
