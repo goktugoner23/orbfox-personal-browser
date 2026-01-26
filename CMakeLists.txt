@@ -64,6 +64,10 @@ if(APPLE)
         src/ui/MainWindowController.mm
         src/ui/SidebarView.mm
         src/ui/ToolbarView.mm
+        src/ui/components/DesignSystem.mm
+        src/ui/components/DSButton.mm
+        src/ui/components/DSTextField.mm
+        src/ui/components/DSRow.mm
     )
 endif()
 
@@ -86,6 +90,7 @@ endif()
 target_include_directories(PersonalBrowser PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/ui
+    ${CMAKE_SOURCE_DIR}/src/ui/components
     ${CEF_ROOT}
 )
 
@@ -117,6 +122,10 @@ if(APPLE)
         src/ui/MainWindowController.mm
         src/ui/SidebarView.mm
         src/ui/ToolbarView.mm
+        src/ui/components/DesignSystem.mm
+        src/ui/components/DSButton.mm
+        src/ui/components/DSTextField.mm
+        src/ui/components/DSRow.mm
         PROPERTIES COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
     )
 

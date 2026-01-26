@@ -1,6 +1,7 @@
 #import "MainWindowController.h"
 #import "SidebarView.h"
 #import "ToolbarView.h"
+#import "Components.h"
 
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
@@ -44,7 +45,7 @@ static const CGFloat kToolbarHeight = 44.0;
         window.title = @"Personal Browser";
         window.titlebarAppearsTransparent = YES;
         window.titleVisibility = NSWindowTitleHidden;
-        window.backgroundColor = [NSColor colorWithRed:0.11 green:0.11 blue:0.12 alpha:1.0];
+        window.backgroundColor = [DSColors background];
 
         // Full-size content
         window.styleMask |= NSWindowStyleMaskFullSizeContentView;
@@ -378,6 +379,13 @@ static const CGFloat kToolbarHeight = 44.0;
     }
 }
 
+- (void)closeCurrentTab {
+    Tab* tab = _tabManager->GetActiveTab();
+    if (tab) {
+        [self closeTab:tab->id];
+    }
+}
+
 - (void)activateTab:(int)tabId {
     _tabManager->SetActiveTab(tabId);
 }
@@ -438,6 +446,66 @@ static const CGFloat kToolbarHeight = 44.0;
 
 - (void)focusURLBar {
     [_toolbarView focusURLField];
+}
+
+#pragma mark - Sidebar
+
+static const CGFloat kIconStripWidth = 44.0;
+static const CGFloat kSidebarExpandedWidth = 280.0;
+
+- (void)toggleSidebarCollapse:(BOOL)collapse {
+    NSView* contentView = self.window.contentView;
+    CGFloat titleBarHeight = 28;
+
+    CGFloat newSidebarWidth = collapse ? kIconStripWidth : kSidebarExpandedWidth;
+
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext* context) {
+        context.duration = 0.2;
+        context.allowsImplicitAnimation = YES;
+
+        // Animate sidebar width
+        NSRect sidebarFrame = _sidebarView.frame;
+        sidebarFrame.size.width = newSidebarWidth;
+        _sidebarView.animator.frame = sidebarFrame;
+
+        // Animate toolbar position and width
+        NSRect toolbarFrame = _toolbarView.frame;
+        toolbarFrame.origin.x = newSidebarWidth;
+        toolbarFrame.size.width = contentView.bounds.size.width - newSidebarWidth;
+        _toolbarView.animator.frame = toolbarFrame;
+
+        // Animate browser container position and width
+        CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
+        NSRect browserFrame = NSMakeRect(newSidebarWidth, kToolbarHeight,
+                                          contentView.bounds.size.width - newSidebarWidth, browserHeight);
+        _browserContainer.animator.frame = browserFrame;
+
+    } completionHandler:^{
+        // Resize browser views to fit new container
+        for (NSView* subview in self->_browserContainer.subviews) {
+            if (!subview.hidden) {
+                subview.frame = self->_browserContainer.bounds;
+            }
+        }
+    }];
+}
+
+#pragma mark - Panel Actions
+
+- (void)showTabsPanel {
+    [_sidebarView showPanel:SidebarPanelTabs];
+}
+
+- (void)showHistoryPanel {
+    [_sidebarView showPanel:SidebarPanelHistory];
+}
+
+- (void)showBookmarksPanel {
+    [_sidebarView showPanel:SidebarPanelFavorites];
+}
+
+- (void)showDownloadsPanel {
+    [_sidebarView showPanel:SidebarPanelDownloads];
 }
 
 #pragma mark - Keyboard Shortcuts

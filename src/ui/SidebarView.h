@@ -17,11 +17,14 @@ typedef NS_ENUM(NSInteger, SidebarPanel) {
 
 @property (nonatomic, weak) MainWindowController* windowController;
 @property (nonatomic, assign) SidebarPanel activePanel;
+@property (nonatomic, assign, readonly) BOOL isCollapsed;
 
 - (void)reloadTabs;
 - (void)selectTab:(int)tabId;
 - (void)updateTab:(int)tabId title:(NSString*)title isLoading:(BOOL)isLoading;
 - (void)updateTab:(int)tabId faviconData:(NSData*)faviconData;
+- (void)toggleSidebar;
+- (void)showPanel:(SidebarPanel)panel;
 
 @end
 

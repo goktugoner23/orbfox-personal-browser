@@ -17,13 +17,13 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 │    │                │                                   │
 │    │ + New Tab      │                                   │
 ├────┴────────────────┼───────────────────────────────────┤
-│                     │  < > ↻  https://example.com       │
+│                     │  < > ↻  🔒 https://example.com    │
 └─────────────────────┴───────────────────────────────────┘
 ```
 
 - **Left sidebar**: Panel icons, workspace selector, vertical tabs
-- **Bottom toolbar**: Navigation buttons + URL bar
-- **Dark theme** by default
+- **Bottom toolbar**: Navigation buttons + URL bar with security indicator
+- **Dark theme** by default with consistent design system
 
 ## Features
 
@@ -33,8 +33,12 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 - **Vivaldi-style sidebar** with vertical tabs
 - **Bottom toolbar** with navigation and URL bar
 - **Workspace support** for organizing tabs
+- **Collapsible sidebar** - click active panel icon to toggle
+- **History panel** with browsing history
+- **Favicons** displayed in tab list
+- **Loading indicators** with animated progress bar
 - Window position/size persistence
-- Keyboard shortcuts (Cmd+R reload, Cmd+[ back, Cmd+] forward)
+- Keyboard shortcuts (Cmd+T, Cmd+W, Cmd+L, Cmd+1-9, etc.)
 - Context menu navigation
 - Dark theme throughout
 
@@ -72,28 +76,72 @@ personal-browser/
 │   ├── client/
 │   │   └── browser_client.cpp  # CefClient and handlers
 │   ├── data/
-│   │   └── window_settings.cpp # Window persistence
+│   │   ├── window_settings.cpp # Window persistence
+│   │   └── history_storage.cpp # Browsing history (SQLite)
 │   ├── ui/
-│   │   ├── MainWindowController.mm  # Main window logic
+│   │   ├── components/         # Reusable UI components
+│   │   │   ├── DesignSystem.h/mm   # Colors, typography, spacing
+│   │   │   ├── DSButton.h/mm       # Button component
+│   │   │   ├── DSTextField.h/mm    # Text field component
+│   │   │   ├── DSRow.h/mm          # List row component
+│   │   │   └── Components.h        # Component index
+│   │   ├── MainWindowController.mm # Main window logic
 │   │   ├── SidebarView.mm      # Sidebar with tabs/workspaces
 │   │   └── ToolbarView.mm      # Bottom navigation bar
 │   └── platform/
 │       └── mac/
-│           ├── main_mac.mm     # macOS entry point
+│           ├── main_mac.mm     # macOS entry point + menu bar
 │           └── process_helper_mac.cc  # Helper process entry
 ├── include/
 │   ├── browser_app.h
 │   ├── browser_client.h
 │   ├── tab.h                   # Tab data model
 │   ├── tab_manager.h           # Tab management interface
+│   ├── history_storage.h       # History storage interface
 │   ├── window_settings.h
 │   └── workspace.h             # Workspace data model
 ├── resources/
 │   ├── Info.plist              # App bundle info
 │   └── helper-Info.plist.in    # Helper app template
-└── documentation/
-    └── tasks.md                # Implementation roadmap
+└── .claude/
+    └── skills/                 # Claude Code skills
+        ├── native-ui-design/   # UI design guidelines
+        ├── cef-browser/        # CEF development guide
+        └── cpp-development/    # C++ best practices
 ```
+
+## Component Architecture
+
+The UI is built with a React-inspired component system:
+
+### Design System (`src/ui/components/DesignSystem.h`)
+
+Centralized theme configuration:
+
+```objc
+// Colors
+[DSColors background]      // Main background
+[DSColors textPrimary]     // Primary text
+[DSColors accent]          // Accent color
+
+// Typography
+[DSTypography fontWithStyle:DSFontStyleBody]
+
+// Spacing (4pt grid)
+[DSSpacing sm]  // 8pt
+[DSSpacing md]  // 12pt
+
+// Layout
+[DSLayout cornerRadiusMedium]  // 6pt
+[DSLayout iconSizeLarge]       // 28pt
+```
+
+### Reusable Components
+
+- **DSButton** - Button with variants (Ghost, Subtle, Filled) and hover effects
+- **DSIconButton** - Icon-only button with SF Symbols
+- **DSTextField** - Text field with focus ring
+- **DSRow** - List row with hover effect (base for tabs, history items)
 
 ## Architecture
 
@@ -107,12 +155,19 @@ The browser uses CEF's multi-process architecture:
 
 Helper apps in `Contents/Frameworks/` handle subprocess execution.
 
-## Roadmap
+## Keyboard Shortcuts
 
-See [documentation/tasks.md](documentation/tasks.md) for the full implementation plan.
-
-**Current Phase**: Tab Management (Phase 2)
-**Completed**: Foundation (Phase 1)
+| Shortcut | Action |
+|----------|--------|
+| Cmd+T | New tab |
+| Cmd+W | Close tab |
+| Cmd+L | Focus URL bar |
+| Cmd+R | Reload |
+| Cmd+[ | Back |
+| Cmd+] | Forward |
+| Cmd+1-9 | Switch to tab |
+| Cmd+Shift+Y | Show History |
+| Cmd+Shift+B | Show Bookmarks |
 
 ## License
 

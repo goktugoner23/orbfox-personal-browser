@@ -21,6 +21,7 @@
 // Tab operations
 - (void)createNewTab:(NSString*)url;
 - (void)closeTab:(int)tabId;
+- (void)closeCurrentTab;
 - (void)activateTab:(int)tabId;
 
 // Navigation
@@ -32,5 +33,15 @@
 // Update UI
 - (void)updateURLBar:(NSString*)url;
 - (void)updateNavigationButtons:(BOOL)canGoBack canGoForward:(BOOL)canGoForward;
+
+// Sidebar
+- (void)toggleSidebarCollapse:(BOOL)collapse;
+- (void)focusURLBar;
+
+// Panel actions (for menu bar)
+- (void)showTabsPanel;
+- (void)showHistoryPanel;
+- (void)showBookmarksPanel;
+- (void)showDownloadsPanel;
 
 @end

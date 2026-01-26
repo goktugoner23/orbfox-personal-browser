@@ -1,51 +1,37 @@
 #import "SidebarView.h"
 #import "MainWindowController.h"
+#import "Components.h"
 #include "history_storage.h"
 
 // Extern function to access global history storage
 extern HistoryStorage* GetHistoryStorage();
 
-// Colors
-static NSColor* BackgroundColor() {
-    return [NSColor colorWithRed:0.11 green:0.11 blue:0.12 alpha:1.0];
-}
-
-static NSColor* IconStripColor() {
-    return [NSColor colorWithRed:0.08 green:0.08 blue:0.09 alpha:1.0];
-}
-
-static NSColor* TabHoverColor() {
-    return [NSColor colorWithRed:0.18 green:0.18 blue:0.20 alpha:1.0];
-}
-
-static NSColor* TabSelectedColor() {
-    return [NSColor colorWithRed:0.22 green:0.22 blue:0.24 alpha:1.0];
-}
-
-static NSColor* TextColor() {
-    return [NSColor colorWithRed:0.9 green:0.9 blue:0.9 alpha:1.0];
-}
-
-static NSColor* SecondaryTextColor() {
-    return [NSColor colorWithRed:0.6 green:0.6 blue:0.6 alpha:1.0];
-}
-
-static NSColor* AccentColor() {
-    return [NSColor colorWithRed:0.0 green:0.48 blue:1.0 alpha:1.0];
-}
-
+// Layout constants
 static const CGFloat kIconStripWidth = 44.0;
 static const CGFloat kSidebarWidth = 280.0;
 static const CGFloat kWorkspaceHeight = 40.0;
-static const CGFloat kTabRowHeight = 36.0;
 static const CGFloat kNewTabButtonHeight = 44.0;
 
-#pragma mark - TabRowView
+// ============================================================================
+// FLIPPED VIEW
+// For proper top-to-bottom layout in scroll views
+// ============================================================================
+
+@interface FlippedView : NSView
+@end
+
+@implementation FlippedView
+- (BOOL)isFlipped { return YES; }
+@end
+
+// ============================================================================
+// TAB ROW VIEW
+// ============================================================================
 
 @implementation TabRowView {
     NSTrackingArea* _trackingArea;
     BOOL _isHovered;
-    NSButton* _closeButton;
+    DSIconButton* _closeButton;
     NSProgressIndicator* _loadingIndicator;
     NSImageView* _faviconView;
 }
@@ -53,34 +39,37 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 - (instancetype)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
+        self.wantsLayer = YES;
+        self.layer.cornerRadius = [DSLayout cornerRadiusMedium];
         _isHovered = NO;
         _isSelected = NO;
         _isLoading = NO;
 
+        CGFloat iconSize = [DSLayout iconSizeSmall];
+        CGFloat padding = [DSSpacing sm];
+
         // Favicon view
-        _faviconView = [[NSImageView alloc] initWithFrame:NSMakeRect(10, 10, 16, 16)];
+        _faviconView = [[NSImageView alloc] initWithFrame:NSMakeRect(
+            padding + 2, (frame.size.height - iconSize) / 2, iconSize, iconSize)];
         _faviconView.imageScaling = NSImageScaleProportionallyUpOrDown;
-        _faviconView.hidden = YES;  // Hidden until we have a favicon
+        _faviconView.hidden = YES;
         [self addSubview:_faviconView];
 
-        // Loading indicator (same position as favicon)
-        _loadingIndicator = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(10, 10, 16, 16)];
+        // Loading indicator
+        _loadingIndicator = [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(
+            padding + 2, (frame.size.height - iconSize) / 2, iconSize, iconSize)];
         _loadingIndicator.style = NSProgressIndicatorStyleSpinning;
         _loadingIndicator.controlSize = NSControlSizeSmall;
         _loadingIndicator.displayedWhenStopped = NO;
         [self addSubview:_loadingIndicator];
 
         // Close button
-        _closeButton = [[NSButton alloc] initWithFrame:NSMakeRect(frame.size.width - 28, 8, 20, 20)];
-        _closeButton.bezelStyle = NSBezelStyleInline;
-        _closeButton.bordered = NO;
-        _closeButton.title = @"×";
-        _closeButton.font = [NSFont systemFontOfSize:14 weight:NSFontWeightMedium];
-        _closeButton.contentTintColor = SecondaryTextColor();
+        _closeButton = [DSIconButton buttonWithIcon:@"xmark"];
+        _closeButton.frame = NSMakeRect(frame.size.width - 28, (frame.size.height - 20) / 2, 20, 20);
+        _closeButton.autoresizingMask = NSViewMinXMargin;
+        _closeButton.hidden = YES;
         _closeButton.target = self;
         _closeButton.action = @selector(closeTab:);
-        _closeButton.hidden = YES;
-        _closeButton.autoresizingMask = NSViewMinXMargin;
         [self addSubview:_closeButton];
     }
     return self;
@@ -91,10 +80,11 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     if (_trackingArea) {
         [self removeTrackingArea:_trackingArea];
     }
-    _trackingArea = [[NSTrackingArea alloc] initWithRect:self.bounds
-                                                 options:(NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow)
-                                                   owner:self
-                                                userInfo:nil];
+    _trackingArea = [[NSTrackingArea alloc]
+        initWithRect:self.bounds
+             options:(NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow)
+               owner:self
+            userInfo:nil];
     [self addTrackingArea:_trackingArea];
 }
 
@@ -124,23 +114,31 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 - (void)showContextMenu:(NSEvent*)event {
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Tab"];
 
-    NSMenuItem* closeItem = [[NSMenuItem alloc] initWithTitle:@"Close Tab" action:@selector(closeTab:) keyEquivalent:@""];
+    NSMenuItem* closeItem = [[NSMenuItem alloc] initWithTitle:@"Close Tab"
+                                                       action:@selector(closeTab:)
+                                                keyEquivalent:@""];
     closeItem.target = self;
     [menu addItem:closeItem];
 
-    NSMenuItem* duplicateItem = [[NSMenuItem alloc] initWithTitle:@"Duplicate Tab" action:@selector(duplicateTab:) keyEquivalent:@""];
+    NSMenuItem* duplicateItem = [[NSMenuItem alloc] initWithTitle:@"Duplicate Tab"
+                                                           action:@selector(duplicateTab:)
+                                                    keyEquivalent:@""];
     duplicateItem.target = self;
     [menu addItem:duplicateItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
 
-    NSMenuItem* reloadItem = [[NSMenuItem alloc] initWithTitle:@"Reload Tab" action:@selector(reloadTab:) keyEquivalent:@""];
+    NSMenuItem* reloadItem = [[NSMenuItem alloc] initWithTitle:@"Reload Tab"
+                                                        action:@selector(reloadTab:)
+                                                 keyEquivalent:@""];
     reloadItem.target = self;
     [menu addItem:reloadItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
 
-    NSMenuItem* closeOthersItem = [[NSMenuItem alloc] initWithTitle:@"Close Other Tabs" action:@selector(closeOtherTabs:) keyEquivalent:@""];
+    NSMenuItem* closeOthersItem = [[NSMenuItem alloc] initWithTitle:@"Close Other Tabs"
+                                                             action:@selector(closeOtherTabs:)
+                                                      keyEquivalent:@""];
     closeOthersItem.target = self;
     [menu addItem:closeOthersItem];
 
@@ -173,7 +171,6 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     Workspace* workspace = _sidebarView.windowController.tabManager->GetActiveWorkspace();
     if (!workspace) return;
 
-    // Collect IDs of tabs to close (all except this one)
     std::vector<int> tabsToClose;
     for (const auto& tab : workspace->tabs) {
         if (tab->id != _tabId) {
@@ -181,7 +178,6 @@ static const CGFloat kNewTabButtonHeight = 44.0;
         }
     }
 
-    // Close them
     for (int tabId : tabsToClose) {
         [_sidebarView.windowController closeTab:tabId];
     }
@@ -191,34 +187,33 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     (void)dirtyRect;
     NSColor* bgColor = nil;
     if (_isSelected) {
-        bgColor = TabSelectedColor();
+        bgColor = [DSColors surfaceActive];
     } else if (_isHovered) {
-        bgColor = TabHoverColor();
+        bgColor = [DSColors surfaceHover];
     }
 
     if (bgColor) {
         [bgColor setFill];
-        NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds, 4, 2)
-                                                             xRadius:6
-                                                             yRadius:6];
+        CGFloat inset = [DSSpacing xs];
+        NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds, inset, 2)
+                                                             xRadius:[DSLayout cornerRadiusMedium]
+                                                             yRadius:[DSLayout cornerRadiusMedium]];
         [path fill];
     }
 
-    // Draw title (offset if loading indicator or favicon is visible)
+    // Draw title
     NSMutableParagraphStyle* style = [[NSMutableParagraphStyle alloc] init];
     style.lineBreakMode = NSLineBreakByTruncatingTail;
 
-    NSDictionary* attrs = @{
-        NSFontAttributeName: [NSFont systemFontOfSize:13],
-        NSForegroundColorAttributeName: TextColor(),
-        NSParagraphStyleAttributeName: style
-    };
+    NSDictionary* attrs = [DSTypography attributesWithStyle:DSFontStyleBody
+                                                      color:[DSColors textPrimary]];
+    NSMutableDictionary* mutableAttrs = [attrs mutableCopy];
+    mutableAttrs[NSParagraphStyleAttributeName] = style;
 
-    // Offset title if we have a favicon or loading indicator
     BOOL hasIcon = _isLoading || (_favicon != nil);
-    CGFloat titleX = hasIcon ? 32 : 12;
+    CGFloat titleX = hasIcon ? 32 : [DSSpacing md];
     NSRect titleRect = NSMakeRect(titleX, 10, self.bounds.size.width - titleX - 32, 18);
-    [_title drawInRect:titleRect withAttributes:attrs];
+    [_title drawInRect:titleRect withAttributes:mutableAttrs];
 }
 
 - (void)setTitle:(NSString*)title {
@@ -238,7 +233,6 @@ static const CGFloat kNewTabButtonHeight = 44.0;
         _faviconView.hidden = YES;
     } else {
         [_loadingIndicator stopAnimation:nil];
-        // Show favicon if we have one
         _faviconView.hidden = (_favicon == nil);
     }
     [self setNeedsDisplay:YES];
@@ -247,48 +241,43 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 - (void)setFavicon:(NSImage*)favicon {
     _favicon = favicon;
     _faviconView.image = favicon;
-    // Only show favicon if not loading
     _faviconView.hidden = (_isLoading || favicon == nil);
     [self setNeedsDisplay:YES];
 }
 
 @end
 
-// Flipped view for proper top-to-bottom tab ordering
-@interface FlippedView : NSView
-@end
-
-@implementation FlippedView
-- (BOOL)isFlipped {
-    return YES;
-}
-@end
-
-#pragma mark - SidebarView
+// ============================================================================
+// SIDEBAR VIEW
+// ============================================================================
 
 @implementation SidebarView {
     NSView* _iconStrip;
 
-    // Tabs panel views
+    // Tabs panel
     NSView* _tabsPanelContainer;
     NSView* _workspaceSelector;
     NSScrollView* _tabScrollView;
     FlippedView* _tabContainer;
-    NSButton* _newTabButton;
-    NSButton* _addWorkspaceBtn;
+    DSButton* _newTabButton;
+    DSIconButton* _addWorkspaceBtn;
 
-    // History panel views
+    // History panel
     NSView* _historyPanelContainer;
     NSScrollView* _historyScrollView;
     FlippedView* _historyContainer;
 
-    NSButton* _tabsIcon;
-    NSButton* _favoritesIcon;
-    NSButton* _historyIcon;
-    NSButton* _downloadsIcon;
+    // Icon buttons
+    DSIconButton* _tabsIcon;
+    DSIconButton* _favoritesIcon;
+    DSIconButton* _historyIcon;
+    DSIconButton* _downloadsIcon;
 
     NSMutableArray<TabRowView*>* _tabRows;
+    BOOL _isCollapsed;
 }
+
+@synthesize isCollapsed = _isCollapsed;
 
 - (instancetype)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
@@ -301,102 +290,101 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 }
 
 - (void)setupViews {
-    // Icon strip (leftmost column)
+    // Icon strip
     _iconStrip = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, kIconStripWidth, self.bounds.size.height)];
     _iconStrip.wantsLayer = YES;
-    _iconStrip.layer.backgroundColor = IconStripColor().CGColor;
+    _iconStrip.layer.backgroundColor = [DSColors backgroundSecondary].CGColor;
     _iconStrip.autoresizingMask = NSViewHeightSizable;
     [self addSubview:_iconStrip];
 
     // Icon buttons
     CGFloat iconY = self.bounds.size.height - 50;
-    CGFloat iconSize = 28;
+    CGFloat iconSize = [DSLayout iconSizeLarge];
     CGFloat iconX = (kIconStripWidth - iconSize) / 2;
 
-    _tabsIcon = [self createIconButton:@"square.on.square" frame:NSMakeRect(iconX, iconY, iconSize, iconSize)];
+    _tabsIcon = [self createIconButton:@"square.on.square" y:iconY tooltip:@"Tabs"];
     _tabsIcon.tag = SidebarPanelTabs;
     [_iconStrip addSubview:_tabsIcon];
 
     iconY -= 40;
-    _favoritesIcon = [self createIconButton:@"star" frame:NSMakeRect(iconX, iconY, iconSize, iconSize)];
+    _favoritesIcon = [self createIconButton:@"star" y:iconY tooltip:@"Bookmarks"];
     _favoritesIcon.tag = SidebarPanelFavorites;
     [_iconStrip addSubview:_favoritesIcon];
 
     iconY -= 40;
-    _historyIcon = [self createIconButton:@"clock" frame:NSMakeRect(iconX, iconY, iconSize, iconSize)];
+    _historyIcon = [self createIconButton:@"clock" y:iconY tooltip:@"History"];
     _historyIcon.tag = SidebarPanelHistory;
     [_iconStrip addSubview:_historyIcon];
 
     iconY -= 40;
-    _downloadsIcon = [self createIconButton:@"arrow.down.circle" frame:NSMakeRect(iconX, iconY, iconSize, iconSize)];
+    _downloadsIcon = [self createIconButton:@"arrow.down.circle" y:iconY tooltip:@"Downloads"];
     _downloadsIcon.tag = SidebarPanelDownloads;
     [_iconStrip addSubview:_downloadsIcon];
 
-    // Content area dimensions
+    // Content area
     CGFloat contentX = kIconStripWidth;
     CGFloat contentWidth = kSidebarWidth - kIconStripWidth;
     CGFloat contentHeight = self.bounds.size.height;
 
-    // ========================================
-    // TABS PANEL
-    // ========================================
-    _tabsPanelContainer = [[NSView alloc] initWithFrame:NSMakeRect(contentX, 0, contentWidth, contentHeight)];
+    [self setupTabsPanel:contentX width:contentWidth height:contentHeight];
+    [self setupHistoryPanel:contentX width:contentWidth height:contentHeight];
+
+    [self updateIconSelection];
+    [self updatePanelVisibility];
+}
+
+- (DSIconButton*)createIconButton:(NSString*)symbolName y:(CGFloat)y tooltip:(NSString*)tooltip {
+    CGFloat iconSize = [DSLayout iconSizeLarge];
+    CGFloat iconX = (kIconStripWidth - iconSize) / 2;
+
+    DSIconButton* btn = [DSIconButton buttonWithIcon:symbolName tooltip:tooltip];
+    btn.frame = NSMakeRect(iconX, y, iconSize, iconSize);
+    btn.target = self;
+    btn.action = @selector(iconClicked:);
+    btn.autoresizingMask = NSViewMinYMargin;
+    return btn;
+}
+
+- (void)setupTabsPanel:(CGFloat)x width:(CGFloat)width height:(CGFloat)height {
+    _tabsPanelContainer = [[NSView alloc] initWithFrame:NSMakeRect(x, 0, width, height)];
     _tabsPanelContainer.autoresizingMask = NSViewHeightSizable | NSViewWidthSizable;
     [self addSubview:_tabsPanelContainer];
 
-    // Workspace selector (at top)
-    _workspaceSelector = [[NSView alloc] initWithFrame:NSMakeRect(0, contentHeight - kWorkspaceHeight - 8,
-                                                                   contentWidth, kWorkspaceHeight)];
+    // Workspace selector
+    _workspaceSelector = [[NSView alloc] initWithFrame:NSMakeRect(
+        0, height - kWorkspaceHeight - [DSSpacing sm], width, kWorkspaceHeight)];
     _workspaceSelector.autoresizingMask = NSViewMinYMargin | NSViewWidthSizable;
     [_tabsPanelContainer addSubview:_workspaceSelector];
 
     // Workspace button
-    NSButton* workspaceBtn = [[NSButton alloc] initWithFrame:NSMakeRect(8, 4, 100, 32)];
-    workspaceBtn.bezelStyle = NSBezelStyleInline;
-    workspaceBtn.bordered = NO;
-    workspaceBtn.title = @"● Personal";
-    workspaceBtn.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
-    workspaceBtn.contentTintColor = TextColor();
-    workspaceBtn.wantsLayer = YES;
-    workspaceBtn.layer.backgroundColor = TabSelectedColor().CGColor;
-    workspaceBtn.layer.cornerRadius = 6;
+    DSButton* workspaceBtn = [DSButton buttonWithTitle:@"Personal" variant:DSButtonVariantSubtle];
+    workspaceBtn.frame = NSMakeRect([DSSpacing sm], [DSSpacing xs], 100, 32);
     [_workspaceSelector addSubview:workspaceBtn];
 
     // Add workspace button
-    _addWorkspaceBtn = [[NSButton alloc] initWithFrame:NSMakeRect(contentWidth - 36, 8, 24, 24)];
-    _addWorkspaceBtn.bezelStyle = NSBezelStyleInline;
-    _addWorkspaceBtn.bordered = NO;
-    _addWorkspaceBtn.image = [NSImage imageWithSystemSymbolName:@"plus" accessibilityDescription:@"Add workspace"];
-    _addWorkspaceBtn.contentTintColor = SecondaryTextColor();
+    _addWorkspaceBtn = [DSIconButton buttonWithIcon:@"plus" tooltip:@"Add Workspace"];
+    _addWorkspaceBtn.frame = NSMakeRect(width - 36, [DSSpacing sm], 24, 24);
     _addWorkspaceBtn.autoresizingMask = NSViewMinXMargin;
     _addWorkspaceBtn.target = self;
     _addWorkspaceBtn.action = @selector(addWorkspaceClicked:);
     [_workspaceSelector addSubview:_addWorkspaceBtn];
 
-    // New Tab button (at bottom)
-    _newTabButton = [[NSButton alloc] initWithFrame:NSMakeRect(8, 5, contentWidth - 16, 34)];
-    _newTabButton.bezelStyle = NSBezelStyleInline;
-    _newTabButton.bordered = NO;
-    _newTabButton.title = @"";
-    _newTabButton.image = [NSImage imageWithSystemSymbolName:@"plus" accessibilityDescription:@"New Tab"];
-    _newTabButton.imagePosition = NSImageLeading;
-    _newTabButton.contentTintColor = SecondaryTextColor();
+    // New Tab button
+    _newTabButton = [DSButton buttonWithTitle:@"New Tab" icon:@"plus" variant:DSButtonVariantGhost];
+    _newTabButton.frame = NSMakeRect([DSSpacing sm], 5, width - [DSSpacing lg], 34);
+    _newTabButton.imagePosition = NSImageTrailing;
+    _newTabButton.autoresizingMask = NSViewMaxYMargin | NSViewWidthSizable;
     _newTabButton.target = self;
     _newTabButton.action = @selector(newTabClicked:);
-    _newTabButton.autoresizingMask = NSViewMaxYMargin | NSViewWidthSizable;
-
-    NSMutableAttributedString* newTabTitle = [[NSMutableAttributedString alloc] initWithString:@"  New Tab"];
-    [newTabTitle addAttribute:NSForegroundColorAttributeName value:SecondaryTextColor() range:NSMakeRange(0, newTabTitle.length)];
-    [newTabTitle addAttribute:NSFontAttributeName value:[NSFont systemFontOfSize:13] range:NSMakeRange(0, newTabTitle.length)];
-    _newTabButton.attributedTitle = newTabTitle;
     [_tabsPanelContainer addSubview:_newTabButton];
 
     // Tab scroll view
-    CGFloat tabAreaTop = contentHeight - kWorkspaceHeight - 16;
+    CGFloat tabAreaTop = height - kWorkspaceHeight - [DSSpacing lg];
     CGFloat tabAreaBottom = kNewTabButtonHeight;
     CGFloat tabAreaHeight = tabAreaTop - tabAreaBottom;
 
-    _tabScrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, tabAreaBottom, contentWidth, tabAreaHeight)];
+    _tabScrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(
+        0, tabAreaBottom, width, tabAreaHeight)];
     _tabScrollView.hasVerticalScroller = YES;
     _tabScrollView.hasHorizontalScroller = NO;
     _tabScrollView.autohidesScrollers = YES;
@@ -404,22 +392,22 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     _tabScrollView.autoresizingMask = NSViewHeightSizable | NSViewWidthSizable;
     [_tabsPanelContainer addSubview:_tabScrollView];
 
-    _tabContainer = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, contentWidth, tabAreaHeight)];
+    _tabContainer = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, width, tabAreaHeight)];
     _tabScrollView.documentView = _tabContainer;
+}
 
-    // ========================================
-    // HISTORY PANEL
-    // ========================================
-    _historyPanelContainer = [[NSView alloc] initWithFrame:NSMakeRect(contentX, 0, contentWidth, contentHeight)];
+- (void)setupHistoryPanel:(CGFloat)x width:(CGFloat)width height:(CGFloat)height {
+    _historyPanelContainer = [[NSView alloc] initWithFrame:NSMakeRect(x, 0, width, height)];
     _historyPanelContainer.autoresizingMask = NSViewHeightSizable | NSViewWidthSizable;
     _historyPanelContainer.hidden = YES;
     [self addSubview:_historyPanelContainer];
 
     // History title
-    NSTextField* historyTitle = [[NSTextField alloc] initWithFrame:NSMakeRect(12, contentHeight - 40, contentWidth - 24, 24)];
+    NSTextField* historyTitle = [[NSTextField alloc] initWithFrame:NSMakeRect(
+        [DSSpacing md], height - 40, width - [DSSpacing xl], 24)];
     historyTitle.stringValue = @"History";
-    historyTitle.font = [NSFont systemFontOfSize:15 weight:NSFontWeightSemibold];
-    historyTitle.textColor = TextColor();
+    historyTitle.font = [DSTypography fontWithStyle:DSFontStyleHeadline];
+    historyTitle.textColor = [DSColors textPrimary];
     historyTitle.bezeled = NO;
     historyTitle.drawsBackground = NO;
     historyTitle.editable = NO;
@@ -428,7 +416,8 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     [_historyPanelContainer addSubview:historyTitle];
 
     // History scroll view
-    _historyScrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, contentWidth, contentHeight - 50)];
+    _historyScrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(
+        0, 0, width, height - 50)];
     _historyScrollView.hasVerticalScroller = YES;
     _historyScrollView.hasHorizontalScroller = NO;
     _historyScrollView.autohidesScrollers = YES;
@@ -436,56 +425,39 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     _historyScrollView.autoresizingMask = NSViewHeightSizable | NSViewWidthSizable;
     [_historyPanelContainer addSubview:_historyScrollView];
 
-    _historyContainer = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, contentWidth, contentHeight - 50)];
+    _historyContainer = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, width, height - 50)];
     _historyScrollView.documentView = _historyContainer;
-
-    [self updateIconSelection];
-    [self updatePanelVisibility];
 }
 
-- (NSButton*)createIconButton:(NSString*)symbolName frame:(NSRect)frame {
-    NSButton* btn = [[NSButton alloc] initWithFrame:frame];
-    btn.bezelStyle = NSBezelStyleInline;
-    btn.bordered = NO;
-    btn.image = [NSImage imageWithSystemSymbolName:symbolName accessibilityDescription:symbolName];
-    btn.contentTintColor = SecondaryTextColor();
-    btn.target = self;
-    btn.action = @selector(iconClicked:);
-    btn.autoresizingMask = NSViewMinYMargin;
-    return btn;
-}
+#pragma mark - Actions
 
 - (void)iconClicked:(NSButton*)sender {
-    _activePanel = (SidebarPanel)sender.tag;
-    [self updateIconSelection];
-    [self updatePanelVisibility];
-}
+    SidebarPanel clickedPanel = (SidebarPanel)sender.tag;
 
-- (void)updatePanelVisibility {
-    // Hide all panels
-    _tabsPanelContainer.hidden = YES;
-    _historyPanelContainer.hidden = YES;
-
-    // Show active panel
-    switch (_activePanel) {
-        case SidebarPanelTabs:
-            _tabsPanelContainer.hidden = NO;
-            break;
-        case SidebarPanelHistory:
-            _historyPanelContainer.hidden = NO;
-            [self reloadHistory];
-            break;
-        default:
-            // Favorites and Downloads - show placeholder (TODO)
-            break;
+    if (clickedPanel == _activePanel) {
+        [self toggleSidebar];
+    } else {
+        if (_isCollapsed) {
+            [self toggleSidebar];
+        }
+        _activePanel = clickedPanel;
+        [self updateIconSelection];
+        [self updatePanelVisibility];
     }
 }
 
-- (void)updateIconSelection {
-    _tabsIcon.contentTintColor = (_activePanel == SidebarPanelTabs) ? AccentColor() : SecondaryTextColor();
-    _favoritesIcon.contentTintColor = (_activePanel == SidebarPanelFavorites) ? AccentColor() : SecondaryTextColor();
-    _historyIcon.contentTintColor = (_activePanel == SidebarPanelHistory) ? AccentColor() : SecondaryTextColor();
-    _downloadsIcon.contentTintColor = (_activePanel == SidebarPanelDownloads) ? AccentColor() : SecondaryTextColor();
+- (void)toggleSidebar {
+    _isCollapsed = !_isCollapsed;
+    [_windowController toggleSidebarCollapse:_isCollapsed];
+}
+
+- (void)showPanel:(SidebarPanel)panel {
+    if (_isCollapsed) {
+        [self toggleSidebar];
+    }
+    _activePanel = panel;
+    [self updateIconSelection];
+    [self updatePanelVisibility];
 }
 
 - (void)newTabClicked:(id)sender {
@@ -495,53 +467,75 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
 - (void)addWorkspaceClicked:(id)sender {
     (void)sender;
-    // TODO: Implement workspace creation UI
-    // For now, just create a new workspace with default name
     if (_windowController && _windowController.tabManager) {
         _windowController.tabManager->CreateWorkspace("New Space");
-        // TODO: Update workspace selector UI
     }
 }
 
+#pragma mark - UI Updates
+
+- (void)updatePanelVisibility {
+    _tabsPanelContainer.hidden = YES;
+    _historyPanelContainer.hidden = YES;
+
+    switch (_activePanel) {
+        case SidebarPanelTabs:
+            _tabsPanelContainer.hidden = NO;
+            break;
+        case SidebarPanelHistory:
+            _historyPanelContainer.hidden = NO;
+            [self reloadHistory];
+            break;
+        default:
+            break;
+    }
+}
+
+- (void)updateIconSelection {
+    _tabsIcon.contentTintColor = (_activePanel == SidebarPanelTabs)
+        ? [DSColors accent] : [DSColors textSecondary];
+    _favoritesIcon.contentTintColor = (_activePanel == SidebarPanelFavorites)
+        ? [DSColors accent] : [DSColors textSecondary];
+    _historyIcon.contentTintColor = (_activePanel == SidebarPanelHistory)
+        ? [DSColors accent] : [DSColors textSecondary];
+    _downloadsIcon.contentTintColor = (_activePanel == SidebarPanelDownloads)
+        ? [DSColors accent] : [DSColors textSecondary];
+}
+
+#pragma mark - Tabs
+
 - (void)reloadTabs {
-    // Clear existing tab rows
     for (TabRowView* row in _tabRows) {
         [row removeFromSuperview];
     }
     [_tabRows removeAllObjects];
 
-    if (!_windowController || !_windowController.tabManager) {
-        return;
-    }
+    if (!_windowController || !_windowController.tabManager) return;
 
     Workspace* workspace = _windowController.tabManager->GetActiveWorkspace();
-    if (!workspace) {
-        return;
-    }
+    if (!workspace) return;
 
     CGFloat contentWidth = kSidebarWidth - kIconStripWidth;
-    CGFloat totalHeight = workspace->tabs.size() * kTabRowHeight;
+    CGFloat rowHeight = [DSLayout rowHeight];
+    CGFloat totalHeight = workspace->tabs.size() * rowHeight;
     CGFloat minHeight = _tabScrollView.bounds.size.height;
 
-    // Ensure container is at least as tall as scroll view
     _tabContainer.frame = NSMakeRect(0, 0, contentWidth, MAX(totalHeight, minHeight));
 
-    // Position tabs from top to bottom (y=0 is at top in flipped view)
     CGFloat y = 0;
     int activeTabId = workspace->GetActiveTab() ? workspace->GetActiveTab()->id : -1;
 
     for (const auto& tab : workspace->tabs) {
-        TabRowView* row = [[TabRowView alloc] initWithFrame:NSMakeRect(0, y, contentWidth, kTabRowHeight)];
+        TabRowView* row = [[TabRowView alloc] initWithFrame:NSMakeRect(0, y, contentWidth, rowHeight)];
         row.tabId = tab->id;
         row.title = [NSString stringWithUTF8String:tab->title.c_str()];
         row.isSelected = (tab->id == activeTabId);
         row.isLoading = tab->is_loading;
         row.sidebarView = self;
 
-        // Set favicon if available
         if (!tab->favicon_data.empty()) {
             NSData* faviconData = [NSData dataWithBytes:tab->favicon_data.data()
-                                                length:tab->favicon_data.size()];
+                                                 length:tab->favicon_data.size()];
             NSImage* favicon = [[NSImage alloc] initWithData:faviconData];
             if (favicon) {
                 row.favicon = favicon;
@@ -550,7 +544,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
         [_tabContainer addSubview:row];
         [_tabRows addObject:row];
-        y += kTabRowHeight;
+        y += rowHeight;
     }
 }
 
@@ -584,8 +578,9 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     }
 }
 
+#pragma mark - History
+
 - (void)reloadHistory {
-    // Clear existing history rows
     for (NSView* subview in _historyContainer.subviews.copy) {
         [subview removeFromSuperview];
     }
@@ -598,7 +593,6 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     CGFloat y = 0;
     CGFloat rowHeight = 48;
 
-    // Group by date
     NSDateFormatter* dateFormatter = [[NSDateFormatter alloc] init];
     dateFormatter.dateStyle = NSDateFormatterMediumStyle;
     dateFormatter.timeStyle = NSDateFormatterNoStyle;
@@ -626,12 +620,13 @@ static const CGFloat kNewTabButtonHeight = 44.0;
             dateString = [dateFormatter stringFromDate:visitDate];
         }
 
-        // Add date header if different from last
+        // Date header
         if (![dateString isEqualToString:lastDateString]) {
-            NSTextField* dateHeader = [[NSTextField alloc] initWithFrame:NSMakeRect(12, y, contentWidth - 24, 24)];
+            NSTextField* dateHeader = [[NSTextField alloc] initWithFrame:NSMakeRect(
+                [DSSpacing md], y, contentWidth - [DSSpacing xl], 24)];
             dateHeader.stringValue = dateString;
-            dateHeader.font = [NSFont systemFontOfSize:11 weight:NSFontWeightMedium];
-            dateHeader.textColor = SecondaryTextColor();
+            dateHeader.font = [DSTypography fontWithStyle:DSFontStyleCaptionMedium];
+            dateHeader.textColor = [DSColors textSecondary];
             dateHeader.bezeled = NO;
             dateHeader.drawsBackground = NO;
             dateHeader.editable = NO;
@@ -641,79 +636,39 @@ static const CGFloat kNewTabButtonHeight = 44.0;
             lastDateString = dateString;
         }
 
-        // History row
-        NSView* row = [[NSView alloc] initWithFrame:NSMakeRect(0, y, contentWidth, rowHeight)];
+        // History row using DSHistoryRow
+        DSHistoryRow* row = [[DSHistoryRow alloc] initWithFrame:NSMakeRect(
+            [DSSpacing xs], y, contentWidth - [DSSpacing sm], rowHeight)];
+        row.title = [NSString stringWithUTF8String:entry.title.empty()
+            ? entry.url.c_str() : entry.title.c_str()];
+        row.url = [NSString stringWithUTF8String:entry.url.c_str()];
+        row.time = [timeFormatter stringFromDate:visitDate];
 
-        // Title
-        NSTextField* titleField = [[NSTextField alloc] initWithFrame:NSMakeRect(12, 24, contentWidth - 24, 18)];
-        titleField.stringValue = [NSString stringWithUTF8String:entry.title.empty() ? entry.url.c_str() : entry.title.c_str()];
-        titleField.font = [NSFont systemFontOfSize:13];
-        titleField.textColor = TextColor();
-        titleField.bezeled = NO;
-        titleField.drawsBackground = NO;
-        titleField.editable = NO;
-        titleField.selectable = NO;
-        titleField.lineBreakMode = NSLineBreakByTruncatingTail;
-        [row addSubview:titleField];
-
-        // URL and time
-        NSString* urlStr = [NSString stringWithUTF8String:entry.url.c_str()];
-        NSString* timeStr = [timeFormatter stringFromDate:visitDate];
-        NSTextField* subtitleField = [[NSTextField alloc] initWithFrame:NSMakeRect(12, 6, contentWidth - 70, 16)];
-        subtitleField.stringValue = urlStr;
-        subtitleField.font = [NSFont systemFontOfSize:11];
-        subtitleField.textColor = SecondaryTextColor();
-        subtitleField.bezeled = NO;
-        subtitleField.drawsBackground = NO;
-        subtitleField.editable = NO;
-        subtitleField.selectable = NO;
-        subtitleField.lineBreakMode = NSLineBreakByTruncatingTail;
-        [row addSubview:subtitleField];
-
-        NSTextField* timeField = [[NSTextField alloc] initWithFrame:NSMakeRect(contentWidth - 55, 6, 50, 16)];
-        timeField.stringValue = timeStr;
-        timeField.font = [NSFont systemFontOfSize:11];
-        timeField.textColor = SecondaryTextColor();
-        timeField.bezeled = NO;
-        timeField.drawsBackground = NO;
-        timeField.editable = NO;
-        timeField.selectable = NO;
-        timeField.alignment = NSTextAlignmentRight;
-        [row addSubview:timeField];
-
-        // Store URL for click handling
-        row.identifier = urlStr;
-
-        // Click gesture
-        NSClickGestureRecognizer* click = [[NSClickGestureRecognizer alloc] initWithTarget:self action:@selector(historyRowClicked:)];
-        [row addGestureRecognizer:click];
+        __weak SidebarView* weakSelf = self;
+        NSString* urlCopy = row.url;
+        row.onClick = ^{
+            SidebarView* strongSelf = weakSelf;
+            if (!strongSelf) return;
+            [strongSelf.windowController navigateToURL:urlCopy];
+            strongSelf->_activePanel = SidebarPanelTabs;
+            [strongSelf updateIconSelection];
+            [strongSelf updatePanelVisibility];
+        };
 
         [_historyContainer addSubview:row];
         y += rowHeight;
     }
 
-    // Resize container
     _historyContainer.frame = NSMakeRect(0, 0, contentWidth, MAX(y, _historyScrollView.bounds.size.height));
 }
 
-- (void)historyRowClicked:(NSClickGestureRecognizer*)gesture {
-    NSView* row = gesture.view;
-    if (row.identifier) {
-        [_windowController navigateToURL:row.identifier];
-        // Switch back to tabs panel
-        _activePanel = SidebarPanelTabs;
-        [self updateIconSelection];
-        [self updatePanelVisibility];
-    }
-}
+#pragma mark - Drawing
 
-- (BOOL)isFlipped {
-    return NO;
-}
+- (BOOL)isFlipped { return NO; }
 
 - (void)drawRect:(NSRect)dirtyRect {
     (void)dirtyRect;
-    [BackgroundColor() setFill];
+    [[DSColors background] setFill];
     NSRectFill(self.bounds);
 }
 

@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-01-26
+
+### Added
+- **Component Architecture** - React-inspired reusable UI components
+  - `DSButton` with variants (Ghost, Subtle, Filled) and sizes
+  - `DSIconButton` for icon-only buttons with SF Symbols
+  - `DSTextField` with focus ring styling
+  - `DSRow` base component for list items with hover effects
+  - `DSHistoryRow` specialized for browsing history display
+- **Design System** - Centralized theme configuration
+  - `DSColors` - Semantic color palette (background, surface, text, accent, etc.)
+  - `DSTypography` - Font styles (body, caption, title, etc.)
+  - `DSSpacing` - 4pt grid spacing system (xs, sm, md, lg, xl)
+  - `DSLayout` - Layout constants (corner radii, icon sizes, etc.)
+  - `DSAnimation` - Animation helpers with standard durations
+- Hover effects on all interactive elements (buttons, tabs, history rows)
+- Collapsible sidebar - click active panel icon to toggle
+- Menu bar integration for History, Bookmarks, Tabs, Downloads panels
+- Keyboard shortcuts: Cmd+Shift+Y (History), Cmd+Shift+B (Bookmarks)
+- Loading progress indicator in URL bar
+- Security indicator icons (lock for HTTPS, warning for HTTP)
+
+### Changed
+- Refactored SidebarView to use component architecture
+- Refactored ToolbarView to use component architecture
+- All hardcoded colors replaced with Design System colors
+- All hardcoded spacing replaced with Design System spacing
+- Improved focus states with accent-colored borders
+
+### Technical
+- New `src/ui/components/` directory for reusable components
+- `Components.h` index file for easy importing
+- NSTrackingArea-based hover detection in all interactive components
+- Block-based callbacks (onClick, onClose, onSubmit) for component events
+- Fixed weak pointer handling in blocks to prevent crashes
+
 ## [0.2.0] - 2026-01-26
 
 ### Added
