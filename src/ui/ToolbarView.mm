@@ -1,5 +1,6 @@
 #import "ToolbarView.h"
 #import "MainWindowController.h"
+#import "BookmarkEditPopover.h"
 #import "Components.h"
 #include "bookmark_storage.h"
 
@@ -24,6 +25,7 @@ extern BookmarkStorage* GetBookmarkStorage();
     NSView* _actionsArea;
     DSIconButton* _bookmarkButton;
     BOOL _isBookmarked;
+    BookmarkEditPopoverController* _bookmarkPopover;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -166,18 +168,52 @@ extern BookmarkStorage* GetBookmarkStorage();
     BookmarkStorage* bookmarks = GetBookmarkStorage();
     if (!bookmarks) return;
 
+    int64_t bookmarkId = 0;
+    NSString* title = [NSString stringWithUTF8String:activeTab->title.c_str()];
+    NSString* url = [NSString stringWithUTF8String:activeTab->url.c_str()];
+    NSString* folder = @"";
+
     if (bookmarks->IsBookmarked(activeTab->url)) {
-        bookmarks->DeleteBookmarkByUrl(activeTab->url);
-        _isBookmarked = NO;
+        // Already bookmarked - get existing bookmark data
+        Bookmark bm = bookmarks->GetBookmarkByUrl(activeTab->url);
+        bookmarkId = bm.id;
+        title = [NSString stringWithUTF8String:bm.title.c_str()];
+        folder = [NSString stringWithUTF8String:bm.folder.c_str()];
     } else {
-        bookmarks->AddBookmark(activeTab->url, activeTab->title);
+        // Not bookmarked - add and show popover
+        bookmarkId = bookmarks->AddBookmark(activeTab->url, activeTab->title);
         _isBookmarked = YES;
+        [self updateBookmarkButtonAppearance];
+        [_windowController reloadBookmarksPanel];
     }
 
-    [self updateBookmarkButtonAppearance];
+    // Show the edit popover
+    [self showBookmarkPopoverForId:bookmarkId title:title url:url folder:folder];
+}
 
-    // Also reload bookmarks panel if visible
-    [_windowController reloadBookmarksPanel];
+- (void)showBookmarkPopoverForId:(int64_t)bookmarkId
+                           title:(NSString*)title
+                             url:(NSString*)url
+                          folder:(NSString*)folder {
+    if (!_bookmarkPopover) {
+        _bookmarkPopover = [[BookmarkEditPopoverController alloc] init];
+        _bookmarkPopover.windowController = _windowController;
+    }
+
+    __weak ToolbarView* weakSelf = self;
+    _bookmarkPopover.onDismiss = ^{
+        ToolbarView* strongSelf = weakSelf;
+        if (strongSelf) {
+            [strongSelf updateBookmarkButtonAppearance];
+            [strongSelf->_windowController updateBookmarkState];
+        }
+    };
+
+    [_bookmarkPopover showRelativeToView:_bookmarkButton
+                             forBookmark:bookmarkId
+                                   title:title
+                                     url:url
+                                  folder:folder];
 }
 
 #pragma mark - Public Methods

@@ -70,6 +70,7 @@ if(APPLE)
         src/ui/MainWindowController.mm
         src/ui/SidebarView.mm
         src/ui/ToolbarView.mm
+        src/ui/BookmarkEditPopover.mm
         src/ui/components/DesignSystem.mm
         src/ui/components/DSButton.mm
         src/ui/components/DSTextField.mm
@@ -128,6 +129,7 @@ if(APPLE)
         src/ui/MainWindowController.mm
         src/ui/SidebarView.mm
         src/ui/ToolbarView.mm
+        src/ui/BookmarkEditPopover.mm
         src/ui/components/DesignSystem.mm
         src/ui/components/DSButton.mm
         src/ui/components/DSTextField.mm
@@ -293,13 +295,16 @@ if(BUILD_TESTS)
     set(TEST_SOURCES
         tests/download_manager_test.cpp
         tests/tab_manager_test.cpp
+        tests/tab_manager_integration_test.cpp
         tests/persistence_test.cpp
+        tests/bookmark_storage_test.cpp
     )
 
     # Source files needed for testing (excluding UI/platform-specific)
     set(TESTABLE_SOURCES
         src/data/window_settings.cpp
         src/data/history_storage.cpp
+        src/data/bookmark_storage.cpp
         src/data/session_storage.cpp
         src/browser/tab_manager.cpp
         src/client/download_manager.cpp

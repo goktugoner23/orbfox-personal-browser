@@ -8,21 +8,28 @@
 // Used for list items like tabs, history entries, menu items.
 // ============================================================================
 
-@interface DSRow : NSView
+@interface DSRow : NSView <NSDraggingSource>
 
 @property (nonatomic, assign) BOOL isSelected;
 @property (nonatomic, assign, readonly) BOOL isHovered;
 @property (nonatomic, assign) BOOL showsCloseButton;
+@property (nonatomic, assign) BOOL isDraggable;
 
 // Content
 @property (nonatomic, strong) NSImage* icon;
 @property (nonatomic, copy) NSString* title;
 @property (nonatomic, copy) NSString* subtitle;
 
+// Drag data (for draggable rows)
+@property (nonatomic, copy) NSString* dragType;
+@property (nonatomic, copy) NSDictionary* dragData;
+
 // Callbacks
 @property (nonatomic, copy) void (^onClick)(void);
+@property (nonatomic, copy) void (^onDoubleClick)(void);
 @property (nonatomic, copy) void (^onClose)(void);
 @property (nonatomic, copy) void (^onRightClick)(NSEvent* event);
+@property (nonatomic, copy) void (^onDragStarted)(void);
 
 // For subclasses
 - (void)setupSubviews;

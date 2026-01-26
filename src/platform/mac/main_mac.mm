@@ -101,6 +101,10 @@
     // Bookmarks menu
     NSMenuItem* bookmarksMenuItem = [[NSMenuItem alloc] init];
     NSMenu* bookmarksMenu = [[NSMenu alloc] initWithTitle:@"Bookmarks"];
+    [bookmarksMenu addItemWithTitle:@"Bookmark This Page" action:@selector(bookmarkThisPage:) keyEquivalent:@"d"];
+    NSMenuItem* newFolderItem = [bookmarksMenu addItemWithTitle:@"New Folder..." action:@selector(newBookmarkFolder:) keyEquivalent:@"N"];
+    newFolderItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    [bookmarksMenu addItem:[NSMenuItem separatorItem]];
     [bookmarksMenu addItemWithTitle:@"Show Bookmarks" action:@selector(showBookmarksPanel:) keyEquivalent:@"b"];
     bookmarksMenuItem.submenu = bookmarksMenu;
     [mainMenu addItem:bookmarksMenuItem];
@@ -163,6 +167,22 @@
     NSWindow* window = [NSApp keyWindow];
     if (window.windowController && [window.windowController respondsToSelector:@selector(showBookmarksPanel)]) {
         [window.windowController performSelector:@selector(showBookmarksPanel)];
+    }
+}
+
+- (void)bookmarkThisPage:(id)sender {
+    (void)sender;
+    NSWindow* window = [NSApp keyWindow];
+    if (window.windowController && [window.windowController respondsToSelector:@selector(bookmarkThisPage)]) {
+        [window.windowController performSelector:@selector(bookmarkThisPage)];
+    }
+}
+
+- (void)newBookmarkFolder:(id)sender {
+    (void)sender;
+    NSWindow* window = [NSApp keyWindow];
+    if (window.windowController && [window.windowController respondsToSelector:@selector(newBookmarkFolder)]) {
+        [window.windowController performSelector:@selector(newBookmarkFolder)];
     }
 }
 

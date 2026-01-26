@@ -725,6 +725,77 @@ static const CGFloat kIconStripWidth = 44.0;
     [_toolbarView setBookmarked:isBookmarked];
 }
 
+- (void)bookmarkThisPage {
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    Tab* activeTab = _tabManager->GetActiveTab();
+    if (!activeTab) return;
+
+    // Toggle bookmark - remove if exists, add if not
+    if (bookmarks->IsBookmarked(activeTab->url)) {
+        bookmarks->DeleteBookmarkByUrl(activeTab->url);
+    } else {
+        bookmarks->AddBookmark(activeTab->url, activeTab->title);
+    }
+
+    [_sidebarView reloadBookmarks];
+    [self updateBookmarkState];
+}
+
+- (void)newBookmarkFolder {
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    // Get default folder name
+    int nextNum = bookmarks->GetNextFolderNumber();
+    NSString* defaultName = [NSString stringWithFormat:@"Collection %d", nextNum];
+
+    // Show modal dialog for folder name
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = @"New Folder";
+    alert.informativeText = @"Enter a name for the new bookmark folder:";
+    [alert addButtonWithTitle:@"Create"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    NSTextField* input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 240, 24)];
+    input.stringValue = defaultName;
+    input.placeholderString = @"Folder name";
+    alert.accessoryView = input;
+
+    [alert.window makeFirstResponder:input];
+
+    NSModalResponse response = [alert runModal];
+
+    if (response == NSAlertFirstButtonReturn) {
+        NSString* folderName = [input.stringValue stringByTrimmingCharactersInSet:
+            [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+        if (folderName.length == 0) {
+            folderName = defaultName;
+        }
+
+        // Check if folder already exists
+        if (bookmarks->FolderExists([folderName UTF8String])) {
+            NSAlert* errorAlert = [[NSAlert alloc] init];
+            errorAlert.messageText = @"Folder Exists";
+            errorAlert.informativeText = [NSString stringWithFormat:
+                @"A folder named \"%@\" already exists.", folderName];
+            errorAlert.alertStyle = NSAlertStyleWarning;
+            [errorAlert addButtonWithTitle:@"OK"];
+            [errorAlert runModal];
+            return;
+        }
+
+        // Create the folder
+        bookmarks->CreateFolder([folderName UTF8String]);
+        [_sidebarView reloadBookmarks];
+
+        // Show bookmarks panel to see the new folder
+        [_sidebarView showPanel:SidebarPanelFavorites];
+    }
+}
+
 #pragma mark - History
 
 - (void)reloadHistoryPanelIfVisible {

@@ -38,8 +38,15 @@ public:
     // Get bookmarks in a folder
     std::vector<Bookmark> GetBookmarksInFolder(const std::string& folder);
 
-    // Get all folder names
+    // Get all folder names (including empty folders)
     std::vector<std::string> GetFolders();
+
+    // Folder management
+    bool CreateFolder(const std::string& name);
+    bool FolderExists(const std::string& name);
+    void DeleteFolder(const std::string& name);  // Also deletes bookmarks in folder
+    void RenameFolder(const std::string& old_name, const std::string& new_name);
+    int GetNextFolderNumber();  // For "Collection 1", "Collection 2", etc.
 
     // Update bookmark
     void UpdateBookmark(int64_t id, const std::string& title, const std::string& folder);
@@ -50,6 +57,9 @@ public:
 
     // Reorder bookmarks
     void MoveBookmark(int64_t id, const std::string& new_folder, int new_position);
+
+    // Clear all bookmarks (for testing)
+    void ClearAllBookmarks();
 
 private:
     static std::string GetDatabasePath();

@@ -10,11 +10,45 @@
 extern HistoryStorage* GetHistoryStorage();
 extern BookmarkStorage* GetBookmarkStorage();
 
+// Pasteboard type for bookmark drag & drop
+static NSString* const kBookmarkPasteboardType = @"com.orbfox.bookmark";
+
 // Layout constants
 static const CGFloat kIconStripWidth = 44.0;
 static const CGFloat kSidebarWidth = 280.0;
 static const CGFloat kWorkspaceHeight = 40.0;
 static const CGFloat kNewTabButtonHeight = 44.0;
+
+// ============================================================================
+// FAVICON CACHE
+// Caches favicons by domain for use in bookmarks/history
+// ============================================================================
+
+static NSMutableDictionary<NSString*, NSImage*>* sFaviconCache = nil;
+
+static NSString* GetDomainFromURL(NSString* urlString) {
+    if (!urlString || urlString.length == 0) return nil;
+    NSURL* url = [NSURL URLWithString:urlString];
+    return url.host;
+}
+
+static NSImage* GetCachedFavicon(NSString* urlString) {
+    if (!sFaviconCache) return nil;
+    NSString* domain = GetDomainFromURL(urlString);
+    if (!domain) return nil;
+    return sFaviconCache[domain];
+}
+
+static void CacheFavicon(NSString* urlString, NSImage* favicon) {
+    if (!favicon || !urlString) return;
+    if (!sFaviconCache) {
+        sFaviconCache = [NSMutableDictionary dictionary];
+    }
+    NSString* domain = GetDomainFromURL(urlString);
+    if (domain) {
+        sFaviconCache[domain] = favicon;
+    }
+}
 
 // ============================================================================
 // FLIPPED VIEW
@@ -26,6 +60,508 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
 @implementation FlippedView
 - (BOOL)isFlipped { return YES; }
+@end
+
+// ============================================================================
+// BOOKMARK DROP CONTAINER
+// FlippedView that accepts bookmark drops for reordering and moving to folders
+// ============================================================================
+
+@class SidebarView;
+
+@interface BookmarkDropContainerView : NSView <NSDraggingDestination>
+@property (nonatomic, weak) SidebarView* sidebarView;
+@property (nonatomic, strong) NSView* dropIndicator;
+@property (nonatomic, strong) NSView* highlightedFolderHeader;
+@property (nonatomic, copy) NSString* dropTargetFolder;   // nil = root level
+@property (nonatomic, assign) int dropPosition;           // Position within folder
+@property (nonatomic, assign) BOOL dropOnFolderHeader;    // YES if dropping ON folder (not between items)
+@end
+
+@implementation BookmarkDropContainerView
+
+- (BOOL)isFlipped { return YES; }
+
+- (instancetype)initWithFrame:(NSRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        [self registerForDraggedTypes:@[kBookmarkPasteboardType]];
+
+        // Create drop indicator (2px accent-colored line)
+        _dropIndicator = [[NSView alloc] initWithFrame:NSZeroRect];
+        _dropIndicator.wantsLayer = YES;
+        _dropIndicator.layer.backgroundColor = [DSColors accent].CGColor;
+        _dropIndicator.layer.cornerRadius = 1;
+        _dropIndicator.hidden = YES;
+        [self addSubview:_dropIndicator];
+
+        _dropPosition = 0;
+    }
+    return self;
+}
+
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+    (void)sender;
+    return NSDragOperationMove;
+}
+
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+    NSPoint location = [self convertPoint:[sender draggingLocation] fromView:nil];
+
+    // Reset highlight
+    if (_highlightedFolderHeader) {
+        _highlightedFolderHeader.layer.backgroundColor = nil;
+        _highlightedFolderHeader = nil;
+    }
+    _dropOnFolderHeader = NO;
+    _dropTargetFolder = nil;
+    _dropPosition = 0;
+
+    CGFloat indicatorY = 0;
+    NSString* currentFolder = nil;  // Tracks current folder context
+    int positionInFolder = 0;       // Position counter within current folder
+    BOOL foundDropPoint = NO;
+
+    // Sort subviews by Y position for proper iteration
+    NSArray* sortedSubviews = [self.subviews sortedArrayUsingComparator:^NSComparisonResult(NSView* a, NSView* b) {
+        if (a == self->_dropIndicator) return NSOrderedDescending;
+        if (b == self->_dropIndicator) return NSOrderedAscending;
+        return [@(a.frame.origin.y) compare:@(b.frame.origin.y)];
+    }];
+
+    NSView* lastView = nil;
+    for (NSView* subview in sortedSubviews) {
+        if (subview == _dropIndicator) continue;
+
+        NSRect frame = subview.frame;
+
+        // Check if this is a folder header (not a DSRow and height < 40)
+        BOOL isFolderHeader = (![subview isKindOfClass:[DSRow class]] && frame.size.height < 40);
+
+        if (isFolderHeader) {
+            // Get folder name from header
+            NSString* folderName = nil;
+            for (NSView* headerSubview in subview.subviews) {
+                if ([headerSubview isKindOfClass:[NSTextField class]]) {
+                    NSTextField* label = (NSTextField*)headerSubview;
+                    if (label.frame.origin.x > 30) {  // Folder name label (not chevron area)
+                        folderName = label.stringValue;
+                        break;
+                    }
+                }
+            }
+
+            // Check if dropping ON this folder header
+            if (location.y >= frame.origin.y && location.y < frame.origin.y + frame.size.height) {
+                // Highlight the folder header
+                subview.wantsLayer = YES;
+                subview.layer.backgroundColor = [DSColors surfaceHover].CGColor;
+                _highlightedFolderHeader = subview;
+                _dropOnFolderHeader = YES;
+                _dropTargetFolder = folderName;
+                _dropPosition = 0;  // First position in folder
+                _dropIndicator.hidden = YES;
+                foundDropPoint = YES;
+                break;
+            }
+
+            // If mouse is before this folder header, drop at end of previous section
+            if (location.y < frame.origin.y && !foundDropPoint) {
+                _dropTargetFolder = currentFolder;
+                _dropPosition = positionInFolder;
+                indicatorY = frame.origin.y - 1;
+                foundDropPoint = YES;
+                break;
+            }
+
+            // Update current folder context
+            currentFolder = folderName;
+            positionInFolder = 0;
+
+        } else if ([subview isKindOfClass:[DSRow class]]) {
+            // This is a bookmark row
+            CGFloat midY = frame.origin.y + frame.size.height / 2;
+
+            if (location.y < midY && !foundDropPoint) {
+                // Drop before this bookmark
+                _dropTargetFolder = currentFolder;
+                _dropPosition = positionInFolder;
+                indicatorY = frame.origin.y - 1;
+                foundDropPoint = YES;
+                break;
+            }
+
+            positionInFolder++;
+        }
+
+        lastView = subview;
+    }
+
+    // If past all items, drop at end
+    if (!foundDropPoint && lastView) {
+        _dropTargetFolder = currentFolder;
+        _dropPosition = positionInFolder;
+        indicatorY = lastView.frame.origin.y + lastView.frame.size.height + 1;
+    }
+
+    // Show drop indicator (unless dropping ON a folder)
+    if (!_dropOnFolderHeader) {
+        CGFloat padding = [DSSpacing xs];
+        CGFloat indent = (_dropTargetFolder.length > 0) ? [DSSpacing md] : 0;
+        _dropIndicator.frame = NSMakeRect(padding + indent, indicatorY, self.bounds.size.width - padding * 2 - indent, 2);
+        _dropIndicator.hidden = NO;
+    }
+
+    return NSDragOperationMove;
+}
+
+- (void)draggingExited:(id<NSDraggingInfo>)sender {
+    (void)sender;
+    _dropIndicator.hidden = YES;
+    if (_highlightedFolderHeader) {
+        _highlightedFolderHeader.layer.backgroundColor = nil;
+        _highlightedFolderHeader = nil;
+    }
+    _dropTargetFolder = nil;
+    _dropPosition = 0;
+    _dropOnFolderHeader = NO;
+}
+
+- (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)sender {
+    (void)sender;
+    return YES;
+}
+
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    _dropIndicator.hidden = YES;
+    if (_highlightedFolderHeader) {
+        _highlightedFolderHeader.layer.backgroundColor = nil;
+        _highlightedFolderHeader = nil;
+    }
+
+    NSPasteboard* pboard = [sender draggingPasteboard];
+    NSData* data = [pboard dataForType:kBookmarkPasteboardType];
+    if (!data) return NO;
+
+    NSDictionary* dragData = [NSPropertyListSerialization propertyListWithData:data
+                                                                       options:NSPropertyListImmutable
+                                                                        format:nil
+                                                                         error:nil];
+    if (!dragData) return NO;
+
+    int64_t bookmarkId = [dragData[@"id"] longLongValue];
+    NSString* sourceFolder = dragData[@"folder"];
+    (void)sourceFolder;  // Currently unused, but available for future use
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return NO;
+
+    // Determine target folder
+    NSString* targetFolder = _dropTargetFolder ?: @"";
+
+    // Adjust position if moving within same folder (need to account for removed item)
+    int finalPosition = _dropPosition;
+    if ([sourceFolder isEqualToString:targetFolder] || (sourceFolder.length == 0 && targetFolder.length == 0)) {
+        // Moving within same folder - check if source is before drop position
+        std::vector<Bookmark> folderBookmarks;
+        if (targetFolder.length > 0) {
+            folderBookmarks = bookmarks->GetBookmarksInFolder([targetFolder UTF8String]);
+        } else {
+            std::vector<Bookmark> all = bookmarks->GetAllBookmarks();
+            for (const auto& bm : all) {
+                if (bm.folder.empty()) {
+                    folderBookmarks.push_back(bm);
+                }
+            }
+        }
+
+        int sourcePosition = -1;
+        for (size_t i = 0; i < folderBookmarks.size(); i++) {
+            if (folderBookmarks[i].id == bookmarkId) {
+                sourcePosition = (int)i;
+                break;
+            }
+        }
+
+        if (sourcePosition >= 0 && sourcePosition < finalPosition) {
+            finalPosition--;  // Account for removal
+        }
+    }
+
+    // Move the bookmark
+    bookmarks->MoveBookmark(bookmarkId, [targetFolder UTF8String], finalPosition);
+
+    // Reload bookmarks in sidebar
+    if (_sidebarView) {
+        [_sidebarView reloadBookmarks];
+    }
+
+    return YES;
+}
+
+- (void)concludeDragOperation:(id<NSDraggingInfo>)sender {
+    (void)sender;
+    _dropIndicator.hidden = YES;
+    if (_highlightedFolderHeader) {
+        _highlightedFolderHeader.layer.backgroundColor = nil;
+        _highlightedFolderHeader = nil;
+    }
+    _dropTargetFolder = nil;
+    _dropPosition = 0;
+    _dropOnFolderHeader = NO;
+}
+
+@end
+
+// ============================================================================
+// ADD BOOKMARK POPOVER
+// Popover for adding a new bookmark with URL, title, nickname, description
+// ============================================================================
+
+@class SidebarView;
+
+@interface AddBookmarkPopoverController : NSViewController
+@property (nonatomic, weak) SidebarView* sidebarView;
+- (void)showRelativeToView:(NSView*)view withUrl:(NSString*)url title:(NSString*)title;
+- (void)close;
+@end
+
+@implementation AddBookmarkPopoverController {
+    NSPopover* _popover;
+    NSTextField* _titleField;
+    NSTextField* _urlField;
+    NSTextField* _nicknameField;
+    NSTextView* _descriptionField;
+    NSPopUpButton* _folderPicker;
+    NSImageView* _bookmarkIcon;
+}
+
+- (void)loadView {
+    CGFloat width = 340;
+    CGFloat height = 280;
+
+    NSView* contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
+    contentView.wantsLayer = YES;
+
+    CGFloat padding = [DSSpacing md];
+    CGFloat labelHeight = 16;
+    CGFloat fieldHeight = 28;
+    CGFloat y = height - padding;
+
+    // Title label
+    y -= labelHeight;
+    NSTextField* titleLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 60, labelHeight)];
+    titleLabel.stringValue = @"Title";
+    titleLabel.font = [DSTypography fontWithStyle:DSFontStyleCaption];
+    titleLabel.textColor = [DSColors textSecondary];
+    titleLabel.bezeled = NO;
+    titleLabel.drawsBackground = NO;
+    titleLabel.editable = NO;
+    [contentView addSubview:titleLabel];
+
+    // Bookmark icon (right side)
+    CGFloat iconSize = 60;
+    _bookmarkIcon = [[NSImageView alloc] initWithFrame:NSMakeRect(width - padding - iconSize, y - 50, iconSize, iconSize)];
+    _bookmarkIcon.image = [NSImage imageWithSystemSymbolName:@"bookmark.fill" accessibilityDescription:nil];
+    _bookmarkIcon.contentTintColor = [DSColors textSecondary];
+    _bookmarkIcon.wantsLayer = YES;
+    _bookmarkIcon.layer.backgroundColor = [DSColors surface].CGColor;
+    _bookmarkIcon.layer.cornerRadius = [DSLayout cornerRadiusMedium];
+    [contentView addSubview:_bookmarkIcon];
+
+    // Title field (Address - URL input)
+    y -= fieldHeight + 4;
+    CGFloat fieldWidth = width - padding * 2 - iconSize - [DSSpacing sm];
+    _urlField = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, fieldWidth, fieldHeight)];
+    _urlField.font = [DSTypography fontWithStyle:DSFontStyleBody];;
+    _urlField.bezelStyle = NSTextFieldRoundedBezel;
+    _urlField.placeholderString = @"Address";
+    [contentView addSubview:_urlField];
+
+    // Nickname label
+    y -= labelHeight + [DSSpacing sm];
+    NSTextField* nicknameLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 80, labelHeight)];
+    nicknameLabel.stringValue = @"Nickname";
+    nicknameLabel.font = [DSTypography fontWithStyle:DSFontStyleCaption];
+    nicknameLabel.textColor = [DSColors textSecondary];
+    nicknameLabel.bezeled = NO;
+    nicknameLabel.drawsBackground = NO;
+    nicknameLabel.editable = NO;
+    [contentView addSubview:nicknameLabel];
+
+    // Nickname field
+    y -= fieldHeight + 4;
+    _titleField = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, width - padding * 2, fieldHeight)];
+    _titleField.font = [DSTypography fontWithStyle:DSFontStyleBody];
+    _titleField.bezelStyle = NSTextFieldRoundedBezel;
+    _titleField.placeholderString = @"Bookmark name";
+    [contentView addSubview:_titleField];
+
+    // Description label
+    y -= labelHeight + [DSSpacing sm];
+    NSTextField* descLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 80, labelHeight)];
+    descLabel.stringValue = @"Description";
+    descLabel.font = [DSTypography fontWithStyle:DSFontStyleCaption];
+    descLabel.textColor = [DSColors textSecondary];
+    descLabel.bezeled = NO;
+    descLabel.drawsBackground = NO;
+    descLabel.editable = NO;
+    [contentView addSubview:descLabel];
+
+    // Description text view (multiline)
+    y -= 60 + 4;
+    NSScrollView* descScrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(padding, y, width - padding * 2, 60)];
+    descScrollView.hasVerticalScroller = YES;
+    descScrollView.hasHorizontalScroller = NO;
+    descScrollView.borderType = NSBezelBorder;
+
+    _descriptionField = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, width - padding * 2 - 4, 56)];
+    _descriptionField.font = [DSTypography fontWithStyle:DSFontStyleBody];
+    _descriptionField.textColor = [DSColors textPrimary];
+    _descriptionField.backgroundColor = [DSColors surface];
+    _descriptionField.minSize = NSMakeSize(0, 56);
+    _descriptionField.maxSize = NSMakeSize(FLT_MAX, FLT_MAX);
+    _descriptionField.verticallyResizable = YES;
+    _descriptionField.horizontallyResizable = NO;
+    _descriptionField.textContainer.widthTracksTextView = YES;
+    descScrollView.documentView = _descriptionField;
+    [contentView addSubview:descScrollView];
+
+    // Folder label and picker
+    y -= fieldHeight + [DSSpacing md];
+    NSTextField* folderLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y + 4, 50, labelHeight)];
+    folderLabel.stringValue = @"Folder";
+    folderLabel.font = [DSTypography fontWithStyle:DSFontStyleCaption];
+    folderLabel.textColor = [DSColors textSecondary];
+    folderLabel.bezeled = NO;
+    folderLabel.drawsBackground = NO;
+    folderLabel.editable = NO;
+    [contentView addSubview:folderLabel];
+
+    _folderPicker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(padding + 55, y, width - padding * 2 - 55, 26) pullsDown:NO];
+    [self populateFolderPicker];
+    [contentView addSubview:_folderPicker];
+
+    // Buttons
+    y -= 40;
+    NSButton* cancelBtn = [[NSButton alloc] initWithFrame:NSMakeRect(padding, y, 70, 28)];
+    cancelBtn.title = @"Cancel";
+    cancelBtn.bezelStyle = NSBezelStyleRounded;
+    cancelBtn.target = self;
+    cancelBtn.action = @selector(cancelClicked:);
+    [contentView addSubview:cancelBtn];
+
+    NSButton* addBtn = [[NSButton alloc] initWithFrame:NSMakeRect(width - padding - 70, y, 70, 28)];
+    addBtn.title = @"Add";
+    addBtn.bezelStyle = NSBezelStyleRounded;
+    addBtn.keyEquivalent = @"\r";
+    addBtn.target = self;
+    addBtn.action = @selector(addClicked:);
+    [contentView addSubview:addBtn];
+
+    self.view = contentView;
+}
+
+- (void)populateFolderPicker {
+    [_folderPicker removeAllItems];
+    [_folderPicker addItemWithTitle:@"No Folder"];
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    std::vector<std::string> folders = bookmarks->GetFolders();
+    if (!folders.empty()) {
+        [[_folderPicker menu] addItem:[NSMenuItem separatorItem]];
+        for (const auto& folder : folders) {
+            [_folderPicker addItemWithTitle:[NSString stringWithUTF8String:folder.c_str()]];
+        }
+    }
+}
+
+- (void)showRelativeToView:(NSView*)view withUrl:(NSString*)url title:(NSString*)title {
+    if (!self.view) {
+        [self loadView];
+    }
+
+    // Set default values
+    _urlField.stringValue = url ?: @"";
+    _titleField.stringValue = title ?: @"";
+    _descriptionField.string = @"";
+
+    [self populateFolderPicker];
+    [_folderPicker selectItemAtIndex:0];
+
+    if (!_popover) {
+        _popover = [[NSPopover alloc] init];
+        _popover.contentViewController = self;
+        _popover.behavior = NSPopoverBehaviorTransient;
+    }
+
+    [_popover showRelativeToRect:view.bounds
+                          ofView:view
+                   preferredEdge:NSRectEdgeMinY];
+
+    // Focus the URL field
+    [_popover.contentViewController.view.window makeFirstResponder:_urlField];
+}
+
+- (void)close {
+    [_popover close];
+}
+
+- (void)cancelClicked:(id)sender {
+    (void)sender;
+    [_popover close];
+}
+
+- (void)addClicked:(id)sender {
+    (void)sender;
+
+    NSString* url = _urlField.stringValue;
+    NSString* title = _titleField.stringValue;
+
+    // Validate URL
+    if (url.length == 0) {
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = @"URL Required";
+        alert.informativeText = @"Please enter a URL for the bookmark.";
+        alert.alertStyle = NSAlertStyleWarning;
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+        return;
+    }
+
+    // Add http:// if no scheme
+    if (![url containsString:@"://"]) {
+        url = [@"https://" stringByAppendingString:url];
+    }
+
+    // Use URL as title if title is empty
+    if (title.length == 0) {
+        title = url;
+    }
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (bookmarks) {
+        NSString* folder = @"";
+        NSInteger selectedIndex = [_folderPicker indexOfSelectedItem];
+        if (selectedIndex > 0) {
+            NSMenuItem* selectedItem = [_folderPicker selectedItem];
+            if (!selectedItem.isSeparatorItem) {
+                folder = selectedItem.title;
+            }
+        }
+
+        bookmarks->AddBookmark([url UTF8String], [title UTF8String], [folder UTF8String]);
+
+        if (_sidebarView) {
+            [_sidebarView reloadBookmarks];
+        }
+    }
+
+    [_popover close];
+}
+
 @end
 
 // ============================================================================
@@ -600,6 +1136,13 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     pinItem.target = self;
     [menu addItem:pinItem];
 
+    // Rename Tab
+    NSMenuItem* renameItem = [[NSMenuItem alloc] initWithTitle:@"Rename Tab"
+                                                        action:@selector(renameTab:)
+                                                 keyEquivalent:@""];
+    renameItem.target = self;
+    [menu addItem:renameItem];
+
     [menu addItem:[NSMenuItem separatorItem]];
 
     NSMenuItem* closeItem = [[NSMenuItem alloc] initWithTitle:@"Close Tab"
@@ -613,6 +1156,35 @@ static const CGFloat kNewTabButtonHeight = 44.0;
                                                     keyEquivalent:@""];
     duplicateItem.target = self;
     [menu addItem:duplicateItem];
+
+    // Open in Space submenu
+    NSMenuItem* openInSpaceItem = [[NSMenuItem alloc] initWithTitle:@"Open in Space"
+                                                             action:nil
+                                                      keyEquivalent:@""];
+    NSMenu* spaceSubmenu = [[NSMenu alloc] initWithTitle:@"Spaces"];
+
+    TabManager* tabManager = _sidebarView.windowController.tabManager;
+    if (tabManager) {
+        for (const auto& workspace : tabManager->GetWorkspaces()) {
+            NSMenuItem* wsItem = [[NSMenuItem alloc] initWithTitle:
+                [NSString stringWithUTF8String:workspace->name.c_str()]
+                                                            action:@selector(duplicateTabToWorkspace:)
+                                                     keyEquivalent:@""];
+            wsItem.target = self;
+            wsItem.tag = workspace->id;
+            [spaceSubmenu addItem:wsItem];
+        }
+    }
+
+    [spaceSubmenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem* newSpaceItem = [[NSMenuItem alloc] initWithTitle:@"New Space"
+                                                          action:@selector(duplicateTabToNewWorkspace:)
+                                                   keyEquivalent:@""];
+    newSpaceItem.target = self;
+    [spaceSubmenu addItem:newSpaceItem];
+
+    openInSpaceItem.submenu = spaceSubmenu;
+    [menu addItem:openInSpaceItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
 
@@ -680,6 +1252,83 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     for (int tabId : tabsToClose) {
         [_sidebarView.windowController closeTab:tabId];
     }
+}
+
+- (void)renameTab:(id)sender {
+    (void)sender;
+    Tab* tab = _sidebarView.windowController.tabManager->GetTabById(_tabId);
+    if (!tab) return;
+
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = @"Rename Tab";
+    alert.informativeText = @"Enter a new title for this tab:";
+    [alert addButtonWithTitle:@"Rename"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    NSTextField* input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 250, 24)];
+    input.stringValue = [NSString stringWithUTF8String:tab->title.c_str()];
+    alert.accessoryView = input;
+
+    __weak TabRowView* weakSelf = self;
+    int tabId = _tabId;
+    [alert beginSheetModalForWindow:_sidebarView.windowController.window
+                  completionHandler:^(NSModalResponse response) {
+        if (response == NSAlertFirstButtonReturn) {
+            NSString* newTitle = input.stringValue;
+            if (newTitle.length > 0) {
+                TabRowView* strongSelf = weakSelf;
+                if (strongSelf) {
+                    Tab* t = strongSelf->_sidebarView.windowController.tabManager->GetTabById(tabId);
+                    if (t) {
+                        t->title = [newTitle UTF8String];
+                        [strongSelf setTitle:newTitle];
+                    }
+                }
+            }
+        }
+    }];
+}
+
+- (void)duplicateTabToWorkspace:(NSMenuItem*)sender {
+    int targetWorkspaceId = (int)sender.tag;
+    Tab* sourceTab = _sidebarView.windowController.tabManager->GetTabById(_tabId);
+    if (!sourceTab) return;
+
+    NSString* urlStr = [NSString stringWithUTF8String:sourceTab->url.c_str()];
+
+    // Switch to target workspace
+    _sidebarView.windowController.tabManager->SetActiveWorkspace(targetWorkspaceId);
+
+    // Create new tab with same URL
+    [_sidebarView.windowController createNewTab:urlStr];
+
+    // Reload UI
+    [_sidebarView reloadWorkspaceTabs];
+    [_sidebarView reloadTabs];
+}
+
+- (void)duplicateTabToNewWorkspace:(id)sender {
+    (void)sender;
+    Tab* sourceTab = _sidebarView.windowController.tabManager->GetTabById(_tabId);
+    if (!sourceTab) return;
+
+    NSString* urlStr = [NSString stringWithUTF8String:sourceTab->url.c_str()];
+
+    // Create new workspace
+    TabManager* tabManager = _sidebarView.windowController.tabManager;
+    size_t count = tabManager->GetWorkspaces().size();
+    NSString* spaceName = [NSString stringWithFormat:@"WS %zu", count + 1];
+    Workspace* newWorkspace = tabManager->CreateWorkspace([spaceName UTF8String]);
+
+    if (!newWorkspace) return;
+
+    // Switch to new workspace and create tab
+    tabManager->SetActiveWorkspace(newWorkspace->id);
+    [_sidebarView.windowController createNewTab:urlStr];
+
+    // Reload UI
+    [_sidebarView reloadWorkspaceTabs];
+    [_sidebarView reloadTabs];
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
@@ -778,7 +1427,11 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     // Bookmarks panel
     NSView* _bookmarksPanelContainer;
     NSScrollView* _bookmarksScrollView;
-    FlippedView* _bookmarksContainer;
+    BookmarkDropContainerView* _bookmarksContainer;
+    NSMutableSet<NSString*>* _collapsedFolders;
+    int64_t _selectedBookmarkId;
+    AddBookmarkPopoverController* _addBookmarkPopover;
+    DSIconButton* _addBookmarkButton;
 
     // Downloads panel
     NSView* _downloadsPanelContainer;
@@ -805,6 +1458,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
         _activePanel = SidebarPanelTabs;
         _tabRows = [NSMutableArray array];
         _workspaceTabs = [NSMutableArray array];
+        _collapsedFolders = [NSMutableSet set];
         [self setupViews];
     }
     return self;
@@ -985,7 +1639,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
     // Bookmarks title
     NSTextField* bookmarksTitle = [[NSTextField alloc] initWithFrame:NSMakeRect(
-        [DSSpacing md], height - 40, width - [DSSpacing xl] - 32, 24)];
+        [DSSpacing md], height - 40, width - [DSSpacing xl] - 64, 24)];
     bookmarksTitle.stringValue = @"Bookmarks";
     bookmarksTitle.font = [DSTypography fontWithStyle:DSFontStyleHeadline];
     bookmarksTitle.textColor = [DSColors textPrimary];
@@ -996,13 +1650,21 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     bookmarksTitle.autoresizingMask = NSViewMinYMargin;
     [_bookmarksPanelContainer addSubview:bookmarksTitle];
 
-    // Add bookmark button (star icon)
-    DSIconButton* addBookmarkBtn = [DSIconButton buttonWithIcon:@"plus" tooltip:@"Bookmark this page"];
-    addBookmarkBtn.frame = NSMakeRect(width - 36, height - 40, 28, 28);
-    addBookmarkBtn.autoresizingMask = NSViewMinYMargin | NSViewMinXMargin;
-    addBookmarkBtn.target = self;
-    addBookmarkBtn.action = @selector(addBookmarkClicked:);
-    [_bookmarksPanelContainer addSubview:addBookmarkBtn];
+    // New folder button
+    DSIconButton* newFolderBtn = [DSIconButton buttonWithIcon:@"folder.badge.plus" tooltip:@"New folder"];
+    newFolderBtn.frame = NSMakeRect(width - 68, height - 40, 28, 28);
+    newFolderBtn.autoresizingMask = NSViewMinYMargin | NSViewMinXMargin;
+    newFolderBtn.target = self;
+    newFolderBtn.action = @selector(newFolderClicked:);
+    [_bookmarksPanelContainer addSubview:newFolderBtn];
+
+    // Add bookmark button (plus icon - shows menu on click)
+    _addBookmarkButton = [DSIconButton buttonWithIcon:@"plus" tooltip:@"Add bookmark or folder"];
+    _addBookmarkButton.frame = NSMakeRect(width - 36, height - 40, 28, 28);
+    _addBookmarkButton.autoresizingMask = NSViewMinYMargin | NSViewMinXMargin;
+    _addBookmarkButton.target = self;
+    _addBookmarkButton.action = @selector(addBookmarkClicked:);
+    [_bookmarksPanelContainer addSubview:_addBookmarkButton];
 
     // Bookmarks scroll view
     _bookmarksScrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(
@@ -1014,7 +1676,8 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     _bookmarksScrollView.autoresizingMask = NSViewHeightSizable | NSViewWidthSizable;
     [_bookmarksPanelContainer addSubview:_bookmarksScrollView];
 
-    _bookmarksContainer = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, width, height - 50)];
+    _bookmarksContainer = [[BookmarkDropContainerView alloc] initWithFrame:NSMakeRect(0, 0, width, height - 50)];
+    _bookmarksContainer.sidebarView = self;
     _bookmarksScrollView.documentView = _bookmarksContainer;
 }
 
@@ -1299,6 +1962,16 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 - (NSMenu*)createWorkspaceContextMenu:(int)workspaceId canDelete:(BOOL)canDelete {
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Workspace"];
 
+    // Bookmark Space
+    NSMenuItem* bookmarkItem = [[NSMenuItem alloc] initWithTitle:@"Bookmark Space"
+                                                           action:@selector(bookmarkWorkspace:)
+                                                    keyEquivalent:@""];
+    bookmarkItem.target = self;
+    bookmarkItem.tag = workspaceId;
+    [menu addItem:bookmarkItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
     // Rename
     NSMenuItem* renameItem = [[NSMenuItem alloc] initWithTitle:@"Rename Space"
                                                          action:@selector(renameWorkspace:)
@@ -1420,6 +2093,115 @@ static const CGFloat kNewTabButtonHeight = 44.0;
         if (activeWorkspace && activeWorkspace->tabs.empty()) {
             [_windowController createNewTab:@""];
         }
+    }
+}
+
+- (void)bookmarkWorkspace:(NSMenuItem*)sender {
+    int workspaceId = (int)sender.tag;
+    if (!_windowController || !_windowController.tabManager) return;
+
+    // Find the workspace
+    Workspace* workspace = nullptr;
+    for (const auto& ws : _windowController.tabManager->GetWorkspaces()) {
+        if (ws->id == workspaceId) {
+            workspace = ws.get();
+            break;
+        }
+    }
+    if (!workspace) return;
+
+    // Filter valid tabs (skip empty, about:blank, chrome://)
+    std::vector<Tab*> validTabs;
+    for (const auto& tab : workspace->tabs) {
+        if (tab->url.empty()) continue;
+        if (tab->url == "about:blank") continue;
+        if (tab->url.find("chrome://") == 0) continue;
+        if (tab->url.find("chrome-extension://") == 0) continue;
+        validTabs.push_back(tab.get());
+    }
+
+    if (validTabs.empty()) {
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = @"No Tabs to Bookmark";
+        alert.informativeText = @"This space has no tabs with valid URLs to bookmark.";
+        [alert addButtonWithTitle:@"OK"];
+        [alert beginSheetModalForWindow:_windowController.window completionHandler:nil];
+        return;
+    }
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    // Sanitize folder name
+    NSString* rawName = [NSString stringWithUTF8String:workspace->name.c_str()];
+    NSString* folderName = [[rawName stringByTrimmingCharactersInSet:
+        [NSCharacterSet whitespaceAndNewlineCharacterSet]] length] > 0 ? rawName : @"Untitled";
+
+    // Check if folder already exists
+    std::vector<std::string> existingFolders = bookmarks->GetFolders();
+    bool folderExists = std::find(existingFolders.begin(), existingFolders.end(),
+                                   [folderName UTF8String]) != existingFolders.end();
+
+    if (folderExists) {
+        // Ask user: Merge, New Folder, or Cancel
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = @"Folder Already Exists";
+        alert.informativeText = [NSString stringWithFormat:
+            @"A bookmark folder named \"%@\" already exists.", folderName];
+        [alert addButtonWithTitle:@"Merge"];
+        [alert addButtonWithTitle:@"New Folder"];
+        [alert addButtonWithTitle:@"Cancel"];
+
+        __weak SidebarView* weakSelf = self;
+        NSString* baseFolderName = folderName;
+        [alert beginSheetModalForWindow:_windowController.window
+                      completionHandler:^(NSModalResponse response) {
+            SidebarView* strongSelf = weakSelf;
+            if (!strongSelf) return;
+
+            if (response == NSAlertThirdButtonReturn) return;  // Cancel
+
+            NSString* finalFolder = baseFolderName;
+            if (response == NSAlertSecondButtonReturn) {
+                // Create unique name
+                int suffix = 2;
+                while (std::find(existingFolders.begin(), existingFolders.end(),
+                                 [finalFolder UTF8String]) != existingFolders.end()) {
+                    finalFolder = [NSString stringWithFormat:@"%@ (%d)", baseFolderName, suffix++];
+                }
+            }
+
+            [strongSelf addBookmarksToFolder:finalFolder tabs:validTabs];
+        }];
+    } else {
+        [self addBookmarksToFolder:folderName tabs:validTabs];
+    }
+}
+
+- (void)addBookmarksToFolder:(NSString*)folderName tabs:(const std::vector<Tab*>&)tabs {
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    int addedCount = 0;
+    for (Tab* tab : tabs) {
+        bookmarks->AddBookmark(tab->url, tab->title, [folderName UTF8String]);
+        addedCount++;
+    }
+
+    // Show confirmation
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = @"Space Bookmarked";
+    alert.informativeText = [NSString stringWithFormat:
+        @"Added %d bookmark%@ to folder \"%@\".",
+        addedCount,
+        addedCount == 1 ? @"" : @"s",
+        folderName];
+    [alert addButtonWithTitle:@"OK"];
+    [alert beginSheetModalForWindow:_windowController.window completionHandler:nil];
+
+    // Refresh bookmarks panel if visible
+    if (_activePanel == SidebarPanelFavorites) {
+        [self reloadBookmarks];
     }
 }
 
@@ -1579,6 +2361,9 @@ static const CGFloat kNewTabButtonHeight = 44.0;
             NSImage* favicon = [[NSImage alloc] initWithData:faviconData];
             if (favicon) {
                 row.favicon = favicon;
+                // Cache favicon by domain for use in bookmarks/history
+                NSString* url = [NSString stringWithUTF8String:tab->url.c_str()];
+                CacheFavicon(url, favicon);
             }
         }
 
@@ -1610,6 +2395,15 @@ static const CGFloat kNewTabButtonHeight = 44.0;
     NSImage* favicon = [[NSImage alloc] initWithData:faviconData];
     if (!favicon) return;
 
+    // Cache by URL for bookmarks/history
+    if (_windowController) {
+        Tab* tab = _windowController.tabManager->GetTabById(tabId);
+        if (tab) {
+            NSString* url = [NSString stringWithUTF8String:tab->url.c_str()];
+            CacheFavicon(url, favicon);
+        }
+    }
+
     for (TabRowView* row in _tabRows) {
         if (row.tabId == tabId) {
             row.favicon = favicon;
@@ -1621,44 +2415,142 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 #pragma mark - Bookmarks
 
 - (void)addBookmarkClicked:(id)sender {
+    NSLog(@"addBookmarkClicked called");
+
+    // Create menu
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Add"];
+
+    NSMenuItem* addBookmarkItem = [[NSMenuItem alloc] initWithTitle:@"Add Bookmark..."
+                                                             action:@selector(showAddBookmarkPopover:)
+                                                      keyEquivalent:@""];
+    addBookmarkItem.target = self;
+    addBookmarkItem.image = [NSImage imageWithSystemSymbolName:@"bookmark" accessibilityDescription:nil];
+    [menu addItem:addBookmarkItem];
+
+    NSMenuItem* newFolderItem = [[NSMenuItem alloc] initWithTitle:@"New Folder..."
+                                                           action:@selector(newFolderFromMenuClicked:)
+                                                    keyEquivalent:@""];
+    newFolderItem.target = self;
+    newFolderItem.image = [NSImage imageWithSystemSymbolName:@"folder.badge.plus" accessibilityDescription:nil];
+    [menu addItem:newFolderItem];
+
+    // Show menu at button location
+    NSView* button = (NSView*)sender;
+    NSPoint point = NSMakePoint(0, button.bounds.size.height + 2);
+    [menu popUpMenuPositioningItem:nil atLocation:point inView:button];
+}
+
+- (void)showAddBookmarkPopover:(id)sender {
     (void)sender;
-    if (!_windowController) return;
+    [self showAddBookmarkPopoverWithUrl:nil title:nil];
+}
 
-    // Get current tab's URL and title
-    Tab* activeTab = _windowController.tabManager->GetActiveTab();
-    if (!activeTab) return;
-
-    BookmarkStorage* bookmarks = GetBookmarkStorage();
-    if (!bookmarks) return;
-
-    // Toggle bookmark - remove if exists, add if not
-    if (bookmarks->IsBookmarked(activeTab->url)) {
-        bookmarks->DeleteBookmarkByUrl(activeTab->url);
-    } else {
-        bookmarks->AddBookmark(activeTab->url, activeTab->title);
+- (void)showAddBookmarkPopoverWithUrl:(NSString*)url title:(NSString*)title {
+    // Create the add bookmark popover if needed
+    if (!_addBookmarkPopover) {
+        _addBookmarkPopover = [[AddBookmarkPopoverController alloc] init];
+        _addBookmarkPopover.sidebarView = self;
     }
 
-    [self reloadBookmarks];
+    NSView* anchorView = _addBookmarkButton ?: _bookmarksPanelContainer;
+    [_addBookmarkPopover showRelativeToView:anchorView withUrl:url title:title];
+}
+
+- (void)newFolderClicked:(id)sender {
+    (void)sender;
+    NSLog(@"newFolderClicked: method called");
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) {
+        NSLog(@"newFolderClicked: BookmarkStorage is nil!");
+        return;
+    }
+
+    // Get default folder name
+    int nextNum = bookmarks->GetNextFolderNumber();
+    NSString* defaultName = [NSString stringWithFormat:@"Collection %d", nextNum];
+    NSLog(@"newFolderClicked: defaultName = %@", defaultName);
+
+    // Show modal dialog for folder name
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = @"New Folder";
+    alert.informativeText = @"Enter a name for the new bookmark folder:";
+    [alert addButtonWithTitle:@"Create"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    NSTextField* input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 240, 24)];
+    input.stringValue = defaultName;
+    input.placeholderString = @"Folder name";
+    alert.accessoryView = input;
+
+    NSModalResponse response = [alert runModal];
+    NSLog(@"newFolderClicked: response = %ld, NSAlertFirstButtonReturn = %ld", (long)response, (long)NSAlertFirstButtonReturn);
+
+    if (response == NSAlertFirstButtonReturn) {
+        NSString* folderName = [input.stringValue stringByTrimmingCharactersInSet:
+            [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        NSLog(@"newFolderClicked: folderName after trim = '%@'", folderName);
+
+        if (folderName.length == 0) {
+            folderName = defaultName;
+        }
+
+        // Check if folder already exists
+        bool exists = bookmarks->FolderExists([folderName UTF8String]);
+        NSLog(@"newFolderClicked: folder exists = %d", exists);
+
+        if (exists) {
+            NSAlert* errorAlert = [[NSAlert alloc] init];
+            errorAlert.messageText = @"Folder Exists";
+            errorAlert.informativeText = [NSString stringWithFormat:
+                @"A folder named \"%@\" already exists.", folderName];
+            errorAlert.alertStyle = NSAlertStyleWarning;
+            [errorAlert addButtonWithTitle:@"OK"];
+            [errorAlert runModal];
+            return;
+        }
+
+        // Create the folder
+        NSLog(@"newFolderClicked: Creating folder: %@", folderName);
+        bool created = bookmarks->CreateFolder([folderName UTF8String]);
+        NSLog(@"newFolderClicked: Folder created result = %d", created);
+
+        [self reloadBookmarks];
+        NSLog(@"newFolderClicked: reloadBookmarks called");
+    } else {
+        NSLog(@"newFolderClicked: User cancelled or other response");
+    }
+}
+
+- (void)newFolderFromMenuClicked:(id)sender {
+    [self newFolderClicked:sender];
 }
 
 - (void)reloadBookmarks {
+    // Remove all subviews except the drop indicator
+    NSView* dropIndicator = _bookmarksContainer.dropIndicator;
     for (NSView* subview in _bookmarksContainer.subviews.copy) {
-        [subview removeFromSuperview];
+        if (subview != dropIndicator) {
+            [subview removeFromSuperview];
+        }
     }
 
     BookmarkStorage* bookmarks = GetBookmarkStorage();
     if (!bookmarks) return;
 
-    std::vector<Bookmark> entries = bookmarks->GetAllBookmarks();
+    std::vector<Bookmark> allEntries = bookmarks->GetAllBookmarks();
+    std::vector<std::string> folders = bookmarks->GetFolders();
     CGFloat contentWidth = _bookmarksContainer.bounds.size.width;
     CGFloat y = 0;
     CGFloat rowHeight = 44;
+    CGFloat folderHeaderHeight = 36;
+    CGFloat indentWidth = [DSSpacing md];
 
-    if (entries.empty()) {
-        // Show empty state
+    if (allEntries.empty() && folders.empty()) {
+        // Show empty state only if both bookmarks and folders are empty
         NSTextField* emptyLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(
             [DSSpacing md], y + 20, contentWidth - [DSSpacing xl], 40)];
-        emptyLabel.stringValue = @"No bookmarks yet.\nClick + to bookmark the current page.";
+        emptyLabel.stringValue = @"No bookmarks yet.\nClick + to add a bookmark.";
         emptyLabel.font = [DSTypography fontWithStyle:DSFontStyleBody];
         emptyLabel.textColor = [DSColors textSecondary];
         emptyLabel.bezeled = NO;
@@ -1670,47 +2562,581 @@ static const CGFloat kNewTabButtonHeight = 44.0;
         return;
     }
 
-    for (const auto& entry : entries) {
-        // Bookmark row using DSRow
-        DSRow* row = [[DSRow alloc] initWithFrame:NSMakeRect(
-            [DSSpacing xs], y, contentWidth - [DSSpacing sm], rowHeight)];
-
-        NSString* title = [NSString stringWithUTF8String:entry.title.empty()
-            ? entry.url.c_str() : entry.title.c_str()];
-        NSString* urlStr = [NSString stringWithUTF8String:entry.url.c_str()];
-
-        row.title = title;
-        row.showsCloseButton = YES;
-
-        __weak SidebarView* weakSelf = self;
-        NSString* urlCopy = urlStr;
-        int64_t bookmarkId = entry.id;
-
-        row.onClick = ^{
-            SidebarView* strongSelf = weakSelf;
-            if (!strongSelf) return;
-            // Open as new tab in active workspace
-            [strongSelf.windowController createNewTab:urlCopy];
-            strongSelf->_activePanel = SidebarPanelTabs;
-            [strongSelf updateIconSelection];
-            [strongSelf updatePanelVisibility];
-        };
-
-        row.onClose = ^{
-            SidebarView* strongSelf = weakSelf;
-            if (!strongSelf) return;
-            BookmarkStorage* bm = GetBookmarkStorage();
-            if (bm) {
-                bm->DeleteBookmark(bookmarkId);
-                [strongSelf reloadBookmarks];
-            }
-        };
-
+    // 1. Display root bookmarks first (folder == "")
+    for (const auto& entry : allEntries) {
+        if (!entry.folder.empty()) continue;
+        DSRow* row = [self createBookmarkRowForEntry:entry atY:y width:contentWidth indent:0];
         [_bookmarksContainer addSubview:row];
         y += rowHeight;
     }
 
+    // 2. Display folders with their bookmarks
+    for (const auto& folderName : folders) {
+        NSString* folder = [NSString stringWithUTF8String:folderName.c_str()];
+        BOOL isCollapsed = [_collapsedFolders containsObject:folder];
+
+        // Create folder header
+        NSView* folderHeader = [self createFolderHeader:folder
+                                                    atY:y
+                                                  width:contentWidth
+                                            isCollapsed:isCollapsed];
+        [_bookmarksContainer addSubview:folderHeader];
+        y += folderHeaderHeight;
+
+        // Add bookmarks under this folder (if not collapsed)
+        if (!isCollapsed) {
+            std::vector<Bookmark> folderBookmarks = bookmarks->GetBookmarksInFolder(folderName);
+            for (const auto& entry : folderBookmarks) {
+                DSRow* row = [self createBookmarkRowForEntry:entry atY:y width:contentWidth indent:indentWidth];
+                [_bookmarksContainer addSubview:row];
+                y += rowHeight;
+            }
+        }
+    }
+
     _bookmarksContainer.frame = NSMakeRect(0, 0, contentWidth, MAX(y, _bookmarksScrollView.bounds.size.height));
+}
+
+- (DSRow*)createBookmarkRowForEntry:(const Bookmark&)entry
+                                atY:(CGFloat)y
+                              width:(CGFloat)width
+                             indent:(CGFloat)indent {
+    CGFloat rowHeight = 44;
+    DSRow* row = [[DSRow alloc] initWithFrame:NSMakeRect(
+        [DSSpacing xs] + indent, y, width - [DSSpacing sm] - indent, rowHeight)];
+
+    NSString* title = [NSString stringWithUTF8String:entry.title.empty()
+        ? entry.url.c_str() : entry.title.c_str()];
+    NSString* urlStr = [NSString stringWithUTF8String:entry.url.c_str()];
+    NSString* folderStr = [NSString stringWithUTF8String:entry.folder.c_str()];
+
+    row.title = title;
+    row.showsCloseButton = YES;
+
+    // Set favicon from cache if available
+    NSImage* favicon = GetCachedFavicon(urlStr);
+    if (favicon) {
+        row.icon = favicon;
+    }
+
+    __weak SidebarView* weakSelf = self;
+    NSString* urlCopy = urlStr;
+    NSString* titleCopy = title;
+    NSString* folderCopy = folderStr;
+    int64_t bookmarkId = entry.id;
+
+    // Associate bookmark ID with row for later lookup
+    objc_setAssociatedObject(row, "bookmarkId", @(bookmarkId), OBJC_ASSOCIATION_RETAIN);
+
+    // Single click = select bookmark
+    row.onClick = ^{
+        SidebarView* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        [strongSelf selectBookmark:bookmarkId];
+    };
+
+    // Double click = open in new tab
+    row.onDoubleClick = ^{
+        SidebarView* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        [strongSelf.windowController createNewTab:urlCopy];
+        strongSelf->_activePanel = SidebarPanelTabs;
+        [strongSelf updateIconSelection];
+        [strongSelf updatePanelVisibility];
+    };
+
+    // Right click = context menu
+    row.onRightClick = ^(NSEvent* event) {
+        SidebarView* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        [strongSelf selectBookmark:bookmarkId];
+        NSMenu* menu = [strongSelf createBookmarkContextMenu:bookmarkId
+                                                         url:urlCopy
+                                                       title:titleCopy
+                                                      folder:folderCopy];
+        [NSMenu popUpContextMenu:menu withEvent:event forView:row];
+    };
+
+    row.onClose = ^{
+        SidebarView* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        BookmarkStorage* bm = GetBookmarkStorage();
+        if (bm) {
+            bm->DeleteBookmark(bookmarkId);
+            strongSelf->_selectedBookmarkId = 0;
+            [strongSelf reloadBookmarks];
+        }
+    };
+
+    // Set initial selection state
+    row.isSelected = (bookmarkId == _selectedBookmarkId);
+
+    // Enable drag & drop
+    row.isDraggable = YES;
+    row.dragType = kBookmarkPasteboardType;
+    row.dragData = @{
+        @"id": @(bookmarkId),
+        @"folder": folderCopy ?: @""
+    };
+
+    return row;
+}
+
+#pragma mark - Bookmark Selection
+
+- (void)selectBookmark:(int64_t)bookmarkId {
+    _selectedBookmarkId = bookmarkId;
+    [self updateBookmarkSelection];
+}
+
+- (void)updateBookmarkSelection {
+    for (NSView* subview in _bookmarksContainer.subviews) {
+        if ([subview isKindOfClass:[DSRow class]]) {
+            DSRow* row = (DSRow*)subview;
+            NSNumber* rowIdNum = objc_getAssociatedObject(row, "bookmarkId");
+            if (rowIdNum) {
+                int64_t rowId = [rowIdNum longLongValue];
+                row.isSelected = (rowId == _selectedBookmarkId);
+            }
+        }
+    }
+}
+
+#pragma mark - Bookmark Context Menu
+
+- (NSMenu*)createBookmarkContextMenu:(int64_t)bookmarkId
+                                 url:(NSString*)url
+                               title:(NSString*)title
+                              folder:(NSString*)folder {
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Bookmark"];
+
+    // Open (in current tab)
+    NSMenuItem* openItem = [[NSMenuItem alloc] initWithTitle:@"Open"
+                                                      action:@selector(openBookmarkInCurrentTab:)
+                                               keyEquivalent:@""];
+    openItem.target = self;
+    objc_setAssociatedObject(openItem, "url", url, OBJC_ASSOCIATION_RETAIN);
+    [menu addItem:openItem];
+
+    // Open in New Tab
+    NSMenuItem* openNewTabItem = [[NSMenuItem alloc] initWithTitle:@"Open in New Tab"
+                                                            action:@selector(openBookmarkInNewTab:)
+                                                     keyEquivalent:@""];
+    openNewTabItem.target = self;
+    objc_setAssociatedObject(openNewTabItem, "url", url, OBJC_ASSOCIATION_RETAIN);
+    [menu addItem:openNewTabItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    // Edit Bookmark
+    NSMenuItem* editItem = [[NSMenuItem alloc] initWithTitle:@"Edit Bookmark..."
+                                                      action:@selector(editBookmarkFromMenu:)
+                                               keyEquivalent:@""];
+    editItem.target = self;
+    editItem.tag = (NSInteger)bookmarkId;
+    objc_setAssociatedObject(editItem, "url", url, OBJC_ASSOCIATION_RETAIN);
+    objc_setAssociatedObject(editItem, "title", title, OBJC_ASSOCIATION_RETAIN);
+    objc_setAssociatedObject(editItem, "folder", folder, OBJC_ASSOCIATION_RETAIN);
+    [menu addItem:editItem];
+
+    // Move to Folder submenu
+    NSMenuItem* moveItem = [[NSMenuItem alloc] initWithTitle:@"Move to Folder"
+                                                      action:nil
+                                               keyEquivalent:@""];
+    moveItem.submenu = [self createMoveToFolderSubmenu:bookmarkId currentFolder:folder];
+    [menu addItem:moveItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    // Delete
+    NSMenuItem* deleteItem = [[NSMenuItem alloc] initWithTitle:@"Delete"
+                                                        action:@selector(deleteBookmarkFromMenu:)
+                                                 keyEquivalent:@""];
+    deleteItem.target = self;
+    deleteItem.tag = (NSInteger)bookmarkId;
+    [menu addItem:deleteItem];
+
+    return menu;
+}
+
+- (NSMenu*)createMoveToFolderSubmenu:(int64_t)bookmarkId currentFolder:(NSString*)currentFolder {
+    NSMenu* submenu = [[NSMenu alloc] initWithTitle:@"Move to Folder"];
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return submenu;
+
+    // "No Folder" option (root level)
+    NSMenuItem* rootItem = [[NSMenuItem alloc] initWithTitle:@"No Folder"
+                                                      action:@selector(moveBookmarkToFolder:)
+                                               keyEquivalent:@""];
+    rootItem.target = self;
+    rootItem.tag = (NSInteger)bookmarkId;
+    objc_setAssociatedObject(rootItem, "folder", @"", OBJC_ASSOCIATION_RETAIN);
+    if (!currentFolder || currentFolder.length == 0) {
+        rootItem.state = NSControlStateValueOn;
+    }
+    [submenu addItem:rootItem];
+
+    // List all folders
+    std::vector<std::string> folders = bookmarks->GetFolders();
+    if (!folders.empty()) {
+        [submenu addItem:[NSMenuItem separatorItem]];
+        for (const auto& folderName : folders) {
+            NSString* folder = [NSString stringWithUTF8String:folderName.c_str()];
+            NSMenuItem* folderItem = [[NSMenuItem alloc] initWithTitle:folder
+                                                                action:@selector(moveBookmarkToFolder:)
+                                                         keyEquivalent:@""];
+            folderItem.target = self;
+            folderItem.tag = (NSInteger)bookmarkId;
+            objc_setAssociatedObject(folderItem, "folder", folder, OBJC_ASSOCIATION_RETAIN);
+            if ([folder isEqualToString:currentFolder]) {
+                folderItem.state = NSControlStateValueOn;
+            }
+            [submenu addItem:folderItem];
+        }
+    }
+
+    return submenu;
+}
+
+#pragma mark - Bookmark Menu Actions
+
+- (void)openBookmarkInCurrentTab:(NSMenuItem*)sender {
+    NSString* url = objc_getAssociatedObject(sender, "url");
+    if (url && _windowController) {
+        [_windowController navigateToURL:url];
+    }
+}
+
+- (void)openBookmarkInNewTab:(NSMenuItem*)sender {
+    NSString* url = objc_getAssociatedObject(sender, "url");
+    if (url && _windowController) {
+        [_windowController createNewTab:url];
+    }
+}
+
+- (void)editBookmarkFromMenu:(NSMenuItem*)sender {
+    int64_t bookmarkId = (int64_t)sender.tag;
+    NSString* url = objc_getAssociatedObject(sender, "url");
+    NSString* title = objc_getAssociatedObject(sender, "title");
+    NSString* folder = objc_getAssociatedObject(sender, "folder");
+
+    // Show edit dialog
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = @"Edit Bookmark";
+    alert.informativeText = url;
+    [alert addButtonWithTitle:@"Save"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    // Create accessory view with name and folder fields
+    NSView* accessoryView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 280, 70)];
+
+    NSTextField* nameLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 48, 50, 18)];
+    nameLabel.stringValue = @"Name:";
+    nameLabel.bezeled = NO;
+    nameLabel.drawsBackground = NO;
+    nameLabel.editable = NO;
+    [accessoryView addSubview:nameLabel];
+
+    NSTextField* nameField = [[NSTextField alloc] initWithFrame:NSMakeRect(55, 45, 220, 24)];
+    nameField.stringValue = title ?: @"";
+    [accessoryView addSubview:nameField];
+
+    NSTextField* folderLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 18, 50, 18)];
+    folderLabel.stringValue = @"Folder:";
+    folderLabel.bezeled = NO;
+    folderLabel.drawsBackground = NO;
+    folderLabel.editable = NO;
+    [accessoryView addSubview:folderLabel];
+
+    NSPopUpButton* folderPicker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(55, 13, 220, 26) pullsDown:NO];
+    [folderPicker addItemWithTitle:@"No Folder"];
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (bookmarks) {
+        std::vector<std::string> folders = bookmarks->GetFolders();
+        if (!folders.empty()) {
+            [[folderPicker menu] addItem:[NSMenuItem separatorItem]];
+            for (const auto& f : folders) {
+                [folderPicker addItemWithTitle:[NSString stringWithUTF8String:f.c_str()]];
+            }
+        }
+    }
+    if (folder && folder.length > 0) {
+        [folderPicker selectItemWithTitle:folder];
+    }
+    [accessoryView addSubview:folderPicker];
+
+    alert.accessoryView = accessoryView;
+    [alert.window makeFirstResponder:nameField];
+
+    NSModalResponse response = [alert runModal];
+    if (response == NSAlertFirstButtonReturn) {
+        NSString* newTitle = nameField.stringValue;
+        NSString* newFolder = @"";
+        if ([folderPicker indexOfSelectedItem] > 0) {
+            newFolder = [folderPicker titleOfSelectedItem];
+        }
+
+        if (bookmarks) {
+            bookmarks->UpdateBookmark(bookmarkId, [newTitle UTF8String], [newFolder UTF8String]);
+            [self reloadBookmarks];
+        }
+    }
+}
+
+- (void)moveBookmarkToFolder:(NSMenuItem*)sender {
+    int64_t bookmarkId = (int64_t)sender.tag;
+    NSString* folder = objc_getAssociatedObject(sender, "folder");
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    bookmarks->MoveBookmark(bookmarkId, [folder UTF8String], 0);
+    [self reloadBookmarks];
+}
+
+- (void)deleteBookmarkFromMenu:(NSMenuItem*)sender {
+    int64_t bookmarkId = (int64_t)sender.tag;
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (bookmarks) {
+        bookmarks->DeleteBookmark(bookmarkId);
+        _selectedBookmarkId = 0;
+        [self reloadBookmarks];
+    }
+}
+
+- (NSView*)createFolderHeader:(NSString*)folderName
+                          atY:(CGFloat)y
+                        width:(CGFloat)width
+                  isCollapsed:(BOOL)isCollapsed {
+    CGFloat headerHeight = 36;
+    NSView* header = [[NSView alloc] initWithFrame:NSMakeRect(0, y, width, headerHeight)];
+    header.wantsLayer = YES;
+    header.layer.cornerRadius = [DSLayout cornerRadiusMedium];
+
+    CGFloat padding = [DSSpacing sm];
+    CGFloat verticalCenter = (headerHeight - 16) / 2;  // Center 16px icons vertically
+
+    // Chevron icon (expand/collapse indicator)
+    NSString* chevronName = isCollapsed ? @"chevron.right" : @"chevron.down";
+    NSImageView* chevron = [[NSImageView alloc] initWithFrame:NSMakeRect(padding, verticalCenter, 14, 14)];
+    chevron.image = [NSImage imageWithSystemSymbolName:chevronName accessibilityDescription:nil];
+    chevron.contentTintColor = [DSColors textSecondary];
+    [header addSubview:chevron];
+
+    // Folder icon (gray, not blue)
+    NSImageView* folderIcon = [[NSImageView alloc] initWithFrame:NSMakeRect(padding + 20, verticalCenter, 16, 16)];
+    folderIcon.image = [NSImage imageWithSystemSymbolName:@"folder.fill" accessibilityDescription:nil];
+    folderIcon.contentTintColor = [DSColors textSecondary];
+    [header addSubview:folderIcon];
+
+    // Folder name label (aligned with icons)
+    NSTextField* nameLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(
+        padding + 42, verticalCenter - 1, width - padding - 80, 18)];
+    nameLabel.stringValue = folderName;
+    nameLabel.font = [DSTypography fontWithStyle:DSFontStyleBody];
+    nameLabel.textColor = [DSColors textPrimary];
+    nameLabel.bezeled = NO;
+    nameLabel.drawsBackground = NO;
+    nameLabel.editable = NO;
+    nameLabel.selectable = NO;
+    [header addSubview:nameLabel];
+
+    // "Open All" button (right side, hidden by default, shown on hover)
+    DSIconButton* openAllBtn = [DSIconButton buttonWithIcon:@"arrow.up.right.square" tooltip:@"Open all in new tabs"];
+    openAllBtn.frame = NSMakeRect(width - padding - 24, (headerHeight - 20) / 2, 20, 20);
+    openAllBtn.target = self;
+    openAllBtn.action = @selector(openAllInFolder:);
+    openAllBtn.hidden = YES;  // Hidden by default
+    objc_setAssociatedObject(openAllBtn, "folderName", folderName, OBJC_ASSOCIATION_RETAIN);
+    objc_setAssociatedObject(header, "openAllButton", openAllBtn, OBJC_ASSOCIATION_RETAIN);
+    [header addSubview:openAllBtn];
+
+    // Tracking area for hover
+    NSTrackingArea* trackingArea = [[NSTrackingArea alloc]
+        initWithRect:header.bounds
+             options:(NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow)
+               owner:self
+            userInfo:@{@"header": header, @"openAllBtn": openAllBtn}];
+    [header addTrackingArea:trackingArea];
+
+    // Click area for expand/collapse (covers left part, not the button)
+    NSButton* clickArea = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, width - 40, headerHeight)];
+    clickArea.transparent = YES;
+    clickArea.bordered = NO;
+    clickArea.target = self;
+    clickArea.action = @selector(toggleFolderCollapse:);
+    objc_setAssociatedObject(clickArea, "folderName", folderName, OBJC_ASSOCIATION_RETAIN);
+    [header addSubview:clickArea positioned:NSWindowBelow relativeTo:nil];
+
+    // Right-click context menu
+    NSMenu* contextMenu = [self createFolderContextMenu:folderName];
+    header.menu = contextMenu;
+
+    return header;
+}
+
+- (NSMenu*)createFolderContextMenu:(NSString*)folderName {
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Folder"];
+
+    NSMenuItem* openAllItem = [[NSMenuItem alloc] initWithTitle:@"Open All"
+                                                         action:@selector(openAllInFolderMenuItem:)
+                                                  keyEquivalent:@""];
+    openAllItem.target = self;
+    objc_setAssociatedObject(openAllItem, "folderName", folderName, OBJC_ASSOCIATION_RETAIN);
+    [menu addItem:openAllItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* renameItem = [[NSMenuItem alloc] initWithTitle:@"Rename Folder"
+                                                        action:@selector(renameFolder:)
+                                                 keyEquivalent:@""];
+    renameItem.target = self;
+    objc_setAssociatedObject(renameItem, "folderName", folderName, OBJC_ASSOCIATION_RETAIN);
+    [menu addItem:renameItem];
+
+    NSMenuItem* deleteItem = [[NSMenuItem alloc] initWithTitle:@"Delete Folder"
+                                                        action:@selector(deleteFolder:)
+                                                 keyEquivalent:@""];
+    deleteItem.target = self;
+    objc_setAssociatedObject(deleteItem, "folderName", folderName, OBJC_ASSOCIATION_RETAIN);
+    [menu addItem:deleteItem];
+
+    return menu;
+}
+
+- (void)toggleFolderCollapse:(NSButton*)sender {
+    NSString* folderName = objc_getAssociatedObject(sender, "folderName");
+    if (!folderName) return;
+
+    if ([_collapsedFolders containsObject:folderName]) {
+        [_collapsedFolders removeObject:folderName];
+    } else {
+        [_collapsedFolders addObject:folderName];
+    }
+    [self reloadBookmarks];
+}
+
+- (void)openAllInFolder:(DSIconButton*)sender {
+    NSString* folderName = objc_getAssociatedObject(sender, "folderName");
+    [self openAllBookmarksInFolder:folderName];
+}
+
+- (void)openAllInFolderMenuItem:(NSMenuItem*)sender {
+    NSString* folderName = objc_getAssociatedObject(sender, "folderName");
+    [self openAllBookmarksInFolder:folderName];
+}
+
+- (void)openAllBookmarksInFolder:(NSString*)folderName {
+    if (!folderName) return;
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    std::vector<Bookmark> folderBookmarks = bookmarks->GetBookmarksInFolder([folderName UTF8String]);
+    for (const auto& entry : folderBookmarks) {
+        [_windowController createNewTab:[NSString stringWithUTF8String:entry.url.c_str()]];
+    }
+
+    // Switch to tabs panel
+    _activePanel = SidebarPanelTabs;
+    [self updateIconSelection];
+    [self updatePanelVisibility];
+}
+
+- (void)renameFolder:(NSMenuItem*)sender {
+    NSString* oldName = objc_getAssociatedObject(sender, "folderName");
+    if (!oldName) return;
+
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = @"Rename Folder";
+    alert.informativeText = @"Enter a new name for this folder:";
+    [alert addButtonWithTitle:@"Rename"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    NSTextField* input = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 200, 24)];
+    input.stringValue = oldName;
+    alert.accessoryView = input;
+
+    __weak SidebarView* weakSelf = self;
+    NSString* oldNameCopy = oldName;
+    [alert beginSheetModalForWindow:_windowController.window completionHandler:^(NSModalResponse response) {
+        if (response == NSAlertFirstButtonReturn) {
+            NSString* newName = input.stringValue;
+            if (newName.length > 0 && ![newName isEqualToString:oldNameCopy]) {
+                SidebarView* strongSelf = weakSelf;
+                if (strongSelf) {
+                    [strongSelf renameFolderFrom:oldNameCopy to:newName];
+                }
+            }
+        }
+    }];
+}
+
+- (void)renameFolderFrom:(NSString*)oldName to:(NSString*)newName {
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    // Update all bookmarks in the folder
+    std::vector<Bookmark> folderBookmarks = bookmarks->GetBookmarksInFolder([oldName UTF8String]);
+    for (const auto& entry : folderBookmarks) {
+        bookmarks->UpdateBookmark(entry.id, entry.title, [newName UTF8String]);
+    }
+
+    // Update collapsed state
+    if ([_collapsedFolders containsObject:oldName]) {
+        [_collapsedFolders removeObject:oldName];
+        [_collapsedFolders addObject:newName];
+    }
+
+    [self reloadBookmarks];
+}
+
+- (void)deleteFolder:(NSMenuItem*)sender {
+    NSString* folderName = objc_getAssociatedObject(sender, "folderName");
+    if (!folderName) return;
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    std::vector<Bookmark> folderBookmarks = bookmarks->GetBookmarksInFolder([folderName UTF8String]);
+
+    // If folder is empty, delete without confirmation
+    if (folderBookmarks.empty()) {
+        bookmarks->DeleteFolder([folderName UTF8String]);
+        [_collapsedFolders removeObject:folderName];
+        [self reloadBookmarks];
+        return;
+    }
+
+    // Show confirmation for non-empty folders
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = @"Delete Folder?";
+    alert.informativeText = [NSString stringWithFormat:
+        @"This will delete %lu bookmark%@ in the folder \"%@\".",
+        folderBookmarks.size(),
+        folderBookmarks.size() == 1 ? @"" : @"s",
+        folderName];
+    [alert addButtonWithTitle:@"Delete"];
+    [alert addButtonWithTitle:@"Cancel"];
+    alert.alertStyle = NSAlertStyleWarning;
+
+    __weak SidebarView* weakSelf = self;
+    NSString* folderNameCopy = folderName;
+    [alert beginSheetModalForWindow:_windowController.window completionHandler:^(NSModalResponse response) {
+        if (response == NSAlertFirstButtonReturn) {
+            SidebarView* strongSelf = weakSelf;
+            if (!strongSelf) return;
+            BookmarkStorage* bm = GetBookmarkStorage();
+            if (bm) {
+                // DeleteFolder handles both bookmarks and folder entry
+                bm->DeleteFolder([folderNameCopy UTF8String]);
+                [strongSelf->_collapsedFolders removeObject:folderNameCopy];
+                [strongSelf reloadBookmarks];
+            }
+        }
+    }];
 }
 
 #pragma mark - History
@@ -1780,6 +3206,12 @@ static const CGFloat kNewTabButtonHeight = 44.0;
             ? entry.url.c_str() : entry.title.c_str()];
         row.url = [NSString stringWithUTF8String:entry.url.c_str()];
         row.time = [timeFormatter stringFromDate:visitDate];
+
+        // Set favicon from cache if available
+        NSImage* favicon = GetCachedFavicon(row.url);
+        if (favicon) {
+            row.icon = favicon;
+        }
 
         __weak SidebarView* weakSelf = self;
         NSString* urlCopy = row.url;
@@ -2118,6 +3550,28 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 
     // Navigate to the URL to restart the download
     [_windowController navigateToURL:url];
+}
+
+#pragma mark - Folder Header Hover
+
+- (void)mouseEntered:(NSEvent*)event {
+    NSDictionary* userInfo = event.trackingArea.userInfo;
+    if (userInfo[@"openAllBtn"]) {
+        DSIconButton* openAllBtn = userInfo[@"openAllBtn"];
+        NSView* header = userInfo[@"header"];
+        openAllBtn.hidden = NO;
+        header.layer.backgroundColor = [DSColors surfaceHover].CGColor;
+    }
+}
+
+- (void)mouseExited:(NSEvent*)event {
+    NSDictionary* userInfo = event.trackingArea.userInfo;
+    if (userInfo[@"openAllBtn"]) {
+        DSIconButton* openAllBtn = userInfo[@"openAllBtn"];
+        NSView* header = userInfo[@"header"];
+        openAllBtn.hidden = YES;
+        header.layer.backgroundColor = nil;
+    }
 }
 
 #pragma mark - Drawing

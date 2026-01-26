@@ -30,6 +30,7 @@ typedef NS_ENUM(NSInteger, SidebarPanel) {
 - (void)updateLayoutForWidth:(CGFloat)newWidth;
 - (void)updateWorkspaceButton;
 - (void)reloadBookmarks;
+- (void)reloadWorkspaceTabs;
 - (void)reloadHistory;
 - (void)reloadDownloads;
 - (void)selectDownloadRow:(DownloadRowView*)row;

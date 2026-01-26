@@ -13,6 +13,9 @@
     NSTextField* _titleLabel;
     NSTextField* _subtitleLabel;
     DSIconButton* _closeButton;
+    NSTimer* _clickTimer;
+    NSPoint _mouseDownLocation;
+    BOOL _didStartDrag;
 }
 
 @synthesize isHovered = _isHovered;
@@ -189,7 +192,93 @@
 }
 
 - (void)mouseDown:(NSEvent*)event {
-    (void)event;
+    _mouseDownLocation = [self convertPoint:event.locationInWindow fromView:nil];
+    _didStartDrag = NO;
+
+    if (_onDoubleClick && event.clickCount == 2) {
+        // Double click - cancel pending single click and fire double click
+        [_clickTimer invalidate];
+        _clickTimer = nil;
+        _onDoubleClick();
+    } else if (_onDoubleClick && _onClick) {
+        // Single click with double-click handler - delay to detect double click
+        [_clickTimer invalidate];
+        _clickTimer = [NSTimer scheduledTimerWithTimeInterval:[NSEvent doubleClickInterval]
+                                                       target:self
+                                                     selector:@selector(singleClickTimerFired:)
+                                                     userInfo:nil
+                                                      repeats:NO];
+    } else if (_onClick) {
+        // No double-click handler - fire immediately
+        _onClick();
+    }
+}
+
+- (void)mouseDragged:(NSEvent*)event {
+    if (!_isDraggable || !_dragType || !_dragData || _didStartDrag) return;
+
+    NSPoint currentLocation = [self convertPoint:event.locationInWindow fromView:nil];
+    CGFloat dx = currentLocation.x - _mouseDownLocation.x;
+    CGFloat dy = currentLocation.y - _mouseDownLocation.y;
+    CGFloat distance = sqrt(dx * dx + dy * dy);
+
+    // Only start drag if mouse moved enough
+    if (distance < 5) return;
+
+    _didStartDrag = YES;
+
+    // Cancel any pending click timers
+    [_clickTimer invalidate];
+    _clickTimer = nil;
+
+    if (_onDragStarted) {
+        _onDragStarted();
+    }
+
+    // Create pasteboard item
+    NSPasteboardItem* pasteboardItem = [[NSPasteboardItem alloc] init];
+    NSData* data = [NSPropertyListSerialization dataWithPropertyList:_dragData
+                                                              format:NSPropertyListBinaryFormat_v1_0
+                                                             options:0
+                                                               error:nil];
+    [pasteboardItem setData:data forType:_dragType];
+
+    // Create drag image from the row
+    NSImage* dragImage = [self snapshot];
+
+    NSDraggingItem* draggingItem = [[NSDraggingItem alloc] initWithPasteboardWriter:pasteboardItem];
+    draggingItem.draggingFrame = NSMakeRect(0, 0, self.bounds.size.width, self.bounds.size.height);
+    draggingItem.imageComponentsProvider = ^NSArray<NSDraggingImageComponent*>* {
+        NSDraggingImageComponent* component =
+            [NSDraggingImageComponent draggingImageComponentWithKey:NSDraggingImageComponentIconKey];
+        component.contents = dragImage;
+        component.frame = NSMakeRect(0, 0, dragImage.size.width, dragImage.size.height);
+        return @[component];
+    };
+
+    [self beginDraggingSessionWithItems:@[draggingItem] event:event source:self];
+}
+
+- (NSImage*)snapshot {
+    NSBitmapImageRep* rep = [self bitmapImageRepForCachingDisplayInRect:self.bounds];
+    [self cacheDisplayInRect:self.bounds toBitmapImageRep:rep];
+    NSImage* image = [[NSImage alloc] initWithSize:self.bounds.size];
+    [image addRepresentation:rep];
+    return image;
+}
+
+#pragma mark - NSDraggingSource
+
+- (NSDragOperation)draggingSession:(NSDraggingSession*)session
+    sourceOperationMaskForDraggingContext:(NSDraggingContext)context {
+    (void)session;
+    (void)context;
+    return NSDragOperationMove;
+}
+
+- (void)singleClickTimerFired:(NSTimer*)timer {
+    (void)timer;
+    _clickTimer = nil;
     if (_onClick) {
         _onClick();
     }
@@ -296,7 +385,6 @@
     [super setupSubviews];
 
     // Time label (right-aligned)
-    CGFloat padding = [DSSpacing sm];
     _timeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(
         self.bounds.size.width - 55, (self.bounds.size.height - 14) / 2, 50, 14)];
     _timeLabel.bezeled = NO;

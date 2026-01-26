@@ -6,15 +6,63 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **New Folder Button** in bookmarks panel
+  - Creates empty bookmark folders for organization
+  - Modal dialog with folder name input
+  - Default name: "Collection 1", "Collection 2", etc. (auto-incrementing)
+  - Validates for duplicate folder names
+- **Bookmarks Menu** in menu bar
+  - "Bookmark This Page" (Cmd+D) - toggle bookmark for current page
+  - "New Folder..." (Cmd+Shift+N) - create new bookmark folder
+  - "Show Bookmarks" (Cmd+Shift+B) - open bookmarks panel
+- **Folder Management Methods** - BookmarkStorage API
+  - CreateFolder(), FolderExists(), DeleteFolder(), RenameFolder()
+  - GetNextFolderNumber() for "Collection N" naming
+
+### Changed
+- Total tests: 189 (was 171) - added 18 folder management tests
+
+## [0.7.0] - 2026-01-26
+
+### Added
+- **Enhanced Tab Context Menu**
+  - "Rename Tab" - edit tab title via dialog
+  - "Open in Space →" - submenu showing all workspaces + "New Space"
+  - Duplicates tab to selected workspace
+- **Workspace Bookmarking** - right-click workspace → "Bookmark Space"
+  - Saves all tabs as bookmarks in a folder named after workspace
+  - Dialog for duplicate folder name: Merge / New Folder / Cancel
+  - Filters invalid URLs (empty, about:blank, chrome://)
+- **Bookmark Folder UI** - grouped bookmark display
+  - Collapsible folders with chevron icons
+  - Folder headers with folder icon and "Open All" button
+  - Indented bookmark rows under folders
+  - Right-click folder menu: Open All, Rename Folder, Delete Folder
+- **Integration Tests** - 25 new tests for tab manager
+  - Multi-workspace tab operations
+  - Workspace lifecycle tests
+  - Callback sequence verification
+  - Edge case coverage
+
+### Changed
+- Bookmarks panel now groups by folder with visual hierarchy
+
+### Technical
+- New `tab_manager_integration_test.cpp` with 25 tests
+- Added `reloadWorkspaceTabs` to SidebarView header
+- Bookmark folder state tracked via `_collapsedFolders` set
+
 ## [0.6.0] - 2026-01-26
 
 ### Added
 - **Unit Testing Infrastructure** - GoogleTest-based test suite
-  - 101 unit tests covering core components
+  - 146 unit tests covering core components
   - Tests run without CEF runtime dependencies
   - Download manager tests (36 tests) - progress calculation, state transitions
   - Tab manager tests (48 tests) - workspace/tab CRUD, callbacks
   - Persistence tests (17 tests) - history, window settings, session storage
+  - Bookmark storage tests (45 tests) - CRUD, folders, positions, edge cases
 - **Test Build Target** - `OrbFoxTests` executable
   - GoogleTest fetched via CMake FetchContent
   - Isolated from main app with `UNIT_TEST` preprocessor guards
@@ -23,6 +71,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - New `tests/` directory with test files
 - `UNIT_TEST` guards in `tab.h` and `tab_manager.h` to exclude CEF types
 - CMakeLists.txt updated with test configuration
+- Added `ClearAllBookmarks()` method to BookmarkStorage for test isolation
 
 ## [0.5.0] - 2026-01-26
 

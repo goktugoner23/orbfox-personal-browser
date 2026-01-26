@@ -49,6 +49,8 @@
 // Bookmarks
 - (void)reloadBookmarksPanel;
 - (void)updateBookmarkState;
+- (void)bookmarkThisPage;
+- (void)newBookmarkFolder;
 
 // History
 - (void)reloadHistoryPanelIfVisible;
