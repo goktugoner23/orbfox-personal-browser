@@ -3,6 +3,7 @@
 #include "browser_app.h"
 #include "tab_manager.h"
 #include "window_settings.h"
+#include "history_storage.h"
 
 #import "MainWindowController.h"
 
@@ -12,7 +13,13 @@
 
 // Global references (owned by the app)
 static std::unique_ptr<TabManager> g_tab_manager;
+static std::unique_ptr<HistoryStorage> g_history_storage;
 static MainWindowController* g_window_controller = nil;
+
+// Access global history storage
+HistoryStorage* GetHistoryStorage() {
+    return g_history_storage.get();
+}
 
 BrowserApp::BrowserApp() = default;
 
@@ -28,6 +35,10 @@ void BrowserApp::OnContextInitialized() {
 
     // Load window settings
     WindowSettings window_settings = WindowSettings::Load();
+
+    // Initialize history storage
+    g_history_storage = std::make_unique<HistoryStorage>();
+    g_history_storage->Initialize();
 
     // Create tab manager
     g_tab_manager = std::make_unique<TabManager>();

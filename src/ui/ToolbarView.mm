@@ -64,7 +64,14 @@ static const CGFloat kToolbarHeight = 44.0;
 static const CGFloat kButtonSize = 28.0;
 static const CGFloat kButtonSpacing = 4.0;
 
-@implementation ToolbarView
+@implementation ToolbarView {
+    NSImageView* _securityIcon;
+    NSView* _urlContainer;
+    NSView* _loadingProgressView;
+    NSTimer* _loadingAnimationTimer;
+    CGFloat _loadingProgress;
+    BOOL _isLoading;
+}
 
 - (instancetype)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
@@ -99,22 +106,40 @@ static const CGFloat kButtonSpacing = 4.0;
     x += kButtonSize + 12;
 
     // URL field container - provides the visible background
-    CGFloat containerPadding = 5;
+    CGFloat containerPadding = 7;  // Increased padding
     CGFloat containerHeight = self.bounds.size.height - (containerPadding * 2);
     CGFloat containerWidth = self.bounds.size.width - x - 12;
 
-    NSView* urlContainer = [[NSView alloc] initWithFrame:NSMakeRect(x, containerPadding, containerWidth, containerHeight)];
-    urlContainer.wantsLayer = YES;
-    urlContainer.layer.backgroundColor = URLFieldBackgroundColor().CGColor;
-    urlContainer.layer.cornerRadius = 6;
-    urlContainer.autoresizingMask = NSViewWidthSizable;
-    [self addSubview:urlContainer];
+    _urlContainer = [[NSView alloc] initWithFrame:NSMakeRect(x, containerPadding, containerWidth, containerHeight)];
+    _urlContainer.wantsLayer = YES;
+    _urlContainer.layer.backgroundColor = URLFieldBackgroundColor().CGColor;
+    _urlContainer.layer.cornerRadius = 6;
+    _urlContainer.layer.masksToBounds = YES;
+    _urlContainer.autoresizingMask = NSViewWidthSizable;
+    [self addSubview:_urlContainer];
 
-    // URL text field inside container - vertically centered
-    CGFloat textFieldInset = 8;
+    // Loading progress view - fills from left to right inside the URL container
+    _loadingProgressView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 0, containerHeight)];
+    _loadingProgressView.wantsLayer = YES;
+    _loadingProgressView.layer.backgroundColor = [NSColor colorWithRed:0.0 green:0.48 blue:1.0 alpha:0.25].CGColor;
+    _loadingProgressView.hidden = YES;
+    [_urlContainer addSubview:_loadingProgressView positioned:NSWindowBelow relativeTo:nil];
+
+    // Security icon (lock/warning) inside container
+    CGFloat iconSize = 16;
+    CGFloat iconX = 10;
+    CGFloat iconY = (containerHeight - iconSize) / 2;
+    _securityIcon = [[NSImageView alloc] initWithFrame:NSMakeRect(iconX, iconY, iconSize, iconSize)];
+    _securityIcon.imageScaling = NSImageScaleProportionallyUpOrDown;
+    _securityIcon.hidden = YES;  // Hidden until we have a URL
+    [_urlContainer addSubview:_securityIcon];
+
+    // URL text field inside container - vertically centered, shifted down slightly
+    CGFloat textFieldInset = 10;  // Increased right padding
+    CGFloat textFieldLeftInset = iconX + iconSize + 8;  // After security icon, with more padding
     CGFloat textFieldHeight = 20;
-    CGFloat textFieldY = (containerHeight - textFieldHeight) / 2;
-    _urlField = [[NSTextField alloc] initWithFrame:NSMakeRect(textFieldInset, textFieldY, containerWidth - (textFieldInset * 2), textFieldHeight)];
+    CGFloat textFieldY = (containerHeight - textFieldHeight) / 2 - 2;  // Moved down 2 pixels
+    _urlField = [[NSTextField alloc] initWithFrame:NSMakeRect(textFieldLeftInset, textFieldY, containerWidth - textFieldLeftInset - textFieldInset, textFieldHeight)];
     _urlField.bezeled = NO;
     _urlField.drawsBackground = NO;
     _urlField.backgroundColor = [NSColor clearColor];
@@ -131,7 +156,7 @@ static const CGFloat kButtonSpacing = 4.0;
     cell.wraps = NO;
     cell.scrollable = YES;
 
-    [urlContainer addSubview:_urlField];
+    [_urlContainer addSubview:_urlField];
 }
 
 - (NSButton*)createNavButton:(NSString*)symbolName frame:(NSRect)frame {
@@ -161,6 +186,26 @@ static const CGFloat kButtonSpacing = 4.0;
 
 - (void)setURL:(NSString*)url {
     _urlField.stringValue = url ?: @"";
+
+    // Update security indicator
+    if (!url || url.length == 0) {
+        _securityIcon.hidden = YES;
+    } else if ([url hasPrefix:@"https://"]) {
+        // Secure connection - show lock icon
+        _securityIcon.image = [NSImage imageWithSystemSymbolName:@"lock.fill"
+                                      accessibilityDescription:@"Secure"];
+        _securityIcon.contentTintColor = [NSColor colorWithRed:0.3 green:0.7 blue:0.4 alpha:1.0];
+        _securityIcon.hidden = NO;
+    } else if ([url hasPrefix:@"http://"]) {
+        // Insecure connection - show warning icon
+        _securityIcon.image = [NSImage imageWithSystemSymbolName:@"exclamationmark.triangle.fill"
+                                      accessibilityDescription:@"Not Secure"];
+        _securityIcon.contentTintColor = [NSColor colorWithRed:0.9 green:0.6 blue:0.2 alpha:1.0];
+        _securityIcon.hidden = NO;
+    } else {
+        // Other protocols (file://, data://, etc.)
+        _securityIcon.hidden = YES;
+    }
 }
 
 - (void)setCanGoBack:(BOOL)canGoBack canGoForward:(BOOL)canGoForward {
@@ -168,6 +213,61 @@ static const CGFloat kButtonSpacing = 4.0;
     _forwardButton.enabled = canGoForward;
     _backButton.contentTintColor = canGoBack ? SecondaryTextColor() : DisabledColor();
     _forwardButton.contentTintColor = canGoForward ? SecondaryTextColor() : DisabledColor();
+}
+
+- (void)setLoading:(BOOL)isLoading {
+    if (isLoading && !_isLoading) {
+        // Start loading animation
+        _isLoading = YES;
+        _loadingProgress = 0.0;
+        _loadingProgressView.hidden = NO;
+
+        // Animate progress from 0 to ~90% quickly, then slow down
+        [_loadingAnimationTimer invalidate];
+        _loadingAnimationTimer = [NSTimer scheduledTimerWithTimeInterval:0.05
+                                                                 repeats:YES
+                                                                   block:^(NSTimer* timer) {
+            if (self->_loadingProgress < 0.9) {
+                // Fast progress to 90%
+                self->_loadingProgress += 0.03;
+            } else if (self->_loadingProgress < 0.98) {
+                // Slow progress after 90%
+                self->_loadingProgress += 0.002;
+            }
+            [self updateLoadingProgressView];
+        }];
+    } else if (!isLoading && _isLoading) {
+        // Complete loading animation
+        _isLoading = NO;
+        [_loadingAnimationTimer invalidate];
+        _loadingAnimationTimer = nil;
+
+        // Animate to 100% then fade out
+        _loadingProgress = 1.0;
+        [self updateLoadingProgressView];
+
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [NSAnimationContext runAnimationGroup:^(NSAnimationContext* context) {
+                context.duration = 0.3;
+                self->_loadingProgressView.animator.alphaValue = 0.0;
+            } completionHandler:^{
+                self->_loadingProgressView.hidden = YES;
+                self->_loadingProgressView.alphaValue = 1.0;
+                self->_loadingProgress = 0.0;
+                [self updateLoadingProgressView];
+            }];
+        });
+    }
+}
+
+- (void)updateLoadingProgressView {
+    CGFloat width = _urlContainer.bounds.size.width * _loadingProgress;
+    _loadingProgressView.frame = NSMakeRect(0, 0, width, _urlContainer.bounds.size.height);
+}
+
+- (void)focusURLField {
+    [self.window makeFirstResponder:_urlField];
+    [_urlField selectText:nil];
 }
 
 #pragma mark - NSTextFieldDelegate

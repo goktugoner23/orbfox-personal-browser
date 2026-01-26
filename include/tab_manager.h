@@ -40,6 +40,7 @@ public:
     void UpdateTabTitle(int tab_id, const std::string& title);
     void UpdateTabUrl(int tab_id, const std::string& url);
     void UpdateTabLoadingState(int tab_id, bool is_loading);
+    void UpdateTabFavicon(int tab_id, const std::string& favicon_url, const std::vector<unsigned char>& png_data);
 
     // Set callbacks
     void SetCallbacks(const TabManagerCallbacks& callbacks) { callbacks_ = callbacks; }

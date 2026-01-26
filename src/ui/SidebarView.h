@@ -21,6 +21,7 @@ typedef NS_ENUM(NSInteger, SidebarPanel) {
 - (void)reloadTabs;
 - (void)selectTab:(int)tabId;
 - (void)updateTab:(int)tabId title:(NSString*)title isLoading:(BOOL)isLoading;
+- (void)updateTab:(int)tabId faviconData:(NSData*)faviconData;
 
 @end
 
@@ -31,6 +32,7 @@ typedef NS_ENUM(NSInteger, SidebarPanel) {
 @property (nonatomic, copy) NSString* title;
 @property (nonatomic, assign) BOOL isSelected;
 @property (nonatomic, assign) BOOL isLoading;
+@property (nonatomic, strong) NSImage* favicon;
 @property (nonatomic, weak) SidebarView* sidebarView;
 
 @end

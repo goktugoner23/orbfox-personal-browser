@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 
 // BrowserClient: Per-browser CEF callbacks
 // Handles all browser-level events (lifecycle, loading, display, etc.)
@@ -27,6 +28,8 @@ public:
     using AddressChangeCallback = std::function<void(const std::string&)>;
     using LoadingStateCallback = std::function<void(bool isLoading, bool canGoBack, bool canGoForward)>;
     using CloseCallback = std::function<void()>;
+    using PopupRequestCallback = std::function<void(const std::string& url)>;
+    using FaviconChangeCallback = std::function<void(const std::string& url, const std::vector<unsigned char>& png_data)>;
 
     BrowserClient();
 
@@ -36,6 +39,8 @@ public:
     void SetAddressChangeCallback(AddressChangeCallback callback) { on_address_change_ = std::move(callback); }
     void SetLoadingStateCallback(LoadingStateCallback callback) { on_loading_state_change_ = std::move(callback); }
     void SetCloseCallback(CloseCallback callback) { on_close_ = std::move(callback); }
+    void SetPopupRequestCallback(PopupRequestCallback callback) { on_popup_request_ = std::move(callback); }
+    void SetFaviconChangeCallback(FaviconChangeCallback callback) { on_favicon_change_ = std::move(callback); }
 
     // CefClient methods - return handler references
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
@@ -79,6 +84,8 @@ public:
     void OnAddressChange(CefRefPtr<CefBrowser> browser,
                          CefRefPtr<CefFrame> frame,
                          const CefString& url) override;
+    void OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
+                            const std::vector<CefString>& icon_urls) override;
 
     // CefRequestHandler methods
     bool OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
@@ -116,6 +123,8 @@ private:
     AddressChangeCallback on_address_change_;
     LoadingStateCallback on_loading_state_change_;
     CloseCallback on_close_;
+    PopupRequestCallback on_popup_request_;
+    FaviconChangeCallback on_favicon_change_;
 
     // Context menu command IDs
     enum MenuCommand {

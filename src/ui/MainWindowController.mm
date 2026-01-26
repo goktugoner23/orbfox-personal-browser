@@ -5,6 +5,10 @@
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
 #include "include/views/cef_browser_view.h"
+#include "history_storage.h"
+
+// Extern function to access global history storage
+extern HistoryStorage* GetHistoryStorage();
 
 static const CGFloat kSidebarWidth = 280.0;
 static const CGFloat kToolbarHeight = 44.0;
@@ -47,6 +51,7 @@ static const CGFloat kToolbarHeight = 44.0;
 
         [self setupViews];
         [self setupCallbacks];
+        [self setupKeyboardShortcuts];
 
         [window center];
     }
@@ -112,8 +117,13 @@ static const CGFloat kToolbarHeight = 44.0;
         MainWindowController* strongSelf = weakSelf;
         if (!strongSelf || !tab) return;
 
+        // IMPORTANT: Capture browser reference BEFORE dispatch_async!
+        // The Tab* will be deleted immediately after this callback returns,
+        // so we must capture the ref-counted CefRefPtr here.
+        CefRefPtr<CefBrowser> browser = tab->browser;
+
         dispatch_async(dispatch_get_main_queue(), ^{
-            [strongSelf removeBrowserForTab:tab];
+            [strongSelf removeBrowserView:browser];
             [strongSelf.sidebarView reloadTabs];
         });
     };
@@ -122,10 +132,15 @@ static const CGFloat kToolbarHeight = 44.0;
         MainWindowController* strongSelf = weakSelf;
         if (!strongSelf || !tab) return;
 
+        // Capture all data BEFORE dispatch_async to avoid dangling pointer
+        int tabId = tab->id;
+        std::string url = tab->url;
+        CefRefPtr<CefBrowser> browser = tab->browser;
+
         dispatch_async(dispatch_get_main_queue(), ^{
-            [strongSelf showBrowserForTab:tab];
-            [strongSelf.sidebarView selectTab:tab->id];
-            [strongSelf.toolbarView setURL:[NSString stringWithUTF8String:tab->url.c_str()]];
+            [strongSelf showBrowserWithRef:browser];
+            [strongSelf.sidebarView selectTab:tabId];
+            [strongSelf.toolbarView setURL:[NSString stringWithUTF8String:url.c_str()]];
         });
     };
 
@@ -133,14 +148,28 @@ static const CGFloat kToolbarHeight = 44.0;
         MainWindowController* strongSelf = weakSelf;
         if (!strongSelf || !tab) return;
 
+        // Capture all data BEFORE dispatch_async to avoid dangling pointer
+        int tabId = tab->id;
+        std::string title = tab->title;
+        bool isLoading = tab->is_loading;
+        std::vector<unsigned char> faviconData = tab->favicon_data;
+
         dispatch_async(dispatch_get_main_queue(), ^{
-            [strongSelf.sidebarView updateTab:tab->id
-                                         title:[NSString stringWithUTF8String:tab->title.c_str()]
-                                     isLoading:tab->is_loading];
+            [strongSelf.sidebarView updateTab:tabId
+                                         title:[NSString stringWithUTF8String:title.c_str()]
+                                     isLoading:isLoading];
+
+            // Update favicon if we have data
+            if (!faviconData.empty()) {
+                NSData* nsData = [NSData dataWithBytes:faviconData.data()
+                                                length:faviconData.size()];
+                [strongSelf.sidebarView updateTab:tabId faviconData:nsData];
+            }
 
             // Update window title if this is the active tab
-            if (strongSelf.tabManager->GetActiveTab() == tab) {
-                strongSelf.window.title = [NSString stringWithUTF8String:tab->title.c_str()];
+            Tab* activeTab = strongSelf.tabManager->GetActiveTab();
+            if (activeTab && activeTab->id == tabId) {
+                strongSelf.window.title = [NSString stringWithUTF8String:title.c_str()];
             }
         });
     };
@@ -212,12 +241,42 @@ static const CGFloat kToolbarHeight = 44.0;
         if (strongSelf && strongSelf.tabManager) {
             strongSelf.tabManager->UpdateTabLoadingState(tabId, isLoading);
 
+            // Record history when page finishes loading
+            if (!isLoading) {
+                Tab* tab = strongSelf.tabManager->GetTabById(tabId);
+                if (tab && !tab->url.empty() && tab->url.find("data:") != 0) {
+                    HistoryStorage* history = GetHistoryStorage();
+                    if (history) {
+                        history->AddEntry(tab->url, tab->title);
+                    }
+                }
+            }
+
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (strongSelf.tabManager->GetActiveTab() &&
                     strongSelf.tabManager->GetActiveTab()->id == tabId) {
                     [strongSelf.toolbarView setCanGoBack:canGoBack canGoForward:canGoForward];
+                    [strongSelf.toolbarView setLoading:isLoading];
                 }
             });
+        }
+    });
+
+    // Handle popup requests (open as new tab)
+    client->SetPopupRequestCallback([weakSelf](const std::string& url) {
+        MainWindowController* strongSelf = weakSelf;
+        if (strongSelf) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [strongSelf createNewTab:[NSString stringWithUTF8String:url.c_str()]];
+            });
+        }
+    });
+
+    // Handle favicon changes
+    client->SetFaviconChangeCallback([weakSelf, tabId](const std::string& url, const std::vector<unsigned char>& png_data) {
+        MainWindowController* strongSelf = weakSelf;
+        if (strongSelf && strongSelf.tabManager) {
+            strongSelf.tabManager->UpdateTabFavicon(tabId, url, png_data);
         }
     });
 
@@ -249,6 +308,38 @@ static const CGFloat kToolbarHeight = 44.0;
         host->CloseBrowser(true);
     }
     tab->browser = nullptr;
+}
+
+- (void)removeBrowserView:(CefRefPtr<CefBrowser>)browser {
+    if (!browser) return;
+
+    CefRefPtr<CefBrowserHost> host = browser->GetHost();
+    if (host) {
+        NSView* browserView = (__bridge NSView*)host->GetWindowHandle();
+        if (browserView) {
+            [browserView removeFromSuperview];
+        }
+        host->CloseBrowser(true);
+    }
+}
+
+- (void)showBrowserWithRef:(CefRefPtr<CefBrowser>)browser {
+    // Hide all browser views
+    for (NSView* subview in _browserContainer.subviews) {
+        subview.hidden = YES;
+    }
+
+    // Show the specified browser view
+    if (browser) {
+        CefRefPtr<CefBrowserHost> host = browser->GetHost();
+        if (host) {
+            NSView* browserView = (__bridge NSView*)host->GetWindowHandle();
+            if (browserView) {
+                browserView.hidden = NO;
+                browserView.frame = _browserContainer.bounds;
+            }
+        }
+    }
 }
 
 - (void)showBrowserForTab:(Tab*)tab {
@@ -343,6 +434,49 @@ static const CGFloat kToolbarHeight = 44.0;
 
 - (void)updateNavigationButtons:(BOOL)canGoBack canGoForward:(BOOL)canGoForward {
     [_toolbarView setCanGoBack:canGoBack canGoForward:canGoForward];
+}
+
+- (void)focusURLBar {
+    [_toolbarView focusURLField];
+}
+
+#pragma mark - Keyboard Shortcuts
+
+- (void)setupKeyboardShortcuts {
+    // Monitor for keyboard events
+    [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* event) {
+        if (event.modifierFlags & NSEventModifierFlagCommand) {
+            NSString* chars = event.charactersIgnoringModifiers;
+            if ([chars isEqualToString:@"t"]) {
+                // Cmd+T: New tab
+                [self createNewTab:@""];
+                return nil;
+            } else if ([chars isEqualToString:@"w"]) {
+                // Cmd+W: Close current tab
+                Tab* tab = self.tabManager->GetActiveTab();
+                if (tab) {
+                    [self closeTab:tab->id];
+                }
+                return nil;
+            } else if ([chars isEqualToString:@"l"]) {
+                // Cmd+L: Focus URL bar
+                [self focusURLBar];
+                return nil;
+            } else if (chars.length == 1) {
+                // Cmd+1-9: Switch to tab by index
+                unichar c = [chars characterAtIndex:0];
+                if (c >= '1' && c <= '9') {
+                    int index = c - '1';  // 0-based index
+                    Workspace* workspace = self.tabManager->GetActiveWorkspace();
+                    if (workspace && index < static_cast<int>(workspace->tabs.size())) {
+                        [self activateTab:workspace->tabs[index]->id];
+                    }
+                    return nil;
+                }
+            }
+        }
+        return event;
+    }];
 }
 
 #pragma mark - NSWindowDelegate

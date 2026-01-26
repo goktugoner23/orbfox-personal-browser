@@ -201,3 +201,15 @@ void TabManager::UpdateTabLoadingState(int tab_id, bool is_loading) {
         }
     }
 }
+
+void TabManager::UpdateTabFavicon(int tab_id, const std::string& favicon_url,
+                                   const std::vector<unsigned char>& png_data) {
+    Tab* tab = GetTabById(tab_id);
+    if (tab) {
+        tab->favicon_url = favicon_url;
+        tab->favicon_data = png_data;
+        if (callbacks_.on_tab_updated) {
+            callbacks_.on_tab_updated(tab);
+        }
+    }
+}

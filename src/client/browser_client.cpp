@@ -2,9 +2,44 @@
 
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
+#include "include/cef_image.h"
 #include "include/wrapper/cef_helpers.h"
 
 #include <sstream>
+
+// Callback for favicon download
+class FaviconDownloadCallback : public CefDownloadImageCallback {
+public:
+    using Callback = std::function<void(const std::string&, const std::vector<unsigned char>&)>;
+
+    FaviconDownloadCallback(std::string url, Callback callback)
+        : url_(std::move(url)), callback_(std::move(callback)) {}
+
+    void OnDownloadImageFinished(const CefString& image_url,
+                                 int http_status_code,
+                                 CefRefPtr<CefImage> image) override {
+        if (http_status_code == 200 && image && !image->IsEmpty()) {
+            int pixel_width = 0;
+            int pixel_height = 0;
+            CefRefPtr<CefBinaryValue> png_data = image->GetAsPNG(1.0f, true, pixel_width, pixel_height);
+
+            if (png_data && png_data->GetSize() > 0) {
+                std::vector<unsigned char> data(png_data->GetSize());
+                png_data->GetData(data.data(), data.size(), 0);
+
+                if (callback_) {
+                    callback_(url_, data);
+                }
+            }
+        }
+    }
+
+private:
+    std::string url_;
+    Callback callback_;
+
+    IMPLEMENT_REFCOUNTING(FaviconDownloadCallback);
+};
 
 BrowserClient::BrowserClient() = default;
 
@@ -28,7 +63,8 @@ bool BrowserClient::DoClose(CefRefPtr<CefBrowser> browser) {
 void BrowserClient::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
     CEF_REQUIRE_UI_THREAD();
 
-    if (browser_->IsSame(browser)) {
+    // Check if browser_ is valid before comparing
+    if (browser_ && browser_->IsSame(browser)) {
         browser_ = nullptr;
     }
 
@@ -37,8 +73,8 @@ void BrowserClient::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
         on_close_();
     }
 
-    // Quit the message loop when the browser closes
-    CefQuitMessageLoop();
+    // Note: CefQuitMessageLoop() is called by MainWindowController::windowWillClose
+    // when the main window closes, not here when individual tabs close
 }
 
 bool BrowserClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
@@ -54,13 +90,27 @@ bool BrowserClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
                                    CefBrowserSettings& settings,
                                    CefRefPtr<CefDictionaryValue>& extra_info,
                                    bool* no_javascript_access) {
-    (void)popup_id;  // Unused
+    (void)popup_id;
+    (void)frame;
+    (void)target_frame_name;
+    (void)target_disposition;
+    (void)user_gesture;
+    (void)popup_features;
+    (void)window_info;
+    (void)client;
+    (void)settings;
+    (void)extra_info;
+    (void)no_javascript_access;
     CEF_REQUIRE_UI_THREAD();
 
-    // For now, open popups in the same browser window
-    // TODO: Create new tab instead
+    // Open popup as new tab
     if (!target_url.empty()) {
-        browser->GetMainFrame()->LoadURL(target_url);
+        if (on_popup_request_) {
+            on_popup_request_(target_url.ToString());
+        } else {
+            // Fallback: load in current browser
+            browser->GetMainFrame()->LoadURL(target_url);
+        }
     }
     return true;  // Cancel popup, we handled it
 }
@@ -132,6 +182,30 @@ void BrowserClient::OnAddressChange(CefRefPtr<CefBrowser> browser,
     if (frame->IsMain() && on_address_change_) {
         on_address_change_(url.ToString());
     }
+}
+
+void BrowserClient::OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
+                                       const std::vector<CefString>& icon_urls) {
+    CEF_REQUIRE_UI_THREAD();
+
+    if (!on_favicon_change_ || icon_urls.empty()) {
+        return;
+    }
+
+    // Use the first favicon URL (usually the best one)
+    std::string favicon_url = icon_urls[0].ToString();
+
+    // Download the favicon image
+    CefRefPtr<FaviconDownloadCallback> callback =
+        new FaviconDownloadCallback(favicon_url, on_favicon_change_);
+
+    browser->GetHost()->DownloadImage(
+        favicon_url,
+        true,   // is_favicon
+        16,     // max_image_size (16x16 for tab icons)
+        false,  // bypass_cache
+        callback
+    );
 }
 
 // CefRequestHandler methods

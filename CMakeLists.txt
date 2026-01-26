@@ -42,6 +42,7 @@ set(SOURCES
     src/main.cpp
     src/client/browser_client.cpp
     src/data/window_settings.cpp
+    src/data/history_storage.cpp
     src/browser/tab_manager.cpp
 )
 
@@ -49,6 +50,7 @@ set(HEADERS
     include/browser_app.h
     include/browser_client.h
     include/window_settings.h
+    include/history_storage.h
     include/tab.h
     include/workspace.h
     include/tab_manager.h
@@ -103,6 +105,7 @@ if(APPLE)
     target_link_libraries(PersonalBrowser PRIVATE
         ${COCOA_LIBRARY}
         ${APPKIT_LIBRARY}
+        sqlite3
     )
 
     target_compile_definitions(PersonalBrowser PRIVATE PLATFORM_MAC)
