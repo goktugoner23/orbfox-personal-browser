@@ -6,6 +6,10 @@
 #include <memory>
 #include <vector>
 
+#ifndef UNIT_TEST
+#include "include/cef_browser.h"
+#endif
+
 // Callback types for UI updates
 struct TabManagerCallbacks {
     std::function<void(Tab*)> on_tab_created;
@@ -34,7 +38,9 @@ public:
     void SetActiveTab(int tab_id);
     Tab* GetActiveTab();
     Tab* GetTabById(int tab_id);
+#ifndef UNIT_TEST
     Tab* GetTabByBrowser(CefRefPtr<CefBrowser> browser);
+#endif
 
     // Tab operations
     void UpdateTabTitle(int tab_id, const std::string& title);

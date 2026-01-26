@@ -269,3 +269,72 @@ endif()
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "CEF root: ${CEF_ROOT}")
+
+# ============================================================
+# Unit Tests
+# ============================================================
+
+option(BUILD_TESTS "Build unit tests" ON)
+
+if(BUILD_TESTS)
+    include(FetchContent)
+
+    # Fetch GoogleTest
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.14.0
+    )
+    # Prevent GoogleTest from overriding parent project's compiler settings
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
+
+    # Test sources (non-UI, testable without CEF runtime)
+    set(TEST_SOURCES
+        tests/download_manager_test.cpp
+        tests/tab_manager_test.cpp
+        tests/persistence_test.cpp
+    )
+
+    # Source files needed for testing (excluding UI/platform-specific)
+    set(TESTABLE_SOURCES
+        src/data/window_settings.cpp
+        src/data/history_storage.cpp
+        src/data/session_storage.cpp
+        src/browser/tab_manager.cpp
+        src/client/download_manager.cpp
+    )
+
+    # Create test executable
+    add_executable(OrbFoxTests ${TEST_SOURCES} ${TESTABLE_SOURCES})
+
+    target_include_directories(OrbFoxTests PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(OrbFoxTests PRIVATE
+        gtest
+        gtest_main
+        sqlite3
+    )
+
+    # UNIT_TEST disables CEF dependencies in headers
+    target_compile_definitions(OrbFoxTests PRIVATE UNIT_TEST)
+
+    set_target_properties(OrbFoxTests PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+
+    # Compiler warnings for tests
+    if(NOT MSVC)
+        target_compile_options(OrbFoxTests PRIVATE -Wall -Wextra)
+    endif()
+
+    # Enable CTest
+    enable_testing()
+    add_test(NAME OrbFoxTests COMMAND OrbFoxTests)
+
+    message(STATUS "Unit tests: Enabled")
+endif()

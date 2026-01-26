@@ -29,7 +29,6 @@ void TabManager::DeleteWorkspace(int workspace_id) {
         [workspace_id](const auto& w) { return w->id == workspace_id; });
 
     if (it != workspaces_.end()) {
-        int index = static_cast<int>(std::distance(workspaces_.begin(), it));
         workspaces_.erase(it);
 
         // Adjust active workspace index if needed
@@ -157,6 +156,7 @@ Tab* TabManager::GetTabById(int tab_id) {
     return nullptr;
 }
 
+#ifndef UNIT_TEST
 Tab* TabManager::GetTabByBrowser(CefRefPtr<CefBrowser> browser) {
     if (!browser) {
         return nullptr;
@@ -171,6 +171,7 @@ Tab* TabManager::GetTabByBrowser(CefRefPtr<CefBrowser> browser) {
     }
     return nullptr;
 }
+#endif
 
 void TabManager::UpdateTabTitle(int tab_id, const std::string& title) {
     Tab* tab = GetTabById(tab_id);
