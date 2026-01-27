@@ -145,17 +145,24 @@ extern BookmarkStorage* GetBookmarkStorage();
 
 - (void)goBack:(id)sender {
     (void)sender;
+    [_backButton resetHoverState];
     [_windowController goBack];
 }
 
 - (void)goForward:(id)sender {
     (void)sender;
+    [_forwardButton resetHoverState];
     [_windowController goForward];
 }
 
 - (void)reload:(id)sender {
     (void)sender;
-    [_windowController reload];
+    [_reloadButton resetHoverState];
+    if (_isLoading) {
+        [_windowController stopLoading];
+    } else {
+        [_windowController reload];
+    }
 }
 
 - (void)toggleBookmark:(id)sender {
@@ -249,6 +256,12 @@ extern BookmarkStorage* GetBookmarkStorage();
         _loadingProgress = 0.0;
         _loadingProgressView.hidden = NO;
 
+        // Change to stop icon
+        _reloadButton.image = [NSImage imageWithSystemSymbolName:@"xmark"
+                                        accessibilityDescription:@"Stop"];
+        _reloadButton.toolTip = @"Stop Loading";
+        [_reloadButton resetHoverState];
+
         [_loadingAnimationTimer invalidate];
         _loadingAnimationTimer = [NSTimer scheduledTimerWithTimeInterval:0.05
                                                                  repeats:YES
@@ -265,6 +278,12 @@ extern BookmarkStorage* GetBookmarkStorage();
         _isLoading = NO;
         [_loadingAnimationTimer invalidate];
         _loadingAnimationTimer = nil;
+
+        // Change back to reload icon
+        _reloadButton.image = [NSImage imageWithSystemSymbolName:@"arrow.clockwise"
+                                        accessibilityDescription:@"Reload"];
+        _reloadButton.toolTip = @"Reload";
+        [_reloadButton resetHoverState];
 
         _loadingProgress = 1.0;
         [self updateLoadingProgressView];

@@ -30,6 +30,7 @@
 - (void)goBack;
 - (void)goForward;
 - (void)reload;
+- (void)stopLoading;
 
 // Update UI
 - (void)updateURLBar:(NSString*)url;

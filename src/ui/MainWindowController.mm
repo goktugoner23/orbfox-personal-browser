@@ -579,6 +579,13 @@ static const CGFloat kResizeHandleWidth = 6.0;
     }
 }
 
+- (void)stopLoading {
+    Tab* tab = _tabManager->GetActiveTab();
+    if (tab && tab->browser) {
+        tab->browser->StopLoad();
+    }
+}
+
 #pragma mark - UI Updates
 
 - (void)updateURLBar:(NSString*)url {
