@@ -38,6 +38,7 @@ public:
     using PopupRequestCallback = std::function<void(const std::string& url)>;
     using FaviconChangeCallback = std::function<void(const std::string& url, const std::vector<unsigned char>& png_data)>;
     using BlockedCountCallback = std::function<void(int blockedCount)>;
+    using FullscreenChangeCallback = std::function<void(bool fullscreen)>;
 
     // Download dialog callback: filename, size, callback to continue with path (empty = cancel)
     using DownloadDialogCallback = std::function<void(
@@ -57,6 +58,7 @@ public:
     void SetFaviconChangeCallback(FaviconChangeCallback callback) { on_favicon_change_ = std::move(callback); }
     void SetDownloadDialogCallback(DownloadDialogCallback callback) { on_download_dialog_ = std::move(callback); }
     void SetBlockedCountCallback(BlockedCountCallback callback) { on_blocked_count_ = std::move(callback); }
+    void SetFullscreenChangeCallback(FullscreenChangeCallback callback) { on_fullscreen_change_ = std::move(callback); }
 
     // Get blocked request count for this browser
     int GetBlockedCount() const { return blocked_count_; }
@@ -106,6 +108,8 @@ public:
                          const CefString& url) override;
     void OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
                             const std::vector<CefString>& icon_urls) override;
+    void OnFullscreenModeChange(CefRefPtr<CefBrowser> browser,
+                                bool fullscreen) override;
 
     // CefRequestHandler methods
     bool OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
@@ -172,6 +176,7 @@ private:
     FaviconChangeCallback on_favicon_change_;
     DownloadDialogCallback on_download_dialog_;
     BlockedCountCallback on_blocked_count_;
+    FullscreenChangeCallback on_fullscreen_change_;
 
     // Download callbacks (keyed by download ID)
     std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> download_callbacks_;

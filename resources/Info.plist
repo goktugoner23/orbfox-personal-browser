@@ -33,5 +33,19 @@
     <true/>
     <key>NSPrincipalClass</key>
     <string>BrowserApplication</string>
+
+    <!-- Privacy Usage Descriptions for CEF/Chromium -->
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>OrbFox needs Bluetooth access for web applications that use the Web Bluetooth API.</string>
+    <key>NSBluetoothPeripheralUsageDescription</key>
+    <string>OrbFox needs Bluetooth access for web applications that use the Web Bluetooth API.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>OrbFox needs camera access for video calls and other web applications that use your camera.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>OrbFox needs microphone access for voice calls and other web applications that use your microphone.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>OrbFox needs location access for web applications that request your location.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>OrbFox needs location access for web applications that request your location.</string>
 </dict>
 </plist>

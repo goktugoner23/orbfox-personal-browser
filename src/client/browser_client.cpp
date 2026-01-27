@@ -214,6 +214,15 @@ void BrowserClient::OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
     );
 }
 
+void BrowserClient::OnFullscreenModeChange(CefRefPtr<CefBrowser> browser,
+                                           bool fullscreen) {
+    CEF_REQUIRE_UI_THREAD();
+
+    if (on_fullscreen_change_) {
+        on_fullscreen_change_(fullscreen);
+    }
+}
+
 // CefRequestHandler methods
 
 bool BrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,

@@ -15,7 +15,7 @@ typedef NS_ENUM(NSInteger, SidebarPanel) {
 };
 
 // Sidebar view containing icon strip, workspace selector, and tab list
-@interface SidebarView : NSView
+@interface SidebarView : NSView <NSGestureRecognizerDelegate>
 
 @property (nonatomic, weak) MainWindowController* windowController;
 @property (nonatomic, assign) SidebarPanel activePanel;

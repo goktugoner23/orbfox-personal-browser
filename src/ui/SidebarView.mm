@@ -16,8 +16,82 @@ static NSString* const kBookmarkPasteboardType = @"com.orbfox.bookmark";
 // Layout constants
 static const CGFloat kIconStripWidth = 44.0;
 static const CGFloat kSidebarWidth = 280.0;
-static const CGFloat kWorkspaceHeight = 40.0;
+static const CGFloat kWorkspaceHeight = 44.0;
 static const CGFloat kNewTabButtonHeight = 44.0;
+
+// ============================================================================
+// HORIZONTAL SCROLL VIEW
+// Translates vertical scroll wheel to horizontal scrolling
+// ============================================================================
+
+// Clickable view that sends action on mouse click
+@interface ClickableView : NSView {
+    NSInteger _clickableTag;
+}
+@property (nonatomic, weak) id target;
+@property (nonatomic) SEL action;
+@end
+
+@implementation ClickableView
+
+- (void)setTag:(NSInteger)tag {
+    _clickableTag = tag;
+}
+
+- (NSInteger)tag {
+    return _clickableTag;
+}
+
+- (void)mouseDown:(NSEvent*)event {
+    if (_target && _action && [_target respondsToSelector:_action]) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [_target performSelector:_action withObject:self];
+        #pragma clang diagnostic pop
+    }
+}
+
+@end
+
+// Scroll view that only scrolls horizontally (supports touchpad swipes)
+@interface HorizontalScrollView : NSScrollView
+@end
+
+@implementation HorizontalScrollView
+
+- (void)scrollWheel:(NSEvent*)event {
+    NSClipView* clipView = self.contentView;
+    NSPoint currentOrigin = clipView.bounds.origin;
+    NSRect docBounds = self.documentView.bounds;
+
+    // Use horizontal delta directly (two-finger horizontal swipe)
+    // Also convert vertical scroll to horizontal for scroll wheels
+    CGFloat delta = event.deltaX;
+    if (delta == 0 && event.deltaY != 0) {
+        delta = event.deltaY;  // Convert vertical to horizontal
+    }
+
+    if (delta != 0) {
+        // Swipe right (negative delta) = scroll left (decrease X)
+        CGFloat newX = currentOrigin.x - delta * 8.0;
+
+        // Clamp to valid range
+        CGFloat maxX = MAX(0, docBounds.size.width - clipView.bounds.size.width);
+        newX = MAX(0, MIN(newX, maxX));
+
+        [clipView scrollToPoint:NSMakePoint(newX, 0)];
+        [self reflectScrolledClipView:clipView];
+    }
+    // Don't call super - block vertical scrolling
+}
+
+// Allow clicks to pass through to subviews
+- (NSView*)hitTest:(NSPoint)point {
+    NSView* hit = [super hitTest:point];
+    return hit;
+}
+
+@end
 
 // ============================================================================
 // FAVICON & TITLE CACHE
@@ -1681,9 +1755,9 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     CGFloat padding = [DSSpacing sm];
     CGFloat btnSize = 28;
 
-    // Workspace selector row at top
+    // Workspace selector row at top (flush with top edge)
     _workspaceSelector = [[NSView alloc] initWithFrame:NSMakeRect(
-        0, height - kWorkspaceHeight - padding, width, kWorkspaceHeight)];
+        0, height - kWorkspaceHeight, width, kWorkspaceHeight)];
     _workspaceSelector.autoresizingMask = NSViewMinYMargin | NSViewWidthSizable;
     [_tabsPanelContainer addSubview:_workspaceSelector];
 
@@ -1697,11 +1771,11 @@ static void CacheTitle(NSString* urlString, NSString* title) {
 
     // Workspace tabs scroll view - horizontal scrolling for workspace tabs
     CGFloat scrollWidth = width - btnSize - padding * 2;
-    _workspaceScrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(
+    _workspaceScrollView = [[HorizontalScrollView alloc] initWithFrame:NSMakeRect(
         0, 0, scrollWidth, kWorkspaceHeight)];
     _workspaceScrollView.hasHorizontalScroller = YES;
     _workspaceScrollView.hasVerticalScroller = NO;
-    _workspaceScrollView.horizontalScroller.alphaValue = 0;  // Hide scrollbar but keep functionality
+    _workspaceScrollView.horizontalScroller.alphaValue = 0;
     _workspaceScrollView.drawsBackground = NO;
     _workspaceScrollView.autoresizingMask = NSViewWidthSizable;
     _workspaceScrollView.horizontalScrollElasticity = NSScrollElasticityAllowed;
@@ -1710,6 +1784,10 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     // Container for workspace tab buttons
     _workspaceTabsContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, scrollWidth, kWorkspaceHeight)];
     _workspaceScrollView.documentView = _workspaceTabsContainer;
+
+    // Ensure scroll position starts at origin
+    [_workspaceScrollView.contentView scrollToPoint:NSZeroPoint];
+    [_workspaceScrollView reflectScrolledClipView:_workspaceScrollView.contentView];
 
     // New Tab button at bottom - full width, icon on right
     _newTabButton = [DSButton buttonWithTitle:@"New Tab" icon:@"plus" variant:DSButtonVariantGhost];
@@ -1721,7 +1799,7 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     [_tabsPanelContainer addSubview:_newTabButton];
 
     // Tab scroll view - between workspace selector and new tab button
-    CGFloat tabAreaTop = height - kWorkspaceHeight - [DSSpacing lg];
+    CGFloat tabAreaTop = height - kWorkspaceHeight;
     CGFloat tabAreaBottom = kNewTabButtonHeight;
     CGFloat tabAreaHeight = tabAreaTop - tabAreaBottom;
 
@@ -2008,6 +2086,54 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     }
 }
 
+// NSGestureRecognizerDelegate - don't intercept clicks on buttons
+- (BOOL)gestureRecognizer:(NSGestureRecognizer*)gestureRecognizer shouldReceiveTouch:(NSTouch*)touch {
+    return YES;
+}
+
+- (BOOL)gestureRecognizerShouldBegin:(NSGestureRecognizer*)gestureRecognizer {
+    // Check if click is on a button - if so, don't begin the gesture
+    NSPoint locationInView = [gestureRecognizer locationInView:gestureRecognizer.view];
+    NSView* hitView = [gestureRecognizer.view hitTest:[gestureRecognizer.view convertPoint:locationInView toView:gestureRecognizer.view.superview]];
+
+    // If the hit view is a button or inside a button, don't handle the gesture
+    while (hitView && hitView != gestureRecognizer.view) {
+        if ([hitView isKindOfClass:[NSButton class]]) {
+            return NO;
+        }
+        hitView = hitView.superview;
+    }
+    return YES;
+}
+
+- (void)workspaceTabGestureClicked:(NSGestureRecognizer*)gesture {
+    NSView* view = gesture.view;
+    if (!view || !_windowController || !_windowController.tabManager) return;
+
+    NSNumber* workspaceIdNum = objc_getAssociatedObject(view, "workspaceId");
+    if (!workspaceIdNum) return;
+
+    int workspaceId = [workspaceIdNum intValue];
+
+    // Don't switch if already on this workspace
+    Workspace* currentWorkspace = _windowController.tabManager->GetActiveWorkspace();
+    if (currentWorkspace && currentWorkspace->id == workspaceId) return;
+
+    _windowController.tabManager->SetActiveWorkspace(workspaceId);
+
+    [self reloadWorkspaceTabs];
+    [self reloadTabs];
+
+    // Show the active tab's browser
+    Tab* activeTab = _windowController.tabManager->GetActiveTab();
+    if (activeTab) {
+        [_windowController activateTab:activeTab->id];
+    } else {
+        // Create a tab if workspace is empty
+        [_windowController createNewTab:@""];
+    }
+}
+
 - (void)reloadWorkspaceTabs {
     if (!_windowController || !_windowController.tabManager) return;
 
@@ -2021,7 +2147,7 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     Workspace* activeWorkspace = _windowController.tabManager->GetActiveWorkspace();
 
     CGFloat padding = [DSSpacing sm];
-    CGFloat tabHeight = 32;
+    CGFloat tabHeight = 28;  // Match plus button height for alignment
     CGFloat x = padding;
     CGFloat closeSize = 16;
 
@@ -2066,14 +2192,12 @@ static void CacheTitle(NSString* urlString, NSString* title) {
         closeBtn.alphaValue = 0.5;
         [tabContainer addSubview:closeBtn];
 
-        // Make the container clickable (excluding close button area)
-        NSButton* clickArea = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, totalWidth - closeSize - 6, tabHeight)];
-        clickArea.transparent = YES;
-        clickArea.bordered = NO;
-        clickArea.tag = workspaceId;
-        clickArea.target = self;
-        clickArea.action = @selector(workspaceTabClicked:);
-        [tabContainer addSubview:clickArea positioned:NSWindowBelow relativeTo:nil];
+        // Make the container clickable using gesture recognizer
+        NSClickGestureRecognizer* clickGesture = [[NSClickGestureRecognizer alloc] initWithTarget:self action:@selector(workspaceTabGestureClicked:)];
+        clickGesture.numberOfClicksRequired = 1;
+        clickGesture.delegate = self;
+        objc_setAssociatedObject(tabContainer, "workspaceId", @(workspaceId), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [tabContainer addGestureRecognizer:clickGesture];
 
         // Add right-click menu to container (delete always enabled)
         NSMenu* contextMenu = [self createWorkspaceContextMenu:workspaceId canDelete:YES];
@@ -2470,12 +2594,13 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     // Use current sidebar width instead of constant
     CGFloat contentWidth = self.bounds.size.width - kIconStripWidth;
     CGFloat rowHeight = [DSLayout rowHeight];
-    CGFloat totalHeight = workspace->tabs.size() * rowHeight;
+    CGFloat topPadding = [DSSpacing lg];  // Padding below workspace row
+    CGFloat totalHeight = workspace->tabs.size() * rowHeight + topPadding;
     CGFloat minHeight = _tabScrollView.bounds.size.height;
 
     _tabContainer.frame = NSMakeRect(0, 0, contentWidth, MAX(totalHeight, minHeight));
 
-    CGFloat y = 0;
+    CGFloat y = topPadding;
     int activeTabId = workspace->GetActiveTab() ? workspace->GetActiveTab()->id : -1;
 
     for (const auto& tab : workspace->tabs) {

@@ -444,6 +444,20 @@ static const CGFloat kResizeHandleWidth = 6.0;
         });
     });
 
+    // Handle fullscreen mode changes (HTML5 Fullscreen API)
+    client->SetFullscreenChangeCallback([weakSelf, tabId](bool fullscreen) {
+        MainWindowController* strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // Only handle fullscreen if this is the active tab
+            Tab* activeTab = strongSelf.tabManager->GetActiveTab();
+            if (activeTab && activeTab->id == tabId) {
+                [strongSelf setFullscreen:fullscreen];
+            }
+        });
+    });
+
     // Create browser settings
     CefBrowserSettings settings;
 
@@ -601,6 +615,19 @@ static const CGFloat kResizeHandleWidth = 6.0;
     Tab* tab = _tabManager->GetActiveTab();
     if (tab && tab->browser) {
         tab->browser->StopLoad();
+    }
+}
+
+- (void)setFullscreen:(BOOL)fullscreen {
+    NSWindow* window = self.window;
+    BOOL isCurrentlyFullscreen = (window.styleMask & NSWindowStyleMaskFullScreen) != 0;
+
+    if (fullscreen && !isCurrentlyFullscreen) {
+        // Enter fullscreen
+        [window toggleFullScreen:nil];
+    } else if (!fullscreen && isCurrentlyFullscreen) {
+        // Exit fullscreen
+        [window toggleFullScreen:nil];
     }
 }
 

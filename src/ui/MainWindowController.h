@@ -56,6 +56,9 @@
 // History
 - (void)reloadHistoryPanelIfVisible;
 
+// Fullscreen
+- (void)setFullscreen:(BOOL)fullscreen;
+
 // Downloads
 - (void)showDownloadDialogForFile:(NSString*)filename
                              size:(int64_t)totalBytes
