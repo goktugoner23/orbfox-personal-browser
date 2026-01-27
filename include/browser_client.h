@@ -5,6 +5,7 @@
 #include "include/cef_load_handler.h"
 #include "include/cef_display_handler.h"
 #include "include/cef_request_handler.h"
+#include "include/cef_resource_request_handler.h"
 #include "include/cef_context_menu_handler.h"
 #include "include/cef_keyboard_handler.h"
 #include "include/cef_download_handler.h"
@@ -13,6 +14,8 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <set>
+#include <atomic>
 
 // BrowserClient: Per-browser CEF callbacks
 // Handles all browser-level events (lifecycle, loading, display, etc.)
@@ -21,6 +24,7 @@ class BrowserClient : public CefClient,
                       public CefLoadHandler,
                       public CefDisplayHandler,
                       public CefRequestHandler,
+                      public CefResourceRequestHandler,
                       public CefContextMenuHandler,
                       public CefKeyboardHandler,
                       public CefDownloadHandler {
@@ -33,6 +37,7 @@ public:
     using CloseCallback = std::function<void()>;
     using PopupRequestCallback = std::function<void(const std::string& url)>;
     using FaviconChangeCallback = std::function<void(const std::string& url, const std::vector<unsigned char>& png_data)>;
+    using BlockedCountCallback = std::function<void(int blockedCount)>;
 
     // Download dialog callback: filename, size, callback to continue with path (empty = cancel)
     using DownloadDialogCallback = std::function<void(
@@ -51,6 +56,10 @@ public:
     void SetPopupRequestCallback(PopupRequestCallback callback) { on_popup_request_ = std::move(callback); }
     void SetFaviconChangeCallback(FaviconChangeCallback callback) { on_favicon_change_ = std::move(callback); }
     void SetDownloadDialogCallback(DownloadDialogCallback callback) { on_download_dialog_ = std::move(callback); }
+    void SetBlockedCountCallback(BlockedCountCallback callback) { on_blocked_count_ = std::move(callback); }
+
+    // Get blocked request count for this browser
+    int GetBlockedCount() const { return blocked_count_; }
 
     // CefClient methods - return handler references
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
@@ -105,6 +114,22 @@ public:
                         bool user_gesture,
                         bool is_redirect) override;
 
+    CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(
+        CefRefPtr<CefBrowser> browser,
+        CefRefPtr<CefFrame> frame,
+        CefRefPtr<CefRequest> request,
+        bool is_navigation,
+        bool is_download,
+        const CefString& request_initiator,
+        bool& disable_default_handling) override;
+
+    // CefResourceRequestHandler methods
+    CefResourceRequestHandler::ReturnValue OnBeforeResourceLoad(
+        CefRefPtr<CefBrowser> browser,
+        CefRefPtr<CefFrame> frame,
+        CefRefPtr<CefRequest> request,
+        CefRefPtr<CefCallback> callback) override;
+
     // CefContextMenuHandler methods
     void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
                              CefRefPtr<CefFrame> frame,
@@ -146,9 +171,14 @@ private:
     PopupRequestCallback on_popup_request_;
     FaviconChangeCallback on_favicon_change_;
     DownloadDialogCallback on_download_dialog_;
+    BlockedCountCallback on_blocked_count_;
 
     // Download callbacks (keyed by download ID)
     std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> download_callbacks_;
+
+    // Tracking/ad blocking
+    std::atomic<int> blocked_count_{0};
+    static const std::set<std::string>& GetBlockedDomains();
 
     // Context menu command IDs
     enum MenuCommand {

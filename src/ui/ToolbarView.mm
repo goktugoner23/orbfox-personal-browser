@@ -15,7 +15,10 @@ extern BookmarkStorage* GetBookmarkStorage();
     DSIconButton* _forwardButton;
     DSIconButton* _reloadButton;
     NSTextField* _urlTextField;
-    NSImageView* _securityIcon;
+    NSImageView* _shieldIcon;
+    NSImageView* _lockIcon;
+    NSTextField* _blockedBadge;
+    int _blockedCount;
     NSView* _urlContainer;
     NSView* _loadingProgressView;
     NSTimer* _loadingAnimationTimer;
@@ -104,17 +107,42 @@ extern BookmarkStorage* GetBookmarkStorage();
     _loadingProgressView.hidden = YES;
     [_urlContainer addSubview:_loadingProgressView positioned:NSWindowBelow relativeTo:nil];
 
-    // Security icon
+    // Security icons (shield + lock)
     CGFloat iconSize = [DSLayout iconSizeSmall];
     CGFloat iconX = [DSSpacing sm];
     CGFloat iconY = (containerHeight - iconSize) / 2;
-    _securityIcon = [[NSImageView alloc] initWithFrame:NSMakeRect(iconX, iconY, iconSize, iconSize)];
-    _securityIcon.imageScaling = NSImageScaleProportionallyUpOrDown;
-    _securityIcon.hidden = YES;
-    [_urlContainer addSubview:_securityIcon];
+
+    // Shield icon (privacy/tracking protection)
+    _shieldIcon = [[NSImageView alloc] initWithFrame:NSMakeRect(iconX, iconY, iconSize, iconSize)];
+    _shieldIcon.image = [NSImage imageWithSystemSymbolName:@"shield"
+                                  accessibilityDescription:@"Privacy Protection"];
+    _shieldIcon.imageScaling = NSImageScaleProportionallyUpOrDown;
+    _shieldIcon.contentTintColor = [DSColors textSecondary];
+    _shieldIcon.hidden = YES;
+    _shieldIcon.toolTip = @"Tracking Protection";
+    [_urlContainer addSubview:_shieldIcon];
+
+    // Lock icon (SSL/HTTPS)
+    CGFloat lockX = iconX + iconSize + [DSSpacing xs];
+    _lockIcon = [[NSImageView alloc] initWithFrame:NSMakeRect(lockX, iconY, iconSize, iconSize)];
+    _lockIcon.imageScaling = NSImageScaleProportionallyUpOrDown;
+    _lockIcon.hidden = YES;
+    [_urlContainer addSubview:_lockIcon];
+
+    // Blocked count badge (small text next to shield when blocking)
+    _blockedBadge = [[NSTextField alloc] initWithFrame:NSMakeRect(iconX + iconSize - 4, iconY - 2, 20, 12)];
+    _blockedBadge.bezeled = NO;
+    _blockedBadge.drawsBackground = NO;
+    _blockedBadge.editable = NO;
+    _blockedBadge.selectable = NO;
+    _blockedBadge.textColor = [DSColors accent];
+    _blockedBadge.font = [NSFont systemFontOfSize:9 weight:NSFontWeightBold];
+    _blockedBadge.alignment = NSTextAlignmentCenter;
+    _blockedBadge.hidden = YES;
+    [_urlContainer addSubview:_blockedBadge];
 
     // URL text field
-    CGFloat textFieldLeftInset = iconX + iconSize + [DSSpacing sm];
+    CGFloat textFieldLeftInset = lockX + iconSize + [DSSpacing sm];
     CGFloat textFieldHeight = 20;
     CGFloat textFieldY = (containerHeight - textFieldHeight) / 2 - 2;
 
@@ -229,19 +257,26 @@ extern BookmarkStorage* GetBookmarkStorage();
     _urlTextField.stringValue = url ?: @"";
 
     if (!url || url.length == 0) {
-        _securityIcon.hidden = YES;
+        _shieldIcon.hidden = YES;
+        _lockIcon.hidden = YES;
     } else if ([url hasPrefix:@"https://"]) {
-        _securityIcon.image = [NSImage imageWithSystemSymbolName:@"lock.fill"
-                                        accessibilityDescription:@"Secure"];
-        _securityIcon.contentTintColor = [DSColors success];
-        _securityIcon.hidden = NO;
+        // Show shield (privacy) and lock (secure connection)
+        _shieldIcon.hidden = NO;
+        _lockIcon.image = [NSImage imageWithSystemSymbolName:@"lock.fill"
+                                    accessibilityDescription:@"Secure Connection"];
+        _lockIcon.contentTintColor = [DSColors textSecondary];
+        _lockIcon.hidden = NO;
     } else if ([url hasPrefix:@"http://"]) {
-        _securityIcon.image = [NSImage imageWithSystemSymbolName:@"exclamationmark.triangle.fill"
-                                        accessibilityDescription:@"Not Secure"];
-        _securityIcon.contentTintColor = [DSColors warning];
-        _securityIcon.hidden = NO;
+        // Show shield and warning (insecure connection)
+        _shieldIcon.hidden = NO;
+        _lockIcon.image = [NSImage imageWithSystemSymbolName:@"lock.open.fill"
+                                    accessibilityDescription:@"Not Secure"];
+        _lockIcon.contentTintColor = [DSColors warning];
+        _lockIcon.hidden = NO;
     } else {
-        _securityIcon.hidden = YES;
+        // For file://, about:, etc. - hide both
+        _shieldIcon.hidden = YES;
+        _lockIcon.hidden = YES;
     }
 }
 
@@ -305,6 +340,33 @@ extern BookmarkStorage* GetBookmarkStorage();
 - (void)setBookmarked:(BOOL)isBookmarked {
     _isBookmarked = isBookmarked;
     [self updateBookmarkButtonAppearance];
+}
+
+- (void)setBlockedCount:(int)count {
+    _blockedCount = count;
+
+    if (count > 0) {
+        // Shield is active - show filled icon with accent color
+        _shieldIcon.image = [NSImage imageWithSystemSymbolName:@"shield.fill"
+                                      accessibilityDescription:@"Tracking Protection Active"];
+        _shieldIcon.contentTintColor = [DSColors accent];
+        _shieldIcon.toolTip = [NSString stringWithFormat:@"Blocked %d tracker%@", count, count == 1 ? @"" : @"s"];
+
+        // Show badge with count
+        if (count < 100) {
+            _blockedBadge.stringValue = [NSString stringWithFormat:@"%d", count];
+        } else {
+            _blockedBadge.stringValue = @"99+";
+        }
+        _blockedBadge.hidden = NO;
+    } else {
+        // Shield is idle - show outline icon
+        _shieldIcon.image = [NSImage imageWithSystemSymbolName:@"shield"
+                                      accessibilityDescription:@"Tracking Protection"];
+        _shieldIcon.contentTintColor = [DSColors textSecondary];
+        _shieldIcon.toolTip = @"Tracking Protection";
+        _blockedBadge.hidden = YES;
+    }
 }
 
 - (void)updateBookmarkButtonAppearance {

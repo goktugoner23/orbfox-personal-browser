@@ -242,11 +242,13 @@ static const CGFloat kResizeHandleWidth = 6.0;
         int tabId = tab->id;
         std::string url = tab->url;
         CefRefPtr<CefBrowser> browser = tab->browser;
+        int blockedCount = tab->client ? tab->client->GetBlockedCount() : 0;
 
         dispatch_async(dispatch_get_main_queue(), ^{
             [strongSelf showBrowserWithRef:browser];
             [strongSelf.sidebarView selectTab:tabId];
             [strongSelf.toolbarView setURL:[NSString stringWithUTF8String:url.c_str()]];
+            [strongSelf.toolbarView setBlockedCount:blockedCount];
         });
     };
 
@@ -257,6 +259,7 @@ static const CGFloat kResizeHandleWidth = 6.0;
         // Capture all data BEFORE dispatch_async to avoid dangling pointer
         int tabId = tab->id;
         std::string title = tab->title;
+        std::string url = tab->url;
         bool isLoading = tab->is_loading;
         std::vector<unsigned char> faviconData = tab->favicon_data;
 
@@ -272,10 +275,11 @@ static const CGFloat kResizeHandleWidth = 6.0;
                 [strongSelf.sidebarView updateTab:tabId faviconData:nsData];
             }
 
-            // Update window title if this is the active tab
+            // Update window title and URL bar if this is the active tab
             Tab* activeTab = strongSelf.tabManager->GetActiveTab();
             if (activeTab && activeTab->id == tabId) {
                 strongSelf.window.title = [NSString stringWithUTF8String:title.c_str()];
+                [strongSelf.toolbarView setURL:[NSString stringWithUTF8String:url.c_str()]];
             }
         });
     };
@@ -423,6 +427,20 @@ static const CGFloat kResizeHandleWidth = 6.0;
             [strongSelf showDownloadDialogForFile:filename
                                              size:total_bytes
                                          callback:callback];
+        });
+    });
+
+    // Handle blocked tracker count updates
+    client->SetBlockedCountCallback([weakSelf, tabId](int blockedCount) {
+        MainWindowController* strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // Only update toolbar if this is the active tab
+            Tab* activeTab = strongSelf.tabManager->GetActiveTab();
+            if (activeTab && activeTab->id == tabId) {
+                [strongSelf.toolbarView setBlockedCount:blockedCount];
+            }
         });
     });
 

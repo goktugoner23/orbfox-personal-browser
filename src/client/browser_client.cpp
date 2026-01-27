@@ -222,8 +222,167 @@ bool BrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
                                     bool user_gesture,
                                     bool is_redirect) {
     CEF_REQUIRE_UI_THREAD();
-    // Allow all navigation for now
+    // Reset blocked count on main frame navigation
+    if (frame->IsMain()) {
+        blocked_count_ = 0;
+        if (on_blocked_count_) {
+            on_blocked_count_(0);
+        }
+    }
     return false;
+}
+
+// Static list of blocked domains (ads, trackers, analytics)
+const std::set<std::string>& BrowserClient::GetBlockedDomains() {
+    static const std::set<std::string> domains = {
+        // Google Ads & Analytics
+        "googleadservices.com",
+        "googlesyndication.com",
+        "doubleclick.net",
+        "google-analytics.com",
+        "googletagmanager.com",
+        "googletagservices.com",
+        "pagead2.googlesyndication.com",
+        "adservice.google.com",
+        // Facebook
+        "facebook.net",
+        "connect.facebook.net",
+        "pixel.facebook.com",
+        "an.facebook.com",
+        // Twitter/X
+        "ads-twitter.com",
+        "static.ads-twitter.com",
+        "analytics.twitter.com",
+        // Amazon
+        "amazon-adsystem.com",
+        "aax.amazon-adsystem.com",
+        // Microsoft
+        "ads.microsoft.com",
+        "bat.bing.com",
+        // Common ad networks
+        "adnxs.com",
+        "adsrvr.org",
+        "advertising.com",
+        "taboola.com",
+        "outbrain.com",
+        "criteo.com",
+        "criteo.net",
+        "pubmatic.com",
+        "rubiconproject.com",
+        "openx.net",
+        "casalemedia.com",
+        "sharethrough.com",
+        "indexww.com",
+        "33across.com",
+        "media.net",
+        "adform.net",
+        "smartadserver.com",
+        "bidswitch.net",
+        // Tracking & Analytics
+        "scorecardresearch.com",
+        "quantserve.com",
+        "segment.io",
+        "segment.com",
+        "mixpanel.com",
+        "hotjar.com",
+        "fullstory.com",
+        "mouseflow.com",
+        "crazyegg.com",
+        "optimizely.com",
+        "amplitude.com",
+        "branch.io",
+        "adjust.com",
+        "appsflyer.com",
+        "kochava.com",
+        "moat.com",
+        "doubleverify.com",
+        "adsafeprotected.com",
+        // Social widgets & tracking
+        "addthis.com",
+        "sharethis.com",
+        "addtoany.com",
+        // Other common trackers
+        "newrelic.com",
+        "nr-data.net",
+        "bugsnag.com",
+        "sentry.io",
+        "rollbar.com",
+        "loggly.com",
+        "sumologic.com",
+    };
+    return domains;
+}
+
+// Helper to extract domain from URL
+static std::string ExtractDomain(const std::string& url) {
+    size_t start = url.find("://");
+    if (start == std::string::npos) return "";
+    start += 3;
+
+    size_t end = url.find('/', start);
+    if (end == std::string::npos) end = url.length();
+
+    std::string host = url.substr(start, end - start);
+
+    // Remove port if present
+    size_t port = host.find(':');
+    if (port != std::string::npos) {
+        host = host.substr(0, port);
+    }
+
+    return host;
+}
+
+// Check if domain matches any blocked domain (including subdomains)
+static bool IsDomainBlocked(const std::string& domain, const std::set<std::string>& blocked) {
+    if (domain.empty()) return false;
+
+    // Direct match
+    if (blocked.count(domain)) return true;
+
+    // Check if it's a subdomain of a blocked domain
+    for (const auto& blockedDomain : blocked) {
+        if (domain.length() > blockedDomain.length()) {
+            size_t pos = domain.length() - blockedDomain.length();
+            if (domain[pos - 1] == '.' &&
+                domain.substr(pos) == blockedDomain) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+CefRefPtr<CefResourceRequestHandler> BrowserClient::GetResourceRequestHandler(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    CefRefPtr<CefRequest> request,
+    bool is_navigation,
+    bool is_download,
+    const CefString& request_initiator,
+    bool& disable_default_handling) {
+    // Return this to handle resource requests
+    return this;
+}
+
+CefResourceRequestHandler::ReturnValue BrowserClient::OnBeforeResourceLoad(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    CefRefPtr<CefRequest> request,
+    CefRefPtr<CefCallback> callback) {
+
+    std::string url = request->GetURL().ToString();
+    std::string domain = ExtractDomain(url);
+
+    if (IsDomainBlocked(domain, GetBlockedDomains())) {
+        blocked_count_++;
+        if (on_blocked_count_) {
+            on_blocked_count_(blocked_count_.load());
+        }
+        return RV_CANCEL;  // Block the request
+    }
+
+    return RV_CONTINUE;  // Allow the request
 }
 
 // CefContextMenuHandler methods
