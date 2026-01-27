@@ -1,17 +1,28 @@
 #import <Cocoa/Cocoa.h>
 
 #include "browser_app.h"
+#include "bookmark_storage.h"
+#include "history_storage.h"
 
 #include "include/cef_app.h"
 #include "include/cef_application_mac.h"
 #include "include/wrapper/cef_library_loader.h"
 
+// External access to storage singletons
+extern BookmarkStorage* GetBookmarkStorage();
+extern HistoryStorage* GetHistoryStorage();
+
 // Forward declarations for menu actions
 @class MainWindowController;
 
 // Application delegate
-@interface AppDelegate : NSObject <NSApplicationDelegate>
+@interface AppDelegate : NSObject <NSApplicationDelegate, NSMenuDelegate> {
+    NSMenu* _bookmarksMenu;
+    NSMenu* _historyMenu;
+}
 - (void)setupMenuBar;
+- (void)populateBookmarksMenu:(NSMenu*)menu;
+- (void)populateHistoryMenu:(NSMenu*)menu;
 @end
 
 @implementation AppDelegate
@@ -95,6 +106,10 @@
     [historyMenu addItem:[NSMenuItem separatorItem]];
     [historyMenu addItemWithTitle:@"Back" action:@selector(goBack:) keyEquivalent:@"["];
     [historyMenu addItemWithTitle:@"Forward" action:@selector(goForward:) keyEquivalent:@"]"];
+    [historyMenu addItem:[NSMenuItem separatorItem]];
+    // Dynamic history items will be added below this separator
+    historyMenu.delegate = self;
+    _historyMenu = historyMenu;
     historyMenuItem.submenu = historyMenu;
     [mainMenu addItem:historyMenuItem];
 
@@ -106,6 +121,10 @@
     newFolderItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
     [bookmarksMenu addItem:[NSMenuItem separatorItem]];
     [bookmarksMenu addItemWithTitle:@"Show Bookmarks" action:@selector(showBookmarksPanel:) keyEquivalent:@"b"];
+    [bookmarksMenu addItem:[NSMenuItem separatorItem]];
+    // Dynamic bookmark items will be added below this separator
+    bookmarksMenu.delegate = self;
+    _bookmarksMenu = bookmarksMenu;
     bookmarksMenuItem.submenu = bookmarksMenu;
     [mainMenu addItem:bookmarksMenuItem];
 
@@ -215,6 +234,152 @@
     NSWindow* window = [NSApp keyWindow];
     if (window.windowController && [window.windowController respondsToSelector:@selector(reload)]) {
         [window.windowController performSelector:@selector(reload)];
+    }
+}
+
+#pragma mark - NSMenuDelegate
+
+- (void)menuNeedsUpdate:(NSMenu*)menu {
+    if (menu == _bookmarksMenu) {
+        [self populateBookmarksMenu:menu];
+    } else if (menu == _historyMenu) {
+        [self populateHistoryMenu:menu];
+    }
+}
+
+- (void)populateBookmarksMenu:(NSMenu*)menu {
+    // Remove dynamic items (keep first 5: Bookmark Page, New Folder, separator, Show Bookmarks, separator)
+    while (menu.numberOfItems > 5) {
+        [menu removeItemAtIndex:5];
+    }
+
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return;
+
+    auto allBookmarks = bookmarks->GetAllBookmarks();
+    auto folders = bookmarks->GetFolders();
+
+    if (allBookmarks.empty() && folders.empty()) {
+        NSMenuItem* emptyItem = [[NSMenuItem alloc] initWithTitle:@"No Bookmarks" action:nil keyEquivalent:@""];
+        emptyItem.enabled = NO;
+        [menu addItem:emptyItem];
+        return;
+    }
+
+    // Add folders as submenus
+    for (const auto& folder : folders) {
+        NSMenuItem* folderItem = [[NSMenuItem alloc] initWithTitle:[NSString stringWithUTF8String:folder.c_str()]
+                                                            action:nil
+                                                     keyEquivalent:@""];
+        NSMenu* folderMenu = [[NSMenu alloc] init];
+
+        auto folderBookmarks = bookmarks->GetBookmarksInFolder(folder);
+        if (folderBookmarks.empty()) {
+            NSMenuItem* emptyItem = [[NSMenuItem alloc] initWithTitle:@"Empty Folder" action:nil keyEquivalent:@""];
+            emptyItem.enabled = NO;
+            [folderMenu addItem:emptyItem];
+        } else {
+            for (const auto& bm : folderBookmarks) {
+                NSString* title = [NSString stringWithUTF8String:bm.title.c_str()];
+                if (title.length == 0) {
+                    title = [NSString stringWithUTF8String:bm.url.c_str()];
+                }
+                // Truncate long titles
+                if (title.length > 40) {
+                    title = [[title substringToIndex:37] stringByAppendingString:@"..."];
+                }
+                NSMenuItem* item = [[NSMenuItem alloc] initWithTitle:title
+                                                              action:@selector(openBookmarkUrl:)
+                                                       keyEquivalent:@""];
+                item.representedObject = [NSString stringWithUTF8String:bm.url.c_str()];
+                item.target = self;
+                [folderMenu addItem:item];
+            }
+        }
+
+        folderItem.submenu = folderMenu;
+        [menu addItem:folderItem];
+    }
+
+    // Add root bookmarks (no folder)
+    auto rootBookmarks = bookmarks->GetBookmarksInFolder("");
+    if (!rootBookmarks.empty() && !folders.empty()) {
+        [menu addItem:[NSMenuItem separatorItem]];
+    }
+
+    for (const auto& bm : rootBookmarks) {
+        NSString* title = [NSString stringWithUTF8String:bm.title.c_str()];
+        if (title.length == 0) {
+            title = [NSString stringWithUTF8String:bm.url.c_str()];
+        }
+        // Truncate long titles
+        if (title.length > 40) {
+            title = [[title substringToIndex:37] stringByAppendingString:@"..."];
+        }
+        NSMenuItem* item = [[NSMenuItem alloc] initWithTitle:title
+                                                      action:@selector(openBookmarkUrl:)
+                                               keyEquivalent:@""];
+        item.representedObject = [NSString stringWithUTF8String:bm.url.c_str()];
+        item.target = self;
+        [menu addItem:item];
+    }
+}
+
+- (void)populateHistoryMenu:(NSMenu*)menu {
+    // Remove dynamic items (keep first 5: Show History, separator, Back, Forward, separator)
+    while (menu.numberOfItems > 5) {
+        [menu removeItemAtIndex:5];
+    }
+
+    HistoryStorage* history = GetHistoryStorage();
+    if (!history) return;
+
+    auto entries = history->GetRecentHistory(15);  // Show last 15 entries
+
+    if (entries.empty()) {
+        NSMenuItem* emptyItem = [[NSMenuItem alloc] initWithTitle:@"No History" action:nil keyEquivalent:@""];
+        emptyItem.enabled = NO;
+        [menu addItem:emptyItem];
+        return;
+    }
+
+    for (const auto& entry : entries) {
+        NSString* title = [NSString stringWithUTF8String:entry.title.c_str()];
+        if (title.length == 0) {
+            title = [NSString stringWithUTF8String:entry.url.c_str()];
+        }
+        // Truncate long titles
+        if (title.length > 50) {
+            title = [[title substringToIndex:47] stringByAppendingString:@"..."];
+        }
+        NSMenuItem* item = [[NSMenuItem alloc] initWithTitle:title
+                                                      action:@selector(openHistoryUrl:)
+                                               keyEquivalent:@""];
+        item.representedObject = [NSString stringWithUTF8String:entry.url.c_str()];
+        item.target = self;
+        [menu addItem:item];
+    }
+}
+
+- (void)openBookmarkUrl:(id)sender {
+    NSMenuItem* item = (NSMenuItem*)sender;
+    NSString* url = item.representedObject;
+    if (!url) return;
+
+    NSWindow* window = [NSApp keyWindow];
+    if (window.windowController && [window.windowController respondsToSelector:@selector(createNewTab:)]) {
+        [window.windowController performSelector:@selector(createNewTab:) withObject:url];
+    }
+}
+
+- (void)openHistoryUrl:(id)sender {
+    NSMenuItem* item = (NSMenuItem*)sender;
+    NSString* url = item.representedObject;
+    if (!url) return;
+
+    NSWindow* window = [NSApp keyWindow];
+    if (window.windowController && [window.windowController respondsToSelector:@selector(createNewTab:)]) {
+        [window.windowController performSelector:@selector(createNewTab:) withObject:url];
     }
 }
 

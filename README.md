@@ -47,6 +47,10 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
   - Double-click to open, right-click for context menu
 - **Collapsible sidebar** - click active panel icon to toggle
 - **History panel** with browsing history
+- **Menu bar integration** - dynamic bookmark and history menus
+  - Bookmarks menu shows all bookmarks with folders as submenus
+  - History menu shows 15 most recent entries
+  - Click any entry to open in new tab
 - **Downloads panel** - full download management
   - Progress bar and icon ring (only when size is known)
   - Stop/restart downloads, remembered save preferences

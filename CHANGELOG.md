@@ -34,6 +34,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - "Bookmark This Page" (Cmd+D) - toggle bookmark for current page
   - "New Folder..." (Cmd+Shift+N) - create new bookmark folder
   - "Show Bookmarks" (Cmd+Shift+B) - open bookmarks panel
+  - Dynamic bookmark list - shows all bookmarks and folders
+  - Click to open bookmark in new tab
+  - Folders shown as submenus with their contents
+- **History Menu** in menu bar
+  - "Show History" (Cmd+Y) - open history panel
+  - Back/Forward navigation
+  - Dynamic history list - shows 15 most recent entries
+  - Click to open history entry in new tab
 - **Folder Management Methods** - BookmarkStorage API
   - CreateFolder(), FolderExists(), DeleteFolder(), RenameFolder()
   - GetNextFolderNumber() for "Collection N" naming
