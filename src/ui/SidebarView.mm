@@ -168,7 +168,7 @@ static void LoadCachedFaviconsAndTitles() {
     }
 }
 
-static NSImage* GetCachedFavicon(NSString* urlString) {
+NSImage* GetCachedFavicon(NSString* urlString) {
     LoadCachedFaviconsAndTitles();
     NSString* domain = GetDomainFromURL(urlString);
     if (!domain) return nil;
@@ -1627,8 +1627,10 @@ static void CacheTitle(NSString* urlString, NSString* title) {
 
     // History panel
     NSView* _historyPanelContainer;
+    NSTextField* _historySearchField;
     NSScrollView* _historyScrollView;
     FlippedView* _historyContainer;
+    NSString* _historySearchQuery;
 
     // Bookmarks panel
     NSView* _bookmarksPanelContainer;
@@ -1912,9 +1914,21 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     historyTitle.autoresizingMask = NSViewMinYMargin;
     [_historyPanelContainer addSubview:historyTitle];
 
-    // History scroll view
+    // History search field
+    CGFloat searchFieldY = height - 76;
+    _historySearchField = [[NSTextField alloc] initWithFrame:NSMakeRect(
+        [DSSpacing sm], searchFieldY, width - [DSSpacing md], 28)];
+    _historySearchField.placeholderString = @"Search history...";
+    _historySearchField.font = [DSTypography fontWithStyle:DSFontStyleBody];
+    _historySearchField.bezelStyle = NSTextFieldRoundedBezel;
+    _historySearchField.delegate = self;
+    _historySearchField.autoresizingMask = NSViewMinYMargin | NSViewWidthSizable;
+    [_historyPanelContainer addSubview:_historySearchField];
+
+    // History scroll view (adjusted for search field)
+    CGFloat scrollViewHeight = height - 86;
     _historyScrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(
-        0, 0, width, height - 50)];
+        0, 0, width, scrollViewHeight)];
     _historyScrollView.hasVerticalScroller = YES;
     _historyScrollView.hasHorizontalScroller = NO;
     _historyScrollView.autohidesScrollers = YES;
@@ -1922,7 +1936,7 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     _historyScrollView.autoresizingMask = NSViewHeightSizable | NSViewWidthSizable;
     [_historyPanelContainer addSubview:_historyScrollView];
 
-    _historyContainer = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, width, height - 50)];
+    _historyContainer = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, width, scrollViewHeight)];
     _historyContainer.autoresizingMask = NSViewWidthSizable;
     _historyScrollView.documentView = _historyContainer;
 }
@@ -3484,6 +3498,10 @@ static void CacheTitle(NSString* urlString, NSString* title) {
 #pragma mark - History
 
 - (void)reloadHistory {
+    [self reloadHistoryWithQuery:_historySearchQuery];
+}
+
+- (void)reloadHistoryWithQuery:(NSString*)query {
     for (NSView* subview in _historyContainer.subviews.copy) {
         [subview removeFromSuperview];
     }
@@ -3491,7 +3509,12 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     HistoryStorage* history = GetHistoryStorage();
     if (!history) return;
 
-    std::vector<HistoryEntry> entries = history->GetRecentHistory(100);
+    std::vector<HistoryEntry> entries;
+    if (query && query.length > 0) {
+        entries = history->SearchHistory([query UTF8String], 100);
+    } else {
+        entries = history->GetRecentHistory(100);
+    }
     CGFloat contentWidth = _historyContainer.bounds.size.width;
     CGFloat y = 0;
     CGFloat rowHeight = 48;
@@ -3572,6 +3595,16 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     }
 
     _historyContainer.frame = NSMakeRect(0, 0, contentWidth, MAX(y, _historyScrollView.bounds.size.height));
+}
+
+#pragma mark - NSTextFieldDelegate (History Search)
+
+- (void)controlTextDidChange:(NSNotification*)notification {
+    NSTextField* textField = notification.object;
+    if (textField == _historySearchField) {
+        _historySearchQuery = textField.stringValue;
+        [self reloadHistoryWithQuery:_historySearchQuery];
+    }
 }
 
 #pragma mark - Downloads

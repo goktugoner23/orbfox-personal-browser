@@ -1,6 +1,7 @@
 #import "ToolbarView.h"
 #import "MainWindowController.h"
 #import "BookmarkEditPopover.h"
+#import "AutocompleteDropdown.h"
 #import "Components.h"
 #include "bookmark_storage.h"
 
@@ -29,11 +30,16 @@ extern BookmarkStorage* GetBookmarkStorage();
     DSIconButton* _bookmarkButton;
     BOOL _isBookmarked;
     BookmarkEditPopoverController* _bookmarkPopover;
+    // Autocomplete
+    AutocompleteDropdownView* _autocompleteDropdown;
+    BOOL _isEditingURL;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
+        self.wantsLayer = YES;
+        self.layer.masksToBounds = NO;  // Allow dropdown to appear above toolbar
         [self setupViews];
     }
     return self;
@@ -167,6 +173,33 @@ extern BookmarkStorage* GetBookmarkStorage();
 
     _urlTextField = textField;
     [_urlContainer addSubview:textField];
+
+    // Autocomplete dropdown - will be added to window content view when shown
+    CGFloat dropdownWidth = containerWidth;
+    _autocompleteDropdown = [[AutocompleteDropdownView alloc] initWithFrame:NSMakeRect(
+        x, 0, dropdownWidth, 200)];
+    _autocompleteDropdown.autoresizingMask = NSViewWidthSizable;
+    _autocompleteDropdown.windowController = _windowController;
+
+    __weak ToolbarView* weakSelf = self;
+    _autocompleteDropdown.onSelect = ^(NSString* url) {
+        ToolbarView* strongSelf = weakSelf;
+        if (strongSelf) {
+            [strongSelf->_autocompleteDropdown hide];
+            strongSelf->_urlTextField.stringValue = url;
+            [strongSelf.window makeFirstResponder:nil];
+            [strongSelf->_windowController navigateToURL:url];
+        }
+    };
+    _autocompleteDropdown.onDismiss = ^{
+        // Cleanup if needed
+    };
+    // Don't add as subview here - will add to window content view when showing
+}
+
+- (void)setWindowController:(MainWindowController*)windowController {
+    _windowController = windowController;
+    _autocompleteDropdown.windowController = windowController;
 }
 
 #pragma mark - Actions
@@ -399,17 +432,62 @@ extern BookmarkStorage* GetBookmarkStorage();
 
 - (void)controlTextDidBeginEditing:(NSNotification*)notification {
     (void)notification;
+    _isEditingURL = YES;
     _urlContainer.layer.borderWidth = 1.0;
     _urlContainer.layer.borderColor = [DSColors accent].CGColor;
+}
+
+- (void)controlTextDidChange:(NSNotification*)notification {
+    NSTextField* textField = notification.object;
+    if (textField == _urlTextField && _isEditingURL) {
+        NSString* query = textField.stringValue;
+        if (query.length > 0) {
+            [_autocompleteDropdown updateSuggestionsForQuery:query];
+            [self showAutocompleteDropdown];
+        } else {
+            [self hideAutocompleteDropdown];
+        }
+    }
+}
+
+- (void)showAutocompleteDropdown {
+    if (_autocompleteDropdown.suggestions.count == 0) {
+        [self hideAutocompleteDropdown];
+        return;
+    }
+
+    // Add to window's content view if not already
+    NSView* contentView = self.window.contentView;
+    if (_autocompleteDropdown.superview != contentView) {
+        [_autocompleteDropdown removeFromSuperview];
+        [contentView addSubview:_autocompleteDropdown];
+    }
+
+    // Position above toolbar, aligned with URL container
+    NSRect urlContainerFrame = [_urlContainer convertRect:_urlContainer.bounds toView:contentView];
+    CGFloat dropdownHeight = _autocompleteDropdown.frame.size.height;
+    CGFloat dropdownY = NSMaxY(self.frame) + 4;  // Just above toolbar
+
+    _autocompleteDropdown.frame = NSMakeRect(
+        urlContainerFrame.origin.x,
+        dropdownY,
+        urlContainerFrame.size.width,
+        dropdownHeight
+    );
+
+    [_autocompleteDropdown show];
+}
+
+- (void)hideAutocompleteDropdown {
+    [_autocompleteDropdown hide];
+    [_autocompleteDropdown removeFromSuperview];
 }
 
 - (void)controlTextDidEndEditing:(NSNotification*)notification {
     NSTextField* textField = notification.object;
     if (textField == _urlTextField) {
-        NSString* url = _urlTextField.stringValue;
-        if (url.length > 0) {
-            [_windowController navigateToURL:url];
-        }
+        _isEditingURL = NO;
+        [self hideAutocompleteDropdown];
         _urlContainer.layer.borderWidth = 0;
     }
 }
@@ -419,15 +497,55 @@ extern BookmarkStorage* GetBookmarkStorage();
     doCommandBySelector:(SEL)commandSelector {
     (void)control;
     (void)textView;
+
     if (commandSelector == @selector(insertNewline:)) {
-        NSString* url = _urlTextField.stringValue;
+        // Enter key - navigate to selected suggestion or typed URL
+        NSString* url;
+        if ([_autocompleteDropdown isVisible]) {
+            url = [_autocompleteDropdown selectedURL];
+            [self hideAutocompleteDropdown];
+        }
+        if (!url || url.length == 0) {
+            url = _urlTextField.stringValue;
+        }
         if (url.length > 0) {
+            _urlTextField.stringValue = url;
             [_windowController navigateToURL:url];
         }
         [self.window makeFirstResponder:nil];
         _urlContainer.layer.borderWidth = 0;
+        _isEditingURL = NO;
         return YES;
     }
+
+    if (commandSelector == @selector(moveUp:)) {
+        // Up arrow - move selection up in dropdown
+        if ([_autocompleteDropdown isVisible]) {
+            [_autocompleteDropdown moveSelectionUp];
+            return YES;
+        }
+    }
+
+    if (commandSelector == @selector(moveDown:)) {
+        // Down arrow - move selection down in dropdown
+        if ([_autocompleteDropdown isVisible]) {
+            [_autocompleteDropdown moveSelectionDown];
+            return YES;
+        }
+    }
+
+    if (commandSelector == @selector(cancelOperation:)) {
+        // Escape key - hide dropdown and deselect
+        if ([_autocompleteDropdown isVisible]) {
+            [self hideAutocompleteDropdown];
+            return YES;
+        }
+        [self.window makeFirstResponder:nil];
+        _urlContainer.layer.borderWidth = 0;
+        _isEditingURL = NO;
+        return YES;
+    }
+
     return NO;
 }
 
