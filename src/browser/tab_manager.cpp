@@ -97,6 +97,20 @@ void TabManager::CloseTab(int tab_id) {
     if (it != workspace->tabs.end()) {
         Tab* tab = it->get();
 
+        // Save tab info for reopening (only if it has a URL)
+        if (!tab->url.empty()) {
+            ClosedTab closed;
+            closed.url = tab->url;
+            closed.title = tab->title;
+            closed.workspace_id = workspace->id;
+            recently_closed_tabs_.push_front(closed);
+
+            // Limit the number of closed tabs we track
+            if (recently_closed_tabs_.size() > kMaxClosedTabs) {
+                recently_closed_tabs_.pop_back();
+            }
+        }
+
         if (callbacks_.on_tab_closed) {
             callbacks_.on_tab_closed(tab);
         }
@@ -213,4 +227,45 @@ void TabManager::UpdateTabFavicon(int tab_id, const std::string& favicon_url,
             callbacks_.on_tab_updated(tab);
         }
     }
+}
+
+bool TabManager::ReopenClosedTab() {
+    if (recently_closed_tabs_.empty()) {
+        return false;
+    }
+
+    ClosedTab closed = recently_closed_tabs_.front();
+    recently_closed_tabs_.pop_front();
+
+    // Try to find the original workspace
+    Workspace* target_workspace = nullptr;
+    for (const auto& ws : workspaces_) {
+        if (ws->id == closed.workspace_id) {
+            target_workspace = ws.get();
+            break;
+        }
+    }
+
+    // Fall back to active workspace if original doesn't exist
+    if (!target_workspace) {
+        target_workspace = GetActiveWorkspace();
+    }
+
+    if (!target_workspace) {
+        return false;
+    }
+
+    // Switch to the target workspace if different
+    if (target_workspace != GetActiveWorkspace()) {
+        SetActiveWorkspace(target_workspace->id);
+    }
+
+    // Create the tab with the saved URL
+    Tab* tab = CreateTab(closed.url);
+    if (tab) {
+        tab->title = closed.title;
+        return true;
+    }
+
+    return false;
 }

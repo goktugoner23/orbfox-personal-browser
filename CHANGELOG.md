@@ -34,6 +34,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Clear History Button** - Clear all browsing history
   - "Clear" button in history panel title bar
   - Confirmation dialog before clearing
+- **Reopen Closed Tab** (Cmd+Shift+T) - Restore recently closed tabs
+  - Tracks up to 25 recently closed tabs
+  - Reopens in original workspace (or active if deleted)
+  - LIFO order (most recent first)
 - **Persistent Favicon Cache** - Favicons saved to disk and restored on app launch
   - Stored in `~/Library/Application Support/OrbFox/cache/{domain}.png`
   - Automatically cached when visiting pages in tabs
@@ -85,7 +89,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Real-time Bookmark Updates** - Favicons and titles update live
   - When visiting a page, matching bookmarks update immediately
   - No need to reload bookmarks panel
-- Total tests: 198 (was 189) - added tab property and session storage tests
+- Total tests: 203 (was 198) - added reopen closed tab tests
 
 ### Fixed
 - **Folder Deletion** - Now properly deletes folders and their bookmarks

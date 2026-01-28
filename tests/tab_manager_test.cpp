@@ -533,3 +533,87 @@ TEST_F(TabManagerTest, Tab_MultiplePropertiesIndependent) {
     EXPECT_TRUE(tab->is_pinned);
     EXPECT_TRUE(tab->is_muted);
 }
+
+// ============================================================================
+// Reopen Closed Tab Tests
+// ============================================================================
+
+TEST_F(TabManagerTest, ReopenClosedTab_NoClosedTabs_ReturnsFalse) {
+    EXPECT_FALSE(manager_->HasClosedTabs());
+    EXPECT_FALSE(manager_->ReopenClosedTab());
+}
+
+TEST_F(TabManagerTest, ReopenClosedTab_ReopensLastClosed) {
+    auto* tab = manager_->CreateTab("https://google.com");
+    tab->title = "Google";
+    int tab_id = tab->id;
+
+    manager_->CloseTab(tab_id);
+
+    EXPECT_TRUE(manager_->HasClosedTabs());
+    EXPECT_TRUE(manager_->ReopenClosedTab());
+
+    // Should have created a new tab with same URL
+    auto* new_tab = manager_->GetActiveTab();
+    ASSERT_NE(new_tab, nullptr);
+    EXPECT_EQ(new_tab->url, "https://google.com");
+    EXPECT_EQ(new_tab->title, "Google");
+}
+
+TEST_F(TabManagerTest, ReopenClosedTab_MultipleClosedTabs_LIFO) {
+    auto* tab1 = manager_->CreateTab("https://google.com");
+    tab1->title = "Google";
+    int tab1_id = tab1->id;
+
+    auto* tab2 = manager_->CreateTab("https://github.com");
+    tab2->title = "GitHub";
+    int tab2_id = tab2->id;
+
+    manager_->CloseTab(tab1_id);
+    manager_->CloseTab(tab2_id);
+
+    // First reopen should be the last closed (GitHub)
+    EXPECT_TRUE(manager_->ReopenClosedTab());
+    auto* reopened1 = manager_->GetActiveTab();
+    EXPECT_EQ(reopened1->url, "https://github.com");
+
+    // Second reopen should be Google
+    EXPECT_TRUE(manager_->ReopenClosedTab());
+    auto* reopened2 = manager_->GetActiveTab();
+    EXPECT_EQ(reopened2->url, "https://google.com");
+
+    // No more closed tabs
+    EXPECT_FALSE(manager_->HasClosedTabs());
+}
+
+TEST_F(TabManagerTest, ReopenClosedTab_EmptyUrl_NotSaved) {
+    auto* tab = manager_->CreateTab("");  // Empty URL
+    int tab_id = tab->id;
+
+    manager_->CloseTab(tab_id);
+
+    // Should not have saved a tab with empty URL
+    EXPECT_FALSE(manager_->HasClosedTabs());
+}
+
+TEST_F(TabManagerTest, ReopenClosedTab_WorkspaceDeleted_OpensInActive) {
+    // Create a second workspace
+    auto* ws2 = manager_->CreateWorkspace("WS 2");
+    manager_->SetActiveWorkspace(ws2->id);
+
+    auto* tab = manager_->CreateTab("https://google.com");
+    tab->title = "Google";
+    int tab_id = tab->id;
+    int ws2_id = ws2->id;
+
+    manager_->CloseTab(tab_id);
+
+    // Delete the workspace (switch to first, then delete second)
+    manager_->SetActiveWorkspace(manager_->GetWorkspaces()[0]->id);
+    manager_->DeleteWorkspace(ws2_id);
+
+    // Reopen should work, opening in the current workspace
+    EXPECT_TRUE(manager_->ReopenClosedTab());
+    auto* reopened = manager_->GetActiveTab();
+    EXPECT_EQ(reopened->url, "https://google.com");
+}

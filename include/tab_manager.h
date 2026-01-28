@@ -2,9 +2,17 @@
 
 #include "workspace.h"
 
+#include <deque>
 #include <functional>
 #include <memory>
 #include <vector>
+
+// Stores information about a closed tab for reopening
+struct ClosedTab {
+    std::string url;
+    std::string title;
+    int workspace_id = 0;
+};
 
 #ifndef UNIT_TEST
 #include "include/cef_browser.h"
@@ -48,6 +56,10 @@ public:
     void UpdateTabLoadingState(int tab_id, bool is_loading);
     void UpdateTabFavicon(int tab_id, const std::string& favicon_url, const std::vector<unsigned char>& png_data);
 
+    // Reopen closed tab
+    bool ReopenClosedTab();
+    bool HasClosedTabs() const { return !recently_closed_tabs_.empty(); }
+
     // Set callbacks
     void SetCallbacks(const TabManagerCallbacks& callbacks) { callbacks_ = callbacks; }
 
@@ -55,7 +67,10 @@ public:
     int GetNextTabId() { return next_tab_id_++; }
 
 private:
+    static constexpr size_t kMaxClosedTabs = 25;
+
     std::vector<std::unique_ptr<Workspace>> workspaces_;
+    std::deque<ClosedTab> recently_closed_tabs_;
     int active_workspace_index_ = 0;
     int next_tab_id_ = 1;
     int next_workspace_id_ = 1;

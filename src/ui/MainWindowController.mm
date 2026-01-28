@@ -570,6 +570,14 @@ static const CGFloat kResizeHandleWidth = 6.0;
     _tabManager->SetActiveTab(tabId);
 }
 
+- (void)reopenClosedTab {
+    if (_tabManager->ReopenClosedTab()) {
+        // Tab was reopened - the browser will be created via the on_tab_created callback
+        // which is already set up in setupTabManagerCallbacks
+        [_sidebarView reloadWorkspaceTabs];
+    }
+}
+
 #pragma mark - Navigation
 
 - (void)navigateToURL:(NSString*)url {
@@ -982,7 +990,13 @@ static const CGFloat kIconStripWidth = 44.0;
     [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* event) {
         if (event.modifierFlags & NSEventModifierFlagCommand) {
             NSString* chars = event.charactersIgnoringModifiers;
-            if ([chars isEqualToString:@"t"]) {
+            BOOL hasShift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
+
+            if ([chars isEqualToString:@"t"] && hasShift) {
+                // Cmd+Shift+T: Reopen closed tab
+                [self reopenClosedTab];
+                return nil;
+            } else if ([chars isEqualToString:@"t"] && !hasShift) {
                 // Cmd+T: New tab
                 [self createNewTab:@""];
                 return nil;
