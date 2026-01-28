@@ -47,6 +47,7 @@ typedef NS_ENUM(NSInteger, SidebarPanel) {
 @property (nonatomic, assign) BOOL isSelected;
 @property (nonatomic, assign) BOOL isLoading;
 @property (nonatomic, assign) BOOL isPinned;
+@property (nonatomic, assign) BOOL isMuted;
 @property (nonatomic, strong) NSImage* favicon;
 @property (nonatomic, weak) SidebarView* sidebarView;
 

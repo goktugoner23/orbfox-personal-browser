@@ -1239,6 +1239,7 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     BOOL _isHovered;
     DSIconButton* _closeButton;
     NSImageView* _pinIconView;
+    NSImageView* _muteIconView;
     NSProgressIndicator* _loadingIndicator;
     NSImageView* _faviconView;
 }
@@ -1252,6 +1253,7 @@ static void CacheTitle(NSString* urlString, NSString* title) {
         _isSelected = NO;
         _isLoading = NO;
         _isPinned = NO;
+        _isMuted = NO;
 
         CGFloat iconSize = [DSLayout iconSizeSmall];
         CGFloat padding = [DSSpacing sm];
@@ -1284,6 +1286,16 @@ static void CacheTitle(NSString* urlString, NSString* title) {
         _pinIconView.autoresizingMask = NSViewMinXMargin;
         _pinIconView.hidden = YES;
         [self addSubview:_pinIconView];
+
+        // Mute icon (to the left of pin icon area)
+        _muteIconView = [[NSImageView alloc] initWithFrame:NSMakeRect(
+            frame.size.width - 44, (frame.size.height - 14) / 2, 14, 14)];
+        _muteIconView.image = [NSImage imageWithSystemSymbolName:@"speaker.slash.fill" accessibilityDescription:@"Muted"];
+        _muteIconView.contentTintColor = [DSColors textSecondary];
+        _muteIconView.imageScaling = NSImageScaleProportionallyUpOrDown;
+        _muteIconView.autoresizingMask = NSViewMinXMargin;
+        _muteIconView.hidden = YES;
+        [self addSubview:_muteIconView];
         _closeButton.autoresizingMask = NSViewMinXMargin;
         _closeButton.hidden = YES;
         _closeButton.target = self;
@@ -1341,6 +1353,14 @@ static void CacheTitle(NSString* urlString, NSString* title) {
                                               keyEquivalent:@""];
     pinItem.target = self;
     [menu addItem:pinItem];
+
+    // Mute/Unmute option
+    NSString* muteTitle = _isMuted ? @"Unmute Tab" : @"Mute Tab";
+    NSMenuItem* muteItem = [[NSMenuItem alloc] initWithTitle:muteTitle
+                                                      action:@selector(toggleMuteTab:)
+                                               keyEquivalent:@""];
+    muteItem.target = self;
+    [menu addItem:muteItem];
 
     // Rename Tab
     NSMenuItem* renameItem = [[NSMenuItem alloc] initWithTitle:@"Rename Tab"
@@ -1418,6 +1438,18 @@ static void CacheTitle(NSString* urlString, NSString* title) {
         tab->is_pinned = !tab->is_pinned;
         _isPinned = tab->is_pinned;
         _pinIconView.hidden = !_isPinned || _isHovered;  // Show pin icon only when pinned and not hovering
+        [self setNeedsDisplay:YES];
+    }
+}
+
+- (void)toggleMuteTab:(id)sender {
+    (void)sender;
+    Tab* tab = _sidebarView.windowController.tabManager->GetTabById(_tabId);
+    if (tab && tab->browser) {
+        tab->is_muted = !tab->is_muted;
+        tab->browser->GetHost()->SetAudioMuted(tab->is_muted);
+        _isMuted = tab->is_muted;
+        _muteIconView.hidden = !_isMuted;
         [self setNeedsDisplay:YES];
     }
 }
@@ -1566,7 +1598,7 @@ static void CacheTitle(NSString* urlString, NSString* title) {
 
     BOOL hasIcon = _isLoading || (_favicon != nil);
     CGFloat titleX = hasIcon ? 32 : [DSSpacing md];
-    NSRect titleRect = NSMakeRect(titleX, 10, self.bounds.size.width - titleX - 32, 18);
+    NSRect titleRect = NSMakeRect(titleX, 10, self.bounds.size.width - titleX - 50, 18);
     [_title drawInRect:titleRect withAttributes:mutableAttrs];
 }
 
@@ -1602,6 +1634,12 @@ static void CacheTitle(NSString* urlString, NSString* title) {
 - (void)setIsPinned:(BOOL)isPinned {
     _isPinned = isPinned;
     _pinIconView.hidden = !isPinned || _isHovered;  // Show pin icon only when pinned and not hovering
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setIsMuted:(BOOL)isMuted {
+    _isMuted = isMuted;
+    _muteIconView.hidden = !isMuted;
     [self setNeedsDisplay:YES];
 }
 
@@ -2624,6 +2662,7 @@ static void CacheTitle(NSString* urlString, NSString* title) {
         row.isSelected = (tab->id == activeTabId);
         row.isLoading = tab->is_loading;
         row.isPinned = tab->is_pinned;
+        row.isMuted = tab->is_muted;
         row.sidebarView = self;
 
         if (!tab->favicon_data.empty()) {

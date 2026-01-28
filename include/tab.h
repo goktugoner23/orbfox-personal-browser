@@ -24,6 +24,7 @@ struct Tab {
     std::vector<unsigned char> favicon_data;  // PNG data
     bool is_loading = false;
     bool is_pinned = false;
+    bool is_muted = false;
 
 #ifndef UNIT_TEST
     CefRefPtr<CefBrowser> browser;

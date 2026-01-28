@@ -21,6 +21,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **URL Bar Horizontal Scrolling** - Two-finger trackpad swipe to scroll long URLs
   - Works when URL field is focused
   - Smooth cursor-based scrolling through text
+- **Tab Mute/Unmute** - Mute audio on individual tabs
+  - Right-click tab → "Mute Tab" / "Unmute Tab"
+  - Muted speaker icon displays on muted tabs
+  - Uses CEF's native audio muting API
 - **Persistent Favicon Cache** - Favicons saved to disk and restored on app launch
   - Stored in `~/Library/Application Support/OrbFox/cache/{domain}.png`
   - Automatically cached when visiting pages in tabs

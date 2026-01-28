@@ -39,6 +39,7 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
   - Right-click context menu on workspace tabs
   - Close button on each workspace tab
 - **Tab pinning** - pin tabs with visual indicator, warning on workspace close
+- **Tab muting** - mute/unmute tabs via right-click menu, speaker icon indicator
 - **Session persistence** - restore workspaces and tabs on restart (Vivaldi-style)
 - **Bookmarks panel** - full bookmark management
   - Add bookmarks via popover with URL, nickname, description
