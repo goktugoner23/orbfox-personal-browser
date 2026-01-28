@@ -401,9 +401,33 @@ void BrowserClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
                                          CefRefPtr<CefContextMenuParams> params,
                                          CefRefPtr<CefMenuModel> model) {
     CEF_REQUIRE_UI_THREAD();
+    (void)frame;
 
     // Clear default menu
     model->Clear();
+
+    // Check if right-clicking on a link
+    CefString link_url = params->GetLinkUrl();
+    bool is_link = !link_url.empty();
+
+    // Check if there's selected text
+    CefString selection = params->GetSelectionText();
+    bool has_selection = !selection.empty();
+
+    if (is_link) {
+        // Link context menu
+        model->AddItem(MENU_ID_OPEN_LINK_NEW_TAB, "Open Link in New Tab");
+        model->AddItem(MENU_ID_OPEN_LINK_BACKGROUND, "Open Link in Background Tab");
+        model->AddSeparator();
+        model->AddItem(MENU_ID_COPY_LINK_ADDRESS, "Copy Link Address");
+        model->AddSeparator();
+    }
+
+    if (has_selection) {
+        // Text selection menu
+        model->AddItem(MENU_ID_COPY_TEXT, "Copy");
+        model->AddSeparator();
+    }
 
     // Add navigation items
     model->AddItem(MENU_ID_BACK, "Back");
@@ -427,6 +451,7 @@ bool BrowserClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
                                           int command_id,
                                           EventFlags event_flags) {
     CEF_REQUIRE_UI_THREAD();
+    (void)event_flags;
 
     switch (command_id) {
         case MENU_ID_BACK:
@@ -441,6 +466,31 @@ bool BrowserClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
         case MENU_ID_STOP:
             browser->StopLoad();
             return true;
+        case MENU_ID_OPEN_LINK_NEW_TAB: {
+            CefString link_url = params->GetLinkUrl();
+            if (!link_url.empty() && on_open_link_) {
+                on_open_link_(link_url.ToString(), false);  // false = foreground
+            }
+            return true;
+        }
+        case MENU_ID_OPEN_LINK_BACKGROUND: {
+            CefString link_url = params->GetLinkUrl();
+            if (!link_url.empty() && on_open_link_) {
+                on_open_link_(link_url.ToString(), true);  // true = background
+            }
+            return true;
+        }
+        case MENU_ID_COPY_LINK_ADDRESS: {
+            CefString link_url = params->GetLinkUrl();
+            if (!link_url.empty() && on_copy_to_clipboard_) {
+                on_copy_to_clipboard_(link_url.ToString());
+            }
+            return true;
+        }
+        case MENU_ID_COPY_TEXT: {
+            frame->Copy();
+            return true;
+        }
     }
     return false;
 }

@@ -26,6 +26,7 @@
 - (void)closeCurrentTab;
 - (void)activateTab:(int)tabId;
 - (void)reopenClosedTab;
+- (void)openLinkInNewTab:(NSString*)url background:(BOOL)background;
 
 // Navigation
 - (void)navigateToURL:(NSString*)url;

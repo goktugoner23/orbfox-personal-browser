@@ -45,8 +45,9 @@ TEST_F(TabManagerTest, CreateWorkspace_AssignsUniqueIds) {
 }
 
 TEST_F(TabManagerTest, CreateWorkspace_DefaultName) {
+    // Default workspace "WS 1" exists, so next auto-generated name is "WS 2"
     auto* ws = manager_->CreateWorkspace();
-    EXPECT_EQ(ws->name, "New Workspace");
+    EXPECT_EQ(ws->name, "WS 2");
 }
 
 // ============================================================================
@@ -616,4 +617,166 @@ TEST_F(TabManagerTest, ReopenClosedTab_WorkspaceDeleted_OpensInActive) {
     EXPECT_TRUE(manager_->ReopenClosedTab());
     auto* reopened = manager_->GetActiveTab();
     EXPECT_EQ(reopened->url, "https://google.com");
+}
+
+// ============================================================================
+// Move Tab Between Workspaces Tests
+// ============================================================================
+
+TEST_F(TabManagerTest, MoveTabToWorkspace_MovesTab) {
+    // Create second workspace
+    auto* ws1 = manager_->GetActiveWorkspace();
+    auto* ws2 = manager_->CreateWorkspace("WS 2");
+
+    // Create tab in first workspace
+    manager_->SetActiveWorkspace(ws1->id);
+    auto* tab = manager_->CreateTab("https://google.com");
+    tab->title = "Google";
+    int tab_id = tab->id;
+
+    EXPECT_EQ(ws1->tabs.size(), 1u);
+    EXPECT_EQ(ws2->tabs.size(), 0u);
+
+    // Move tab to workspace 2
+    EXPECT_TRUE(manager_->MoveTabToWorkspace(tab_id, ws2->id));
+
+    // Tab should be in workspace 2 now
+    EXPECT_EQ(ws1->tabs.size(), 0u);
+    EXPECT_EQ(ws2->tabs.size(), 1u);
+    EXPECT_EQ(ws2->tabs[0]->url, "https://google.com");
+    EXPECT_EQ(ws2->tabs[0]->id, tab_id);
+}
+
+TEST_F(TabManagerTest, MoveTabToWorkspace_SwitchesToTargetWorkspace) {
+    auto* ws1 = manager_->GetActiveWorkspace();
+    auto* ws2 = manager_->CreateWorkspace("WS 2");
+
+    manager_->SetActiveWorkspace(ws1->id);
+    auto* tab = manager_->CreateTab("https://google.com");
+
+    EXPECT_EQ(manager_->GetActiveWorkspace(), ws1);
+
+    manager_->MoveTabToWorkspace(tab->id, ws2->id);
+
+    // Should have switched to target workspace
+    EXPECT_EQ(manager_->GetActiveWorkspace(), ws2);
+}
+
+TEST_F(TabManagerTest, MoveTabToWorkspace_InvalidTabId_ReturnsFalse) {
+    auto* ws2 = manager_->CreateWorkspace("WS 2");
+
+    EXPECT_FALSE(manager_->MoveTabToWorkspace(9999, ws2->id));
+}
+
+TEST_F(TabManagerTest, MoveTabToWorkspace_InvalidWorkspaceId_ReturnsFalse) {
+    auto* tab = manager_->CreateTab("https://google.com");
+
+    EXPECT_FALSE(manager_->MoveTabToWorkspace(tab->id, 9999));
+}
+
+TEST_F(TabManagerTest, MoveTabToWorkspace_SameWorkspace_ReturnsFalse) {
+    auto* ws1 = manager_->GetActiveWorkspace();
+    auto* tab = manager_->CreateTab("https://google.com");
+
+    // Moving to same workspace should fail
+    EXPECT_FALSE(manager_->MoveTabToWorkspace(tab->id, ws1->id));
+    EXPECT_EQ(ws1->tabs.size(), 1u);  // Tab still there
+}
+
+TEST_F(TabManagerTest, MoveTabToWorkspace_PreservesTabProperties) {
+    auto* ws2 = manager_->CreateWorkspace("WS 2");
+
+    auto* tab = manager_->CreateTab("https://google.com");
+    tab->title = "Google Search";
+    tab->is_pinned = true;
+    tab->is_muted = true;
+    int tab_id = tab->id;
+
+    manager_->MoveTabToWorkspace(tab_id, ws2->id);
+
+    // Find the tab in workspace 2
+    ASSERT_EQ(ws2->tabs.size(), 1u);
+    auto* moved = ws2->tabs[0].get();
+
+    EXPECT_EQ(moved->id, tab_id);
+    EXPECT_EQ(moved->url, "https://google.com");
+    EXPECT_EQ(moved->title, "Google Search");
+    EXPECT_TRUE(moved->is_pinned);
+    EXPECT_TRUE(moved->is_muted);
+}
+
+TEST_F(TabManagerTest, MoveTabToWorkspace_AdjustsSourceActiveIndex) {
+    auto* ws1 = manager_->GetActiveWorkspace();
+    auto* ws2 = manager_->CreateWorkspace("WS 2");
+
+    manager_->SetActiveWorkspace(ws1->id);
+
+    // Create 3 tabs, active index will be 2 (last tab)
+    manager_->CreateTab("https://google.com");
+    auto* tab2 = manager_->CreateTab("https://github.com");
+    manager_->CreateTab("https://example.com");
+
+    EXPECT_EQ(ws1->active_tab_index, 2);
+
+    // Move the middle tab
+    manager_->MoveTabToWorkspace(tab2->id, ws2->id);
+
+    // Active index should be adjusted (still pointing to last remaining tab)
+    EXPECT_EQ(ws1->tabs.size(), 2u);
+    EXPECT_LE(ws1->active_tab_index, 1);
+}
+
+// ============================================================================
+// Unique Workspace Naming Tests
+// ============================================================================
+
+TEST_F(TabManagerTest, CreateWorkspace_AutoIncrementNames) {
+    // Default workspace is "WS 1", so next should be "WS 2"
+    auto* ws2 = manager_->CreateWorkspace();
+    EXPECT_EQ(ws2->name, "WS 2");
+
+    auto* ws3 = manager_->CreateWorkspace();
+    EXPECT_EQ(ws3->name, "WS 3");
+
+    auto* ws4 = manager_->CreateWorkspace();
+    EXPECT_EQ(ws4->name, "WS 4");
+}
+
+TEST_F(TabManagerTest, CreateWorkspace_DuplicateNameGetsSuffix) {
+    // Default workspace is "WS 1"
+    // Creating another "WS 1" should auto-rename to "WS 1 2"
+    auto* ws = manager_->CreateWorkspace("WS 1");
+    EXPECT_EQ(ws->name, "WS 1 2");
+}
+
+TEST_F(TabManagerTest, CreateWorkspace_CustomNamePreserved) {
+    auto* ws = manager_->CreateWorkspace("My Custom Workspace");
+    EXPECT_EQ(ws->name, "My Custom Workspace");
+}
+
+TEST_F(TabManagerTest, WorkspaceNameExists_ReturnsTrueForExisting) {
+    EXPECT_TRUE(manager_->WorkspaceNameExists("WS 1"));
+
+    manager_->CreateWorkspace("Test WS");
+    EXPECT_TRUE(manager_->WorkspaceNameExists("Test WS"));
+}
+
+TEST_F(TabManagerTest, WorkspaceNameExists_ReturnsFalseForNonExisting) {
+    EXPECT_FALSE(manager_->WorkspaceNameExists("NonExistent"));
+    EXPECT_FALSE(manager_->WorkspaceNameExists("WS 999"));
+}
+
+TEST_F(TabManagerTest, GenerateUniqueWorkspaceName_SkipsExisting) {
+    // Default workspace is "WS 1"
+    // Create "WS 2" manually
+    manager_->CreateWorkspace("WS 2");
+
+    // Next auto-generated should skip to "WS 3"
+    auto* ws = manager_->CreateWorkspace();
+    EXPECT_EQ(ws->name, "WS 3");
+}
+
+TEST_F(TabManagerTest, CreateWorkspace_EmptyNameGeneratesUnique) {
+    auto* ws = manager_->CreateWorkspace("");
+    EXPECT_EQ(ws->name, "WS 2");
 }

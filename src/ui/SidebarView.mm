@@ -1383,34 +1383,43 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     duplicateItem.target = self;
     [menu addItem:duplicateItem];
 
-    // Open in Space submenu
-    NSMenuItem* openInSpaceItem = [[NSMenuItem alloc] initWithTitle:@"Open in Space"
-                                                             action:nil
-                                                      keyEquivalent:@""];
-    NSMenu* spaceSubmenu = [[NSMenu alloc] initWithTitle:@"Spaces"];
+    // Move to submenu (moves tab to another workspace)
+    NSMenuItem* moveToItem = [[NSMenuItem alloc] initWithTitle:@"Move to"
+                                                        action:nil
+                                                 keyEquivalent:@""];
+    NSMenu* moveSubmenu = [[NSMenu alloc] initWithTitle:@"Move to"];
 
     TabManager* tabManager = _sidebarView.windowController.tabManager;
+    Workspace* currentWorkspace = tabManager ? tabManager->GetActiveWorkspace() : nullptr;
+
     if (tabManager) {
+        // Add existing workspaces (except current)
         for (const auto& workspace : tabManager->GetWorkspaces()) {
+            if (currentWorkspace && workspace->id == currentWorkspace->id) {
+                continue;
+            }
             NSMenuItem* wsItem = [[NSMenuItem alloc] initWithTitle:
                 [NSString stringWithUTF8String:workspace->name.c_str()]
-                                                            action:@selector(duplicateTabToWorkspace:)
+                                                            action:@selector(moveTabToWorkspace:)
                                                      keyEquivalent:@""];
             wsItem.target = self;
             wsItem.tag = workspace->id;
-            [spaceSubmenu addItem:wsItem];
+            [moveSubmenu addItem:wsItem];
         }
+
+        // Add separator and "New Space" option
+        if (tabManager->GetWorkspaces().size() > 1) {
+            [moveSubmenu addItem:[NSMenuItem separatorItem]];
+        }
+        NSMenuItem* newSpaceItem = [[NSMenuItem alloc] initWithTitle:@"New Space"
+                                                              action:@selector(moveTabToNewWorkspace:)
+                                                       keyEquivalent:@""];
+        newSpaceItem.target = self;
+        [moveSubmenu addItem:newSpaceItem];
     }
 
-    [spaceSubmenu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem* newSpaceItem = [[NSMenuItem alloc] initWithTitle:@"New Space"
-                                                          action:@selector(duplicateTabToNewWorkspace:)
-                                                   keyEquivalent:@""];
-    newSpaceItem.target = self;
-    [spaceSubmenu addItem:newSpaceItem];
-
-    openInSpaceItem.submenu = spaceSubmenu;
-    [menu addItem:openInSpaceItem];
+    moveToItem.submenu = moveSubmenu;
+    [menu addItem:moveToItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
 
@@ -1543,6 +1552,30 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     // Reload UI
     [_sidebarView reloadWorkspaceTabs];
     [_sidebarView reloadTabs];
+}
+
+- (void)moveTabToWorkspace:(NSMenuItem*)sender {
+    int targetWorkspaceId = (int)sender.tag;
+    TabManager* tabManager = _sidebarView.windowController.tabManager;
+
+    if (tabManager->MoveTabToWorkspace(_tabId, targetWorkspaceId)) {
+        // Reload UI for both source and target workspaces
+        [_sidebarView reloadWorkspaceTabs];
+        [_sidebarView reloadTabs];
+    }
+}
+
+- (void)moveTabToNewWorkspace:(id)sender {
+    (void)sender;
+    TabManager* tabManager = _sidebarView.windowController.tabManager;
+
+    // Create new workspace with auto-generated unique name
+    Workspace* newWorkspace = tabManager->CreateWorkspace("");
+
+    if (newWorkspace && tabManager->MoveTabToWorkspace(_tabId, newWorkspace->id)) {
+        [_sidebarView reloadWorkspaceTabs];
+        [_sidebarView reloadTabs];
+    }
 }
 
 - (void)duplicateTabToNewWorkspace:(id)sender {

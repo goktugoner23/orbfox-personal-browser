@@ -42,12 +42,22 @@ public:
     using BlockedCountCallback = std::function<void(int blockedCount)>;
     using FullscreenChangeCallback = std::function<void(bool fullscreen)>;
     using FindResultCallback = std::function<void(int count, int activeMatch)>;
+    using OpenLinkCallback = std::function<void(const std::string& url, bool background)>;
+    using CopyToClipboardCallback = std::function<void(const std::string& text)>;
 
     // Download dialog callback: filename, size, callback to continue with path (empty = cancel)
     using DownloadDialogCallback = std::function<void(
         const std::string& suggested_name,
         int64_t total_bytes,
         CefRefPtr<CefBeforeDownloadCallback> callback)>;
+
+    // Custom menu command IDs (use high values to avoid collision with CEF's built-in IDs)
+    enum MenuCommands {
+        MENU_ID_OPEN_LINK_NEW_TAB = 50000,
+        MENU_ID_OPEN_LINK_BACKGROUND = 50001,
+        MENU_ID_COPY_LINK_ADDRESS = 50002,
+        MENU_ID_COPY_TEXT = 50003,
+    };
 
     BrowserClient();
 
@@ -63,6 +73,8 @@ public:
     void SetBlockedCountCallback(BlockedCountCallback callback) { on_blocked_count_ = std::move(callback); }
     void SetFullscreenChangeCallback(FullscreenChangeCallback callback) { on_fullscreen_change_ = std::move(callback); }
     void SetFindResultCallback(FindResultCallback callback) { on_find_result_ = std::move(callback); }
+    void SetOpenLinkCallback(OpenLinkCallback callback) { on_open_link_ = std::move(callback); }
+    void SetCopyToClipboardCallback(CopyToClipboardCallback callback) { on_copy_to_clipboard_ = std::move(callback); }
 
     // Get blocked request count for this browser
     int GetBlockedCount() const { return blocked_count_; }
@@ -191,6 +203,8 @@ private:
     BlockedCountCallback on_blocked_count_;
     FullscreenChangeCallback on_fullscreen_change_;
     FindResultCallback on_find_result_;
+    OpenLinkCallback on_open_link_;
+    CopyToClipboardCallback on_copy_to_clipboard_;
 
     // Download callbacks (keyed by download ID)
     std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> download_callbacks_;

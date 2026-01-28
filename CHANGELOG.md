@@ -38,6 +38,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Tracks up to 25 recently closed tabs
   - Reopens in original workspace (or active if deleted)
   - LIFO order (most recent first)
+- **Move Tab Between Workspaces** - Move tabs to other workspaces
+  - Right-click tab → "Move to" → select workspace
+  - Shows all workspaces except current
+  - Preserves tab properties (pinned, muted, title)
+  - "New Space" option creates workspace and moves tab in one action
+- **Link Context Menu** - Right-click links for quick actions
+  - "Open Link in New Tab" - opens link in foreground tab
+  - "Open Link in Background Tab" - opens link without switching
+  - "Copy Link Address" - copies URL to clipboard
+  - "Copy" appears for selected text
+- **Unique Workspace Naming** - Auto-increment workspace names
+  - New workspaces automatically named WS 1, WS 2, WS 3...
+  - Skips existing numbers (e.g., if WS 2 exists, next is WS 3)
+  - Duplicate names get suffix (e.g., "WS 1" → "WS 1 2")
 - **Persistent Favicon Cache** - Favicons saved to disk and restored on app launch
   - Stored in `~/Library/Application Support/OrbFox/cache/{domain}.png`
   - Automatically cached when visiting pages in tabs
@@ -89,7 +103,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Real-time Bookmark Updates** - Favicons and titles update live
   - When visiting a page, matching bookmarks update immediately
   - No need to reload bookmarks panel
-- Total tests: 203 (was 198) - added reopen closed tab tests
+- Total tests: 217 (was 210) - added unique workspace naming tests
+- Removed redundant "Open in Space" from tab context menu (now use "Move to" with "New Space")
 
 ### Fixed
 - **Folder Deletion** - Now properly deletes folders and their bookmarks

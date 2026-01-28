@@ -60,6 +60,13 @@ public:
     bool ReopenClosedTab();
     bool HasClosedTabs() const { return !recently_closed_tabs_.empty(); }
 
+    // Move tab between workspaces
+    bool MoveTabToWorkspace(int tab_id, int target_workspace_id);
+
+    // Workspace naming
+    bool WorkspaceNameExists(const std::string& name) const;
+    std::string GenerateUniqueWorkspaceName() const;
+
     // Set callbacks
     void SetCallbacks(const TabManagerCallbacks& callbacks) { callbacks_ = callbacks; }
 

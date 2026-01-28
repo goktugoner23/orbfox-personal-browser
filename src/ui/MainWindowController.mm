@@ -405,6 +405,26 @@ static const CGFloat kResizeHandleWidth = 6.0;
         }
     });
 
+    // Handle open link in new tab from context menu
+    client->SetOpenLinkCallback([weakSelf](const std::string& url, bool background) {
+        MainWindowController* strongSelf = weakSelf;
+        if (strongSelf) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [strongSelf openLinkInNewTab:[NSString stringWithUTF8String:url.c_str()] background:background];
+            });
+        }
+    });
+
+    // Handle copy to clipboard from context menu
+    client->SetCopyToClipboardCallback([](const std::string& text) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
+            [pasteboard clearContents];
+            [pasteboard setString:[NSString stringWithUTF8String:text.c_str()]
+                          forType:NSPasteboardTypeString];
+        });
+    });
+
     // Handle favicon changes
     client->SetFaviconChangeCallback([weakSelf, tabId](const std::string& url, const std::vector<unsigned char>& png_data) {
         MainWindowController* strongSelf = weakSelf;
@@ -575,6 +595,20 @@ static const CGFloat kResizeHandleWidth = 6.0;
         // Tab was reopened - the browser will be created via the on_tab_created callback
         // which is already set up in setupTabManagerCallbacks
         [_sidebarView reloadWorkspaceTabs];
+    }
+}
+
+- (void)openLinkInNewTab:(NSString*)url background:(BOOL)background {
+    // Remember current active tab if opening in background
+    Tab* previousActiveTab = background ? _tabManager->GetActiveTab() : nullptr;
+    int previousTabId = previousActiveTab ? previousActiveTab->id : -1;
+
+    // Create the new tab
+    [self createNewTab:url];
+
+    // If background, switch back to the previous tab
+    if (background && previousTabId >= 0) {
+        _tabManager->SetActiveTab(previousTabId);
     }
 }
 

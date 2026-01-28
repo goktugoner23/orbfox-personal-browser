@@ -7,8 +7,41 @@ TabManager::TabManager() {
 
 TabManager::~TabManager() = default;
 
+bool TabManager::WorkspaceNameExists(const std::string& name) const {
+    for (const auto& ws : workspaces_) {
+        if (ws->name == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string TabManager::GenerateUniqueWorkspaceName() const {
+    int num = 1;
+    std::string name;
+    do {
+        name = "WS " + std::to_string(num);
+        num++;
+    } while (WorkspaceNameExists(name));
+    return name;
+}
+
 Workspace* TabManager::CreateWorkspace(const std::string& name) {
-    auto workspace = std::make_unique<Workspace>(next_workspace_id_++, name);
+    // If name is empty or "New Workspace", generate a unique name
+    std::string final_name = name;
+    if (final_name.empty() || final_name == "New Workspace") {
+        final_name = GenerateUniqueWorkspaceName();
+    } else if (WorkspaceNameExists(final_name)) {
+        // If name already exists, append a number
+        int suffix = 2;
+        std::string base_name = final_name;
+        while (WorkspaceNameExists(final_name)) {
+            final_name = base_name + " " + std::to_string(suffix);
+            suffix++;
+        }
+    }
+
+    auto workspace = std::make_unique<Workspace>(next_workspace_id_++, final_name);
     Workspace* ptr = workspace.get();
     workspaces_.push_back(std::move(workspace));
 
@@ -268,4 +301,76 @@ bool TabManager::ReopenClosedTab() {
     }
 
     return false;
+}
+
+bool TabManager::MoveTabToWorkspace(int tab_id, int target_workspace_id) {
+    // Find the source workspace and tab
+    Workspace* source_workspace = nullptr;
+    std::unique_ptr<Tab> tab_to_move;
+    int source_tab_index = -1;
+
+    for (auto& workspace : workspaces_) {
+        for (size_t i = 0; i < workspace->tabs.size(); ++i) {
+            if (workspace->tabs[i]->id == tab_id) {
+                source_workspace = workspace.get();
+                source_tab_index = static_cast<int>(i);
+                break;
+            }
+        }
+        if (source_workspace) break;
+    }
+
+    if (!source_workspace || source_tab_index < 0) {
+        return false;  // Tab not found
+    }
+
+    // Find target workspace
+    Workspace* target_workspace = nullptr;
+    for (auto& workspace : workspaces_) {
+        if (workspace->id == target_workspace_id) {
+            target_workspace = workspace.get();
+            break;
+        }
+    }
+
+    if (!target_workspace) {
+        return false;  // Target workspace not found
+    }
+
+    // Don't move to same workspace
+    if (source_workspace == target_workspace) {
+        return false;
+    }
+
+    // Extract the tab from source
+    tab_to_move = std::move(source_workspace->tabs[source_tab_index]);
+    source_workspace->tabs.erase(source_workspace->tabs.begin() + source_tab_index);
+
+    // Adjust source workspace's active tab index
+    if (source_workspace->tabs.empty()) {
+        source_workspace->active_tab_index = -1;
+    } else if (source_workspace->active_tab_index >= static_cast<int>(source_workspace->tabs.size())) {
+        source_workspace->active_tab_index = static_cast<int>(source_workspace->tabs.size()) - 1;
+    } else if (source_tab_index <= source_workspace->active_tab_index && source_workspace->active_tab_index > 0) {
+        source_workspace->active_tab_index--;
+    }
+
+    // Add to target workspace
+    Tab* moved_tab = tab_to_move.get();
+    target_workspace->tabs.push_back(std::move(tab_to_move));
+    target_workspace->active_tab_index = static_cast<int>(target_workspace->tabs.size()) - 1;
+
+    // Notify callbacks
+    if (callbacks_.on_workspace_changed) {
+        callbacks_.on_workspace_changed(source_workspace);
+    }
+
+    // Switch to target workspace and activate the moved tab
+    SetActiveWorkspace(target_workspace_id);
+
+    if (callbacks_.on_tab_activated) {
+        callbacks_.on_tab_activated(moved_tab);
+    }
+
+    return true;
 }
