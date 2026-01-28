@@ -16,7 +16,7 @@ static NSString* const kBookmarkPasteboardType = @"com.orbfox.bookmark";
 // Layout constants
 static const CGFloat kIconStripWidth = 44.0;
 static const CGFloat kSidebarWidth = 280.0;
-static const CGFloat kWorkspaceHeight = 44.0;
+static const CGFloat kWorkspaceHeight = 68.0;
 static const CGFloat kNewTabButtonHeight = 44.0;
 
 // ============================================================================
@@ -2274,7 +2274,10 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         CGFloat totalWidth = innerPadding + dotSize + dotGap + textWidth + 6 + closeSize + innerPadding;
         totalWidth = MAX(80, totalWidth);
 
-        tabContainer.frame = NSMakeRect(x, (kWorkspaceHeight - tabHeight) / 2, totalWidth, tabHeight);
+        // Position tabs to align with plus button - offset down from center
+        CGFloat containerHeight = _workspaceTabsContainer.bounds.size.height;
+        CGFloat tabY = (containerHeight - tabHeight) / 2 - 18;  // Move down 18px
+        tabContainer.frame = NSMakeRect(x, tabY, totalWidth, tabHeight);
 
         // Color dot
         NSView* colorDot = [[NSView alloc] initWithFrame:NSMakeRect(

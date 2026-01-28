@@ -45,7 +45,11 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 - **Move tabs between workspaces** - right-click tab → Move to → workspace or "New Space"
 - **Unique workspace naming** - auto-increment (WS 1, WS 2, WS 3...)
 - **Link context menu** - right-click links to open in new tab, background, or copy address
-- **DevTools** (Cmd+Opt+I) - Chrome DevTools in separate window
+- **DevTools Panel** (Cmd+Opt+I) - Integrated Chrome DevTools
+  - Slides in from right as embedded panel
+  - Native header bar with close button
+  - Resizable via drag divider
+  - "Inspect Element" from context menu
 - **Session persistence** - restore workspaces and tabs on restart (Vivaldi-style)
 - **Bookmarks panel** - full bookmark management
   - Add bookmarks via popover with URL, nickname, description

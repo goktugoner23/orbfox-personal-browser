@@ -58,9 +58,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Right-click → "Change Color" submenu with color swatches
   - Colors auto-assigned from palette on workspace creation
   - Colors persist across sessions
-- **DevTools** (Cmd+Opt+I) - Toggle Chrome DevTools
-  - Opens in separate window
-  - Toggle to close
+- **DevTools Panel** (Cmd+Opt+I) - Integrated Chrome DevTools
+  - Slides in from right side as embedded panel (not separate window)
+  - Native header bar with "DevTools" label and close button
+  - Smooth slide-in/out animation with easing
+  - Resizable via drag divider between browser and DevTools
+  - "Inspect Element" from right-click menu opens at clicked position
+  - Borderless styling integrated with main window
 - **Workspace Switching Shortcuts** - Navigate between workspaces
   - Cmd+Opt+Left: Previous workspace (wraps around)
   - Cmd+Opt+Right: Next workspace (wraps around)
@@ -104,6 +108,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - GetNextFolderNumber() for "Collection N" naming
 
 ### Changed
+- **Workspace Selector Height** - Increased workspace area height for better tab visibility
+- **Workspace Tab Alignment** - Tabs now properly aligned with plus button
 - **Folder Header Design** - Improved collection folder appearance
   - Gray folder icons (was blue)
   - Chevron button for collapse/expand (clickable)
