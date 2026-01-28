@@ -8,6 +8,52 @@
 extern BookmarkStorage* GetBookmarkStorage();
 
 // ============================================================================
+// SCROLLABLE URL FIELD
+// Custom NSTextField that forwards scroll events to field editor when editing
+// ============================================================================
+
+@interface ScrollableURLField : NSTextField
+@end
+
+@implementation ScrollableURLField
+
+- (void)scrollWheel:(NSEvent*)event {
+    // When editing, forward scroll to the field editor (NSTextView)
+    NSText* fieldEditor = [self currentEditor];
+    if (fieldEditor && [fieldEditor isKindOfClass:[NSTextView class]]) {
+        NSTextView* textView = (NSTextView*)fieldEditor;
+
+        // Get horizontal delta (swipe left = negative, swipe right = positive)
+        CGFloat delta = event.scrollingDeltaX;
+
+        // Also support vertical scroll converted to horizontal
+        if (delta == 0 && event.scrollingDeltaY != 0) {
+            delta = event.scrollingDeltaY * 3;
+        }
+
+        if (delta != 0) {
+            // Get current selection/cursor position
+            NSRange selectedRange = textView.selectedRange;
+            NSUInteger textLength = textView.string.length;
+
+            // Swipe right (positive delta) = move cursor left (toward start)
+            // Swipe left (negative delta) = move cursor right (toward end)
+            NSInteger movement = (NSInteger)(-delta * 2);
+            NSInteger newPos = (NSInteger)selectedRange.location + movement;
+            newPos = MAX(0, MIN(newPos, (NSInteger)textLength));
+
+            // Move cursor and scroll to it
+            [textView setSelectedRange:NSMakeRange(newPos, 0)];
+            [textView scrollRangeToVisible:NSMakeRange(newPos, 0)];
+        }
+    } else {
+        [super scrollWheel:event];
+    }
+}
+
+@end
+
+// ============================================================================
 // TOOLBAR VIEW
 // ============================================================================
 
@@ -147,14 +193,14 @@ extern BookmarkStorage* GetBookmarkStorage();
     _blockedBadge.hidden = YES;
     [_urlContainer addSubview:_blockedBadge];
 
-    // URL text field
+    // URL text field with custom horizontal scrolling
     CGFloat textFieldLeftInset = lockX + iconSize + [DSSpacing sm];
     CGFloat textFieldHeight = 20;
     CGFloat textFieldY = (containerHeight - textFieldHeight) / 2 - 2;
+    CGFloat textFieldWidth = containerWidth - textFieldLeftInset - [DSSpacing sm];
 
-    NSTextField* textField = [[NSTextField alloc] initWithFrame:NSMakeRect(
-        textFieldLeftInset, textFieldY,
-        containerWidth - textFieldLeftInset - [DSSpacing sm], textFieldHeight)];
+    ScrollableURLField* textField = [[ScrollableURLField alloc] initWithFrame:NSMakeRect(
+        textFieldLeftInset, textFieldY, textFieldWidth, textFieldHeight)];
     textField.bezeled = NO;
     textField.drawsBackground = NO;
     textField.backgroundColor = [NSColor clearColor];
@@ -170,6 +216,7 @@ extern BookmarkStorage* GetBookmarkStorage();
     cell.lineBreakMode = NSLineBreakByTruncatingTail;
     cell.wraps = NO;
     cell.scrollable = YES;
+    cell.usesSingleLineMode = YES;
 
     _urlTextField = textField;
     [_urlContainer addSubview:textField];
@@ -201,6 +248,7 @@ extern BookmarkStorage* GetBookmarkStorage();
     _windowController = windowController;
     _autocompleteDropdown.windowController = windowController;
 }
+
 
 #pragma mark - Actions
 
