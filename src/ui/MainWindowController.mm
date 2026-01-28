@@ -11,6 +11,7 @@
 #include "history_storage.h"
 #include "bookmark_storage.h"
 #include "download_manager.h"
+#include "settings_storage.h"
 
 // Extern functions to access global storage
 extern HistoryStorage* GetHistoryStorage();
@@ -435,8 +436,13 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
                                          title:[NSString stringWithUTF8String:title.c_str()]
                                      isLoading:isLoading];
 
+            // Set gear icon for internal orbfox:// pages
+            NSString* urlStr = [NSString stringWithUTF8String:url.c_str()];
+            if ([urlStr hasPrefix:@"orbfox://"]) {
+                [strongSelf.sidebarView updateTabWithGearIcon:tabId];
+            }
             // Update favicon if we have data
-            if (!faviconData.empty()) {
+            else if (!faviconData.empty()) {
                 NSData* nsData = [NSData dataWithBytes:faviconData.data()
                                                 length:faviconData.size()];
                 [strongSelf.sidebarView updateTab:tabId faviconData:nsData];
@@ -657,8 +663,8 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
     // Create browser settings
     CefBrowserSettings settings;
 
-    // Initial URL
-    std::string url = tab->url.empty() ? "https://www.google.com" : tab->url;
+    // Initial URL - use settings for new tab URL
+    std::string url = tab->url.empty() ? SettingsStorage::GetInstance().Get().new_tab_url : tab->url;
 
     // Window info - embed in our browser container
     CefWindowInfo window_info;
@@ -785,6 +791,10 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
     }
 }
 
+- (void)openSettingsInNewTab {
+    [self createNewTab:@"orbfox://settings"];
+}
+
 #pragma mark - Navigation
 
 - (void)navigateToURL:(NSString*)url {
@@ -794,14 +804,14 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
     NSString* urlToLoad = url;
 
     // Add https:// if no scheme specified
-    if (![url hasPrefix:@"http://"] && ![url hasPrefix:@"https://"] && ![url hasPrefix:@"file://"]) {
+    if (![url hasPrefix:@"http://"] && ![url hasPrefix:@"https://"] && ![url hasPrefix:@"file://"] && ![url hasPrefix:@"orbfox://"]) {
         // Check if it looks like a URL or a search query
         if ([url containsString:@"."] && ![url containsString:@" "]) {
             urlToLoad = [@"https://" stringByAppendingString:url];
         } else {
-            // Search query
-            NSString* encoded = [url stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
-            urlToLoad = [NSString stringWithFormat:@"https://www.google.com/search?q=%@", encoded];
+            // Search query - use settings search URL
+            std::string searchUrl = SettingsStorage::GetSearchUrl([url UTF8String]);
+            urlToLoad = [NSString stringWithUTF8String:searchUrl.c_str()];
         }
     }
 

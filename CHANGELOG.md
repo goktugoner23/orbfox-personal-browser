@@ -31,6 +31,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - "X of Y" match count display
   - Previous/Next navigation (Enter, Shift+Enter, or arrow buttons)
   - Escape or × button to close
+- **Settings Page** (orbfox://settings) - Browser settings UI
+  - Custom protocol handler for `orbfox://` URLs
+  - General: Homepage URL, New Tab URL, Session restore behavior
+  - Privacy: Tracking protection toggle, Clear browsing data
+  - Downloads: Default location, Ask before downloading
+  - About: Version info
+  - Settings persist across sessions in JSON format
+  - Dark theme matching OrbFox design system
+  - Gear icon displayed as tab favicon for orbfox:// pages
+  - Settings icon in sidebar for quick access (opens in new tab)
+  - Toggle switches with improved visibility (blue ON state, visible OFF state)
+  - Settings pages recorded in browsing history
 - **Clear History Button** - Clear all browsing history
   - "Clear" button in history panel title bar
   - Confirmation dialog before clearing

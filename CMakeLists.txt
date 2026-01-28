@@ -42,10 +42,12 @@ set(SOURCES
     src/main.cpp
     src/client/browser_client.cpp
     src/client/download_manager.cpp
+    src/client/orbfox_scheme_handler.cpp
     src/data/window_settings.cpp
     src/data/history_storage.cpp
     src/data/bookmark_storage.cpp
     src/data/session_storage.cpp
+    src/data/settings_storage.cpp
     src/browser/tab_manager.cpp
 )
 
@@ -57,6 +59,8 @@ set(HEADERS
     include/history_storage.h
     include/bookmark_storage.h
     include/session_storage.h
+    include/settings_storage.h
+    include/orbfox_scheme_handler.h
     include/tab.h
     include/workspace.h
     include/tab_manager.h

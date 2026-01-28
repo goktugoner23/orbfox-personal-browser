@@ -56,6 +56,10 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
   - Folder organization with collapsible collections
   - Persistent favicon and title cache
   - Double-click to open, right-click for context menu
+- **Settings page** (orbfox://settings) - browser preferences
+  - General, Privacy, Downloads, About sections
+  - Gear icon in sidebar for quick access
+  - Gear favicon for internal pages
 - **Collapsible sidebar** - click active panel icon to toggle
 - **History panel** with browsing history
   - Search/filter history entries in real-time

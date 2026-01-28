@@ -1,6 +1,7 @@
 #include "browser_client.h"
 #include "download_manager.h"
 #include "history_storage.h"
+#include "settings_storage.h"
 
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
@@ -379,6 +380,11 @@ CefResourceRequestHandler::ReturnValue BrowserClient::OnBeforeResourceLoad(
     CefRefPtr<CefFrame> frame,
     CefRefPtr<CefRequest> request,
     CefRefPtr<CefCallback> callback) {
+
+    // Check if tracking protection is enabled in settings
+    if (!SettingsStorage::GetInstance().Get().tracking_protection) {
+        return RV_CONTINUE;  // Tracking protection disabled, allow all
+    }
 
     std::string url = request->GetURL().ToString();
     std::string domain = ExtractDomain(url);

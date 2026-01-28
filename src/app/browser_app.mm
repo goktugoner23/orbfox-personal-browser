@@ -6,6 +6,8 @@
 #include "history_storage.h"
 #include "bookmark_storage.h"
 #include "session_storage.h"
+#include "settings_storage.h"
+#include "orbfox_scheme_handler.h"
 
 #import "MainWindowController.h"
 
@@ -67,6 +69,18 @@ void SaveSession() {
 
 BrowserApp::BrowserApp() = default;
 
+void BrowserApp::OnRegisterCustomSchemes(CefRawPtr<CefSchemeRegistrar> registrar) {
+    // Register "orbfox" as a custom scheme with standard scheme privileges
+    // This allows orbfox:// URLs to work like http:// URLs
+    registrar->AddCustomScheme(
+        "orbfox",
+        CEF_SCHEME_OPTION_STANDARD |
+        CEF_SCHEME_OPTION_SECURE |
+        CEF_SCHEME_OPTION_CORS_ENABLED |
+        CEF_SCHEME_OPTION_FETCH_ENABLED
+    );
+}
+
 void BrowserApp::OnBeforeCommandLineProcessing(
     const CefString& /*process_type*/,
     CefRefPtr<CefCommandLine> /*command_line*/) {
@@ -79,6 +93,12 @@ void BrowserApp::OnContextInitialized() {
 
     // Load window settings
     WindowSettings window_settings = WindowSettings::Load();
+
+    // Load application settings
+    SettingsStorage::GetInstance().Load();
+
+    // Register orbfox:// custom scheme handler
+    RegisterOrbfoxSchemeHandler();
 
     // Initialize history storage
     g_history_storage = std::make_unique<HistoryStorage>();
@@ -112,7 +132,8 @@ void BrowserApp::OnContextInitialized() {
 
     // Try to restore session, otherwise create default tab
     bool sessionRestored = false;
-    if (g_session_storage->HasSavedSession()) {
+    const Settings& settings = SettingsStorage::GetInstance().Get();
+    if (settings.restore_session && g_session_storage->HasSavedSession()) {
         SavedSession session = g_session_storage->Load();
         if (!session.workspaces.empty()) {
             // Clear default workspace created by TabManager
@@ -166,7 +187,7 @@ void BrowserApp::OnContextInitialized() {
 
     // If no session restored, create default tab
     if (!sessionRestored) {
-        g_tab_manager->CreateTab("https://www.google.com");
+        g_tab_manager->CreateTab(settings.new_tab_url);
     }
 
     // Set up window bounds change notification for persistence

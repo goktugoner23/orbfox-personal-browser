@@ -16,7 +16,7 @@ static NSString* const kBookmarkPasteboardType = @"com.orbfox.bookmark";
 // Layout constants
 static const CGFloat kIconStripWidth = 44.0;
 static const CGFloat kSidebarWidth = 280.0;
-static const CGFloat kWorkspaceHeight = 68.0;
+static const CGFloat kWorkspaceHeight = 48.0;
 static const CGFloat kNewTabButtonHeight = 44.0;
 
 // ============================================================================
@@ -1733,6 +1733,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     DSIconButton* _favoritesIcon;
     DSIconButton* _historyIcon;
     DSIconButton* _downloadsIcon;
+    DSIconButton* _settingsIcon;
     CircularProgressView* _downloadProgressRing;  // Progress ring around downloads icon
 
     NSMutableArray<TabRowView*>* _tabRows;
@@ -1791,6 +1792,13 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     _downloadProgressRing.hidden = YES;
     _downloadProgressRing.autoresizingMask = NSViewMinYMargin;
     [_iconStrip addSubview:_downloadProgressRing positioned:NSWindowAbove relativeTo:_downloadsIcon];
+
+    // Settings icon at the bottom of the icon strip
+    _settingsIcon = [self createIconButton:@"gearshape" y:20 tooltip:@"Settings"];
+    _settingsIcon.tag = 999;  // Special tag for settings (not a panel)
+    _settingsIcon.showsHoverBackground = YES;
+    _settingsIcon.autoresizingMask = NSViewMaxYMargin;  // Stay at bottom
+    [_iconStrip addSubview:_settingsIcon];
 
     // Content area
     CGFloat contentX = kIconStripWidth;
@@ -2109,6 +2117,15 @@ static NSColor* NSColorFromHex(const std::string& hex) {
 #pragma mark - Actions
 
 - (void)iconClicked:(NSButton*)sender {
+    // Special handling for settings icon (tag 999)
+    if (sender.tag == 999) {
+        // Open settings in a new tab
+        if (_windowController) {
+            [_windowController openSettingsInNewTab];
+        }
+        return;
+    }
+
     SidebarPanel clickedPanel = (SidebarPanel)sender.tag;
 
     if (clickedPanel == _activePanel) {
@@ -2276,7 +2293,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
 
         // Position tabs to align with plus button - offset down from center
         CGFloat containerHeight = _workspaceTabsContainer.bounds.size.height;
-        CGFloat tabY = (containerHeight - tabHeight) / 2 - 18;  // Move down 18px
+        CGFloat tabY = (containerHeight - tabHeight) / 2;
         tabContainer.frame = NSMakeRect(x, tabY, totalWidth, tabHeight);
 
         // Color dot
@@ -2775,14 +2792,26 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         row.isMuted = tab->is_muted;
         row.sidebarView = self;
 
-        if (!tab->favicon_data.empty()) {
+        NSString* url = [NSString stringWithUTF8String:tab->url.c_str()];
+
+        // Use gear icon for orbfox:// internal pages
+        if ([url hasPrefix:@"orbfox://"]) {
+            NSImageSymbolConfiguration* config = [NSImageSymbolConfiguration
+                configurationWithPointSize:14 weight:NSFontWeightMedium];
+            NSImage* gearIcon = [[NSImage imageWithSystemSymbolName:@"gearshape.fill"
+                                           accessibilityDescription:@"Settings"]
+                                 imageWithSymbolConfiguration:config];
+            if (gearIcon) {
+                [gearIcon setTemplate:YES];
+                row.favicon = gearIcon;
+            }
+        } else if (!tab->favicon_data.empty()) {
             NSData* faviconData = [NSData dataWithBytes:tab->favicon_data.data()
                                                  length:tab->favicon_data.size()];
             NSImage* favicon = [[NSImage alloc] initWithData:faviconData];
             if (favicon) {
                 row.favicon = favicon;
                 // Cache favicon by domain for use in bookmarks/history
-                NSString* url = [NSString stringWithUTF8String:tab->url.c_str()];
                 CacheFavicon(url, favicon);
             }
         }
@@ -2826,17 +2855,26 @@ static NSColor* NSColorFromHex(const std::string& hex) {
 - (void)updateTab:(int)tabId faviconData:(NSData*)faviconData {
     if (!faviconData || faviconData.length == 0) return;
 
-    NSImage* favicon = [[NSImage alloc] initWithData:faviconData];
-    if (!favicon) return;
-
-    // Cache by URL for bookmarks/history
+    // Get URL to check if it's an internal page
     NSString* cachedUrl = nil;
     if (_windowController) {
         Tab* tab = _windowController.tabManager->GetTabById(tabId);
         if (tab) {
             cachedUrl = [NSString stringWithUTF8String:tab->url.c_str()];
-            CacheFavicon(cachedUrl, favicon);
         }
+    }
+
+    // Don't update favicon for orbfox:// URLs - they use gear icon
+    if ([cachedUrl hasPrefix:@"orbfox://"]) {
+        return;
+    }
+
+    NSImage* favicon = [[NSImage alloc] initWithData:faviconData];
+    if (!favicon) return;
+
+    // Cache by URL for bookmarks/history
+    if (cachedUrl) {
+        CacheFavicon(cachedUrl, favicon);
     }
 
     for (TabRowView* row in _tabRows) {
@@ -2849,6 +2887,24 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     // Update bookmark rows if visible and favicon was cached
     if (_activePanel == SidebarPanelFavorites && cachedUrl) {
         [self updateBookmarkFaviconsForUrl:cachedUrl favicon:favicon];
+    }
+}
+
+- (void)updateTabWithGearIcon:(int)tabId {
+    NSImageSymbolConfiguration* config = [NSImageSymbolConfiguration
+        configurationWithPointSize:14 weight:NSFontWeightMedium];
+    NSImage* gearIcon = [[NSImage imageWithSystemSymbolName:@"gearshape.fill"
+                                   accessibilityDescription:@"Settings"]
+                         imageWithSymbolConfiguration:config];
+    if (!gearIcon) return;
+
+    [gearIcon setTemplate:YES];
+
+    for (TabRowView* row in _tabRows) {
+        if (row.tabId == tabId) {
+            row.favicon = gearIcon;
+            break;
+        }
     }
 }
 

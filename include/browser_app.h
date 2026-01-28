@@ -3,6 +3,7 @@
 #include "include/cef_app.h"
 #include "include/cef_browser_process_handler.h"
 #include "include/cef_command_line.h"
+#include "include/cef_scheme.h"
 
 // BrowserApp: Application-level CEF callbacks
 // Handles process-level events and creates browsers when CEF is ready
@@ -14,6 +15,8 @@ public:
     CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override {
         return this;
     }
+
+    void OnRegisterCustomSchemes(CefRawPtr<CefSchemeRegistrar> registrar) override;
 
     void OnBeforeCommandLineProcessing(
         const CefString& process_type,

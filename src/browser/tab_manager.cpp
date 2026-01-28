@@ -236,6 +236,13 @@ void TabManager::UpdateTabUrl(int tab_id, const std::string& url) {
     Tab* tab = GetTabById(tab_id);
     if (tab) {
         tab->url = url;
+
+        // Clear favicon for internal pages (will be replaced with gear icon in UI)
+        if (url.find("orbfox://") == 0) {
+            tab->favicon_url.clear();
+            tab->favicon_data.clear();
+        }
+
         if (callbacks_.on_tab_updated) {
             callbacks_.on_tab_updated(tab);
         }
