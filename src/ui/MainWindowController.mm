@@ -116,6 +116,85 @@ static const CGFloat kResizeHandleWidth = 6.0;
 
 @end
 
+// ============================================================================
+// DEVTOOLS DIVIDER VIEW
+// Draggable divider between browser content and DevTools panel
+// ============================================================================
+
+static const CGFloat kDevToolsDividerWidth = 5.0;
+static const CGFloat kDevToolsDefaultWidth = 420.0;
+static const CGFloat kDevToolsMinWidth = 280.0;
+static const CGFloat kDevToolsMaxWidth = 800.0;
+
+// Forward declaration for DevToolsDividerView
+@class MainWindowController;
+
+@interface DevToolsDividerView : NSView
+@property (nonatomic, weak) MainWindowController* windowController;
+@end
+
+@implementation DevToolsDividerView {
+    NSTrackingArea* _trackingArea;
+    BOOL _isDragging;
+}
+
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (_trackingArea) [self removeTrackingArea:_trackingArea];
+    _trackingArea = [[NSTrackingArea alloc] initWithRect:self.bounds
+                                                options:NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow
+                                                  owner:self
+                                               userInfo:nil];
+    [self addTrackingArea:_trackingArea];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    // Subtle divider line
+    [[NSColor colorWithWhite:0.0 alpha:0.3] setFill];
+    NSRectFill(self.bounds);
+
+    // Grip indicator: three small dots vertically centered
+    NSColor* gripColor = [NSColor colorWithWhite:1.0 alpha:0.15];
+    [gripColor setFill];
+    CGFloat cx = NSMidX(self.bounds);
+    CGFloat cy = NSMidY(self.bounds);
+    CGFloat dotSize = 2.0;
+    CGFloat dotSpacing = 5.0;
+    for (int i = -1; i <= 1; i++) {
+        NSRect dot = NSMakeRect(cx - dotSize / 2, cy + i * dotSpacing - dotSize / 2, dotSize, dotSize);
+        [[NSBezierPath bezierPathWithOvalInRect:dot] fill];
+    }
+}
+
+- (void)mouseEntered:(NSEvent*)event {
+    (void)event;
+    [[NSCursor resizeLeftRightCursor] push];
+}
+
+- (void)mouseExited:(NSEvent*)event {
+    (void)event;
+    if (!_isDragging) [NSCursor pop];
+}
+
+- (void)mouseDown:(NSEvent*)event {
+    (void)event;
+    _isDragging = YES;
+}
+
+- (void)mouseUp:(NSEvent*)event {
+    (void)event;
+    _isDragging = NO;
+    [NSCursor pop];
+}
+
+- (BOOL)acceptsFirstMouse:(NSEvent*)event {
+    (void)event;
+    return YES;
+}
+
+@end
+
 
 @interface MainWindowController ()
 @property (nonatomic, readwrite) TabManager* tabManager;
@@ -126,8 +205,37 @@ static const CGFloat kResizeHandleWidth = 6.0;
 @property (nonatomic, assign) CGFloat currentSidebarWidth;
 @property (nonatomic, strong) FindBarView* findBar;
 @property (nonatomic, copy) NSString* lastSearchText;
-// DevTools - opens in separate native window (CEF manages the window)
+// DevTools - child panel approach (SetAsChild crashes on macOS)
 @property (nonatomic, readwrite) BOOL devToolsOpen;
+@property (nonatomic, strong) NSPanel* devToolsPanel;
+@property (nonatomic, strong) NSView* devToolsPanelContent;
+@property (nonatomic, strong) DevToolsDividerView* devToolsDivider;
+@property (nonatomic, assign) CGFloat devToolsWidth;
+@end
+
+// Forward declare resizeDevToolsToWidth: for DevToolsDividerView
+@interface MainWindowController ()
+- (void)resizeDevToolsToWidth:(CGFloat)newWidth;
+- (void)updateDevToolsPanelPosition;
+@end
+
+// Implement DevToolsDividerView mouseDragged after MainWindowController is defined
+@implementation DevToolsDividerView (Dragging)
+
+- (void)mouseDragged:(NSEvent*)event {
+    if (!_windowController) return;
+
+    NSView* contentView = _windowController.window.contentView;
+    NSPoint loc = [contentView convertPoint:event.locationInWindow fromView:nil];
+
+    // DevTools width = distance from right edge of content view to mouse
+    CGFloat rightEdge = contentView.bounds.size.width;
+    CGFloat newWidth = rightEdge - loc.x;
+    newWidth = MAX(kDevToolsMinWidth, MIN(kDevToolsMaxWidth, newWidth));
+
+    [_windowController resizeDevToolsToWidth:newWidth];
+}
+
 @end
 
 @implementation MainWindowController
@@ -689,10 +797,7 @@ static const CGFloat kResizeHandleWidth = 6.0;
 }
 
 - (void)toggleDevTools {
-    Tab* tab = _tabManager->GetActiveTab();
-    if (!tab || !tab->browser) return;
-
-    if (tab->browser->GetHost()->HasDevTools()) {
+    if (_devToolsOpen) {
         [self closeDevTools];
     } else {
         [self showDevToolsAtPoint:-1 y:-1];
@@ -703,34 +808,280 @@ static const CGFloat kResizeHandleWidth = 6.0;
     Tab* tab = _tabManager->GetActiveTab();
     if (!tab || !tab->browser) return;
 
-    // If DevTools already open, just return (CEF handles focus)
-    if (tab->browser->GetHost()->HasDevTools()) {
+    // If already open, close first
+    if (_devToolsOpen) {
+        [self closeDevTools];
+        // Small delay to let the previous DevTools close
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self openDevToolsForTab:tab atPoint:x y:y];
+        });
         return;
     }
 
+    [self openDevToolsForTab:tab atPoint:x y:y];
+}
+
+- (void)openDevToolsForTab:(Tab*)tab atPoint:(int)x y:(int)y {
+    if (!tab || !tab->browser) return;
+
     _devToolsOpen = YES;
+    _devToolsWidth = kDevToolsDefaultWidth;
 
-    // Use default CefWindowInfo - CEF will create a separate native window
-    // This is how Chrome, Safari, and other browsers show DevTools
+    NSView* contentView = self.window.contentView;
+    CGFloat titleBarHeight = 28;
+    CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
+    CGFloat sidebarWidth = _sidebarView.frame.size.width;
+    CGFloat availableWidth = contentView.bounds.size.width - sidebarWidth;
+    CGFloat browserWidth = availableWidth - _devToolsWidth - kDevToolsDividerWidth;
+
+    // Create divider if needed
+    if (!_devToolsDivider) {
+        _devToolsDivider = [[DevToolsDividerView alloc] init];
+        _devToolsDivider.windowController = self;
+        _devToolsDivider.autoresizingMask = NSViewHeightSizable;
+        [contentView addSubview:_devToolsDivider];
+    }
+
+    _devToolsDivider.frame = NSMakeRect(sidebarWidth + browserWidth, kToolbarHeight, kDevToolsDividerWidth, browserHeight);
+    _devToolsDivider.hidden = NO;
+
+    // Shrink browser container
+    _browserContainer.frame = NSMakeRect(sidebarWidth, kToolbarHeight, browserWidth, browserHeight);
+    for (NSView* subview in _browserContainer.subviews) {
+        if (!subview.hidden) {
+            subview.frame = _browserContainer.bounds;
+        }
+    }
+
+    // Create DevTools panel (child window) if needed
+    // Using a child panel because SetAsChild crashes on macOS CEF
+    if (!_devToolsPanel) {
+        // Create borderless panel
+        _devToolsPanel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, _devToolsWidth, browserHeight)
+                                                    styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
+                                                      backing:NSBackingStoreBuffered
+                                                        defer:NO];
+        _devToolsPanel.backgroundColor = [NSColor colorWithRed:0.13 green:0.13 blue:0.14 alpha:1.0];
+        _devToolsPanel.hasShadow = NO;
+        _devToolsPanel.level = NSNormalWindowLevel;
+        _devToolsPanel.hidesOnDeactivate = NO;
+        _devToolsPanel.collectionBehavior = NSWindowCollectionBehaviorFullScreenAuxiliary;
+
+        // Create content view for DevTools browser
+        _devToolsPanelContent = [[NSView alloc] initWithFrame:_devToolsPanel.contentView.bounds];
+        _devToolsPanelContent.wantsLayer = YES;
+        _devToolsPanelContent.layer.backgroundColor = [NSColor colorWithRed:0.13 green:0.13 blue:0.14 alpha:1.0].CGColor;
+        _devToolsPanelContent.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+        [_devToolsPanel.contentView addSubview:_devToolsPanelContent];
+
+        // Add close button at top-right corner
+        NSButton* closeButton = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"xmark" accessibilityDescription:@"Close"]
+                                                   target:self
+                                                   action:@selector(closeDevTools)];
+        closeButton.bordered = NO;
+        closeButton.frame = NSMakeRect(_devToolsWidth - 28, browserHeight - 28, 24, 24);
+        closeButton.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
+        closeButton.contentTintColor = [NSColor colorWithWhite:0.6 alpha:1.0];
+        closeButton.tag = 999;  // Tag to find it later for repositioning
+        [_devToolsPanel.contentView addSubview:closeButton];
+
+        // Add panel as child of main window
+        [self.window addChildWindow:_devToolsPanel ordered:NSWindowAbove];
+    }
+
+    // Update panel size and reposition close button
+    _devToolsPanel.contentView.frame = NSMakeRect(0, 0, _devToolsWidth, browserHeight);
+    _devToolsPanelContent.frame = _devToolsPanel.contentView.bounds;
+    NSButton* closeButton = [_devToolsPanel.contentView viewWithTag:999];
+    if (closeButton) {
+        closeButton.frame = NSMakeRect(_devToolsWidth - 28, browserHeight - 28, 24, 24);
+    }
+
+    // Position the panel
+    [self updateDevToolsPanelPosition];
+    [_devToolsPanel orderFront:nil];
+
+    // Call ShowDevTools - let CEF create its own window, then we'll capture it
+    // We use an empty CefWindowInfo to let CEF create the window
     CefWindowInfo windowInfo;
-    // Do NOT call SetAsChild - let CEF create a standalone window
-
     CefBrowserSettings settings;
     CefPoint inspectPoint;
     if (x >= 0 && y >= 0) {
         inspectPoint.Set(x, y);
     }
 
-    // Pass nullptr for client - CEF manages the DevTools window
+    // ShowDevTools with default windowInfo opens in a new window
+    // We'll detect and style this window after it's created
     tab->browser->GetHost()->ShowDevTools(windowInfo, nullptr, settings, inspectPoint);
+
+    // After a short delay, find and style the DevTools window
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self captureDevToolsWindow];
+    });
+}
+
+- (void)updateDevToolsPanelPosition {
+    if (!_devToolsPanel || !_devToolsOpen) return;
+
+    NSView* contentView = self.window.contentView;
+    CGFloat titleBarHeight = 28;
+    CGFloat sidebarWidth = _sidebarView.frame.size.width;
+    CGFloat availableWidth = contentView.bounds.size.width - sidebarWidth;
+    CGFloat browserWidth = availableWidth - _devToolsWidth - kDevToolsDividerWidth;
+    CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
+
+    // Calculate position in screen coordinates
+    // The panel should appear at the right edge of the browser area
+    NSRect mainWindowFrame = self.window.frame;
+    NSRect contentRect = [self.window contentRectForFrameRect:mainWindowFrame];
+
+    // Panel position: right side of window, below titlebar, above toolbar
+    CGFloat panelX = contentRect.origin.x + sidebarWidth + browserWidth + kDevToolsDividerWidth;
+    CGFloat panelY = contentRect.origin.y + kToolbarHeight;
+
+    NSRect panelFrame = NSMakeRect(panelX, panelY, _devToolsWidth, browserHeight);
+    [_devToolsPanel setFrame:panelFrame display:YES];
+
+    // Also update the content view bounds
+    _devToolsPanelContent.frame = _devToolsPanel.contentView.bounds;
+
+    // Update close button position
+    NSButton* closeButton = [_devToolsPanel.contentView viewWithTag:999];
+    if (closeButton) {
+        closeButton.frame = NSMakeRect(_devToolsWidth - 28, browserHeight - 28, 24, 24);
+    }
+}
+
+- (void)captureDevToolsWindow {
+    // Find the DevTools window that CEF just created
+    // It should be the most recently opened window with "DevTools" in its title
+    NSWindow* devToolsWindow = nil;
+
+    for (NSWindow* window in [NSApp windows]) {
+        if (window != self.window && window != _devToolsPanel) {
+            NSString* title = window.title;
+            if ([title containsString:@"DevTools"] || [title containsString:@"Developer Tools"]) {
+                devToolsWindow = window;
+                break;
+            }
+        }
+    }
+
+    if (!devToolsWindow) {
+        // Try again - look for any new window
+        for (NSWindow* window in [NSApp windows]) {
+            if (window != self.window && window != _devToolsPanel &&
+                ![window.title isEqualToString:@""] &&
+                window.isVisible) {
+                // Check if this looks like a browser window (has content view with layer)
+                if (window.contentView.subviews.count > 0) {
+                    devToolsWindow = window;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (devToolsWindow) {
+        // Hide the original panel we created (we won't use it)
+        [_devToolsPanel orderOut:nil];
+
+        // Store reference in our panel property (replacing our empty one)
+        [self.window removeChildWindow:_devToolsPanel];
+        _devToolsPanel = (NSPanel*)devToolsWindow;
+
+        // Make it a child window of main window
+        [self.window addChildWindow:_devToolsPanel ordered:NSWindowAbove];
+
+        // Style the DevTools window to appear embedded
+        _devToolsPanel.titlebarAppearsTransparent = YES;
+        _devToolsPanel.titleVisibility = NSWindowTitleHidden;
+        _devToolsPanel.styleMask |= NSWindowStyleMaskFullSizeContentView;
+        _devToolsPanel.hasShadow = NO;
+        _devToolsPanel.backgroundColor = [NSColor colorWithRed:0.13 green:0.13 blue:0.14 alpha:1.0];
+        _devToolsPanel.movable = NO;  // Prevent user from dragging it
+
+        // Store content view reference
+        _devToolsPanelContent = _devToolsPanel.contentView;
+
+        // Add close button
+        NSButton* closeButton = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"xmark" accessibilityDescription:@"Close"]
+                                                   target:self
+                                                   action:@selector(closeDevTools)];
+        closeButton.bordered = NO;
+        closeButton.frame = NSMakeRect(_devToolsWidth - 32, _devToolsPanelContent.bounds.size.height - 32, 24, 24);
+        closeButton.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
+        closeButton.contentTintColor = [NSColor colorWithWhite:0.6 alpha:1.0];
+        closeButton.tag = 999;
+        [_devToolsPanel.contentView addSubview:closeButton positioned:NSWindowAbove relativeTo:nil];
+
+        // Position the window
+        [self updateDevToolsPanelPosition];
+    }
 }
 
 - (void)closeDevTools {
+    if (!_devToolsOpen) return;
+
+    // Close DevTools via CEF
     Tab* tab = _tabManager->GetActiveTab();
     if (tab && tab->browser) {
         tab->browser->GetHost()->CloseDevTools();
     }
+
     _devToolsOpen = NO;
+
+    // Close and remove the DevTools panel
+    if (_devToolsPanel) {
+        [self.window removeChildWindow:_devToolsPanel];
+        [_devToolsPanel close];
+        _devToolsPanel = nil;
+        _devToolsPanelContent = nil;
+    }
+
+    // Hide divider
+    _devToolsDivider.hidden = YES;
+
+    // Expand browser container back to full width
+    NSView* contentView = self.window.contentView;
+    CGFloat titleBarHeight = 28;
+    CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
+    CGFloat sidebarWidth = _sidebarView.frame.size.width;
+    CGFloat fullWidth = contentView.bounds.size.width - sidebarWidth;
+
+    _browserContainer.frame = NSMakeRect(sidebarWidth, kToolbarHeight, fullWidth, browserHeight);
+
+    // Resize browser views to fit full container
+    for (NSView* subview in _browserContainer.subviews) {
+        if (!subview.hidden) {
+            subview.frame = _browserContainer.bounds;
+        }
+    }
+}
+
+- (void)resizeDevToolsToWidth:(CGFloat)newWidth {
+    if (!_devToolsOpen) return;
+
+    _devToolsWidth = newWidth;
+
+    NSView* contentView = self.window.contentView;
+    CGFloat titleBarHeight = 28;
+    CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
+    CGFloat sidebarWidth = _sidebarView.frame.size.width;
+    CGFloat browserWidth = contentView.bounds.size.width - sidebarWidth - newWidth - kDevToolsDividerWidth;
+
+    _browserContainer.frame = NSMakeRect(sidebarWidth, kToolbarHeight, browserWidth, browserHeight);
+    _devToolsDivider.frame = NSMakeRect(sidebarWidth + browserWidth, kToolbarHeight, kDevToolsDividerWidth, browserHeight);
+
+    // Resize browser views
+    for (NSView* subview in _browserContainer.subviews) {
+        if (!subview.hidden) {
+            subview.frame = _browserContainer.bounds;
+        }
+    }
+
+    // Update DevTools panel position and size
+    [self updateDevToolsPanelPosition];
 }
 
 - (void)switchToPreviousWorkspace {
@@ -825,8 +1176,20 @@ static const CGFloat kIconStripWidth = 44.0;
 
     // Update browser container position and width
     CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
-    _browserContainer.frame = NSMakeRect(newWidth, kToolbarHeight,
-                                          contentView.bounds.size.width - newWidth, browserHeight);
+
+    if (_devToolsOpen) {
+        // Account for DevTools panel
+        CGFloat availableWidth = contentView.bounds.size.width - newWidth;
+        CGFloat browserWidth = availableWidth - _devToolsWidth - kDevToolsDividerWidth;
+        _browserContainer.frame = NSMakeRect(newWidth, kToolbarHeight, browserWidth, browserHeight);
+        _devToolsDivider.frame = NSMakeRect(newWidth + browserWidth, kToolbarHeight, kDevToolsDividerWidth, browserHeight);
+
+        // Update DevTools panel position
+        [self updateDevToolsPanelPosition];
+    } else {
+        _browserContainer.frame = NSMakeRect(newWidth, kToolbarHeight,
+                                              contentView.bounds.size.width - newWidth, browserHeight);
+    }
 
     // Update sidebar internal layout
     [_sidebarView updateLayoutForWidth:newWidth];
@@ -870,7 +1233,14 @@ static const CGFloat kIconStripWidth = 44.0;
 
         // Animate browser container position and width
         CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
-        CGFloat browserWidth = contentView.bounds.size.width - newSidebarWidth;
+        CGFloat availableWidth = contentView.bounds.size.width - newSidebarWidth;
+        CGFloat browserWidth = availableWidth;
+
+        if (self->_devToolsOpen) {
+            browserWidth = availableWidth - self->_devToolsWidth - kDevToolsDividerWidth;
+            self->_devToolsDivider.animator.frame = NSMakeRect(newSidebarWidth + browserWidth, kToolbarHeight,
+                                                                kDevToolsDividerWidth, browserHeight);
+        }
 
         NSRect browserFrame = NSMakeRect(newSidebarWidth, kToolbarHeight, browserWidth, browserHeight);
         _browserContainer.animator.frame = browserFrame;
@@ -881,6 +1251,11 @@ static const CGFloat kIconStripWidth = 44.0;
             if (!subview.hidden) {
                 subview.frame = self->_browserContainer.bounds;
             }
+        }
+
+        // Update DevTools panel position
+        if (self->_devToolsOpen) {
+            [self updateDevToolsPanelPosition];
         }
 
         // Disable resize handle when collapsed
@@ -1213,8 +1588,19 @@ static const CGFloat kIconStripWidth = 44.0;
 
 - (void)windowDidResize:(NSNotification*)notification {
     (void)notification;
-    // DevTools is now a separate native window managed by CEF
-    // No manual repositioning needed
+    if (_devToolsOpen) {
+        NSView* contentView = self.window.contentView;
+        CGFloat titleBarHeight = 28;
+        CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
+        CGFloat sidebarWidth = _sidebarView.frame.size.width;
+        CGFloat availableWidth = contentView.bounds.size.width - sidebarWidth;
+        CGFloat browserWidth = availableWidth - _devToolsWidth - kDevToolsDividerWidth;
+
+        _devToolsDivider.frame = NSMakeRect(sidebarWidth + browserWidth, kToolbarHeight, kDevToolsDividerWidth, browserHeight);
+
+        // Update DevTools panel position
+        [self updateDevToolsPanelPosition];
+    }
 }
 
 #pragma mark - Find in Page

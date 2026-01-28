@@ -433,6 +433,7 @@ int main(int argc, char* argv[]) {
         // CEF settings
         CefSettings settings;
         settings.no_sandbox = true;  // Required for development without code signing
+        settings.remote_debugging_port = 9222;  // Enable remote debugging for embedded DevTools
 
         // Set a unique cache path to avoid singleton conflicts
         NSString* appSupportPath = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
