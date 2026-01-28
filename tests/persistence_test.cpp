@@ -161,6 +161,33 @@ protected:
     std::unique_ptr<SessionStorage> storage_;
 };
 
+TEST(SavedTabTest, DefaultValues) {
+    SavedTab tab;
+    EXPECT_TRUE(tab.url.empty());
+    EXPECT_TRUE(tab.title.empty());
+    EXPECT_FALSE(tab.is_pinned);
+    EXPECT_FALSE(tab.is_muted);
+}
+
+TEST(SavedTabTest, IsMuted_CanBeSet) {
+    SavedTab tab;
+    tab.is_muted = true;
+    EXPECT_TRUE(tab.is_muted);
+}
+
+TEST(SavedWorkspaceTest, DefaultValues) {
+    SavedWorkspace ws;
+    EXPECT_TRUE(ws.name.empty());
+    EXPECT_TRUE(ws.tabs.empty());
+    EXPECT_EQ(ws.active_tab_index, 0);
+}
+
+TEST(SavedSessionTest, DefaultValues) {
+    SavedSession session;
+    EXPECT_TRUE(session.workspaces.empty());
+    EXPECT_EQ(session.active_workspace_index, 0);
+}
+
 TEST_F(SessionStorageTest, Save_CreatesJsonFile) {
     SavedSession session;
 
@@ -172,7 +199,44 @@ TEST_F(SessionStorageTest, Save_CreatesJsonFile) {
     tab.url = "https://example.com";
     tab.title = "Example";
     tab.is_pinned = false;
+    tab.is_muted = false;
     ws.tabs.push_back(tab);
+
+    session.workspaces.push_back(ws);
+    session.active_workspace_index = 0;
+
+    storage_->Save(session);
+
+    EXPECT_TRUE(storage_->HasSavedSession());
+}
+
+TEST_F(SessionStorageTest, Save_WithMutedAndPinnedTab) {
+    SavedSession session;
+
+    SavedWorkspace ws;
+    ws.name = "Workspace With Muted Tab";
+    ws.active_tab_index = 0;
+
+    SavedTab tab1;
+    tab1.url = "https://youtube.com";
+    tab1.title = "YouTube - Muted";
+    tab1.is_pinned = false;
+    tab1.is_muted = true;  // Muted tab
+    ws.tabs.push_back(tab1);
+
+    SavedTab tab2;
+    tab2.url = "https://github.com";
+    tab2.title = "GitHub - Pinned";
+    tab2.is_pinned = true;  // Pinned tab
+    tab2.is_muted = false;
+    ws.tabs.push_back(tab2);
+
+    SavedTab tab3;
+    tab3.url = "https://example.com";
+    tab3.title = "Example - Both";
+    tab3.is_pinned = true;  // Both pinned and muted
+    tab3.is_muted = true;
+    ws.tabs.push_back(tab3);
 
     session.workspaces.push_back(ws);
     session.active_workspace_index = 0;

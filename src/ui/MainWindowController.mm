@@ -1,6 +1,7 @@
 #import "MainWindowController.h"
 #import "SidebarView.h"
 #import "ToolbarView.h"
+#import "FindBarView.h"
 #import "Components.h"
 
 #include "include/cef_app.h"
@@ -122,6 +123,8 @@ static const CGFloat kResizeHandleWidth = 6.0;
 @property (nonatomic, readwrite) NSView* browserContainer;
 @property (nonatomic, strong) ResizeHandleView* resizeHandle;
 @property (nonatomic, assign) CGFloat currentSidebarWidth;
+@property (nonatomic, strong) FindBarView* findBar;
+@property (nonatomic, copy) NSString* lastSearchText;
 @end
 
 @implementation MainWindowController
@@ -994,6 +997,10 @@ static const CGFloat kIconStripWidth = 44.0;
                 // Cmd+L: Focus URL bar
                 [self focusURLBar];
                 return nil;
+            } else if ([chars isEqualToString:@"f"]) {
+                // Cmd+F: Find in page
+                [self showFindBar];
+                return nil;
             } else if (chars.length == 1) {
                 // Cmd+1-9: Switch to tab by index
                 unichar c = [chars characterAtIndex:0];
@@ -1029,6 +1036,112 @@ static const CGFloat kIconStripWidth = 44.0;
 - (void)windowWillClose:(NSNotification*)notification {
     (void)notification;
     CefQuitMessageLoop();
+}
+
+#pragma mark - Find in Page
+
+- (void)showFindBar {
+    if (!_findBar) {
+        CGFloat barWidth = 300;
+        CGFloat barHeight = 36;
+        CGFloat rightMargin = 10;
+        CGFloat topMargin = 10;
+
+        NSRect browserFrame = _browserContainer.frame;
+        CGFloat x = browserFrame.origin.x + browserFrame.size.width - barWidth - rightMargin;
+        CGFloat y = browserFrame.origin.y + browserFrame.size.height - barHeight - topMargin;
+
+        _findBar = [[FindBarView alloc] initWithFrame:NSMakeRect(x, y, barWidth, barHeight)];
+        _findBar.windowController = self;
+        _findBar.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
+
+        __weak MainWindowController* weakSelf = self;
+
+        _findBar.onSearchChanged = ^(NSString* text) {
+            MainWindowController* strongSelf = weakSelf;
+            if (!strongSelf) return;
+
+            Tab* tab = strongSelf.tabManager->GetActiveTab();
+            if (tab && tab->browser) {
+                if (text.length > 0) {
+                    bool isNewSearch = ![text isEqualToString:strongSelf.lastSearchText];
+                    strongSelf.lastSearchText = text;
+                    tab->browser->GetHost()->Find([text UTF8String], true, false, !isNewSearch);
+                } else {
+                    strongSelf.lastSearchText = nil;
+                    tab->browser->GetHost()->StopFinding(true);
+                    [strongSelf.findBar updateMatchCount:0 activeMatch:0];
+                }
+            }
+        };
+
+        _findBar.onNext = ^{
+            MainWindowController* strongSelf = weakSelf;
+            if (!strongSelf || !strongSelf.findBar.searchText.length) return;
+
+            Tab* tab = strongSelf.tabManager->GetActiveTab();
+            if (tab && tab->browser) {
+                tab->browser->GetHost()->Find([strongSelf.findBar.searchText UTF8String], true, false, true);
+            }
+        };
+
+        _findBar.onPrev = ^{
+            MainWindowController* strongSelf = weakSelf;
+            if (!strongSelf || !strongSelf.findBar.searchText.length) return;
+
+            Tab* tab = strongSelf.tabManager->GetActiveTab();
+            if (tab && tab->browser) {
+                tab->browser->GetHost()->Find([strongSelf.findBar.searchText UTF8String], false, false, true);
+            }
+        };
+
+        _findBar.onClose = ^{
+            [weakSelf hideFindBar];
+        };
+    }
+
+    // Set up find result callback on active tab
+    Tab* tab = _tabManager->GetActiveTab();
+    if (tab && tab->client) {
+        __weak MainWindowController* weakSelf = self;
+        tab->client->SetFindResultCallback([weakSelf](int count, int activeMatch) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                MainWindowController* strongSelf = weakSelf;
+                if (strongSelf && strongSelf.findBar) {
+                    [strongSelf.findBar updateMatchCount:count activeMatch:activeMatch];
+                }
+            });
+        });
+    }
+
+    if (_findBar.superview != self.window.contentView) {
+        [self.window.contentView addSubview:_findBar];
+    }
+    _findBar.hidden = NO;
+    [_findBar focusSearchField];
+}
+
+- (void)hideFindBar {
+    if (_findBar) {
+        // Stop finding and clear highlights
+        Tab* tab = _tabManager->GetActiveTab();
+        if (tab && tab->browser) {
+            tab->browser->GetHost()->StopFinding(true);
+        }
+
+        // Clear the callback
+        if (tab && tab->client) {
+            tab->client->SetFindResultCallback(nullptr);
+        }
+
+        _findBar.hidden = YES;
+        _lastSearchText = nil;
+
+        // Return focus to browser
+        if (tab && tab->browser) {
+            tab->browser->GetHost()->SetFocus(true);
+        }
+    }
 }
 
 @end

@@ -8,6 +8,7 @@
 
 @class SidebarView;
 @class ToolbarView;
+@class FindBarView;
 
 // Main window controller for the browser
 @interface MainWindowController : NSWindowController <NSWindowDelegate>
@@ -63,5 +64,9 @@
 - (void)showDownloadDialogForFile:(NSString*)filename
                              size:(int64_t)totalBytes
                          callback:(CefRefPtr<CefBeforeDownloadCallback>)callback;
+
+// Find in Page
+- (void)showFindBar;
+- (void)hideFindBar;
 
 @end

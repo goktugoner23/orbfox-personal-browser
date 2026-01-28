@@ -476,3 +476,60 @@ TEST_F(TabManagerTest, Workspace_GetActiveTab_WithTabs) {
     Tab* active = ws->GetActiveTab();
     EXPECT_EQ(active, tab);
 }
+
+// ============================================================================
+// Tab Property Tests
+// ============================================================================
+
+TEST_F(TabManagerTest, Tab_DefaultProperties) {
+    auto* tab = manager_->CreateTab("https://google.com");
+
+    EXPECT_FALSE(tab->is_loading);
+    EXPECT_FALSE(tab->is_pinned);
+    EXPECT_FALSE(tab->is_muted);
+    EXPECT_EQ(tab->title, "New Tab");
+    EXPECT_TRUE(tab->favicon_url.empty());
+    EXPECT_TRUE(tab->favicon_data.empty());
+}
+
+TEST_F(TabManagerTest, Tab_IsMuted_CanBeSet) {
+    auto* tab = manager_->CreateTab("https://google.com");
+    EXPECT_FALSE(tab->is_muted);
+
+    tab->is_muted = true;
+    EXPECT_TRUE(tab->is_muted);
+
+    tab->is_muted = false;
+    EXPECT_FALSE(tab->is_muted);
+}
+
+TEST_F(TabManagerTest, Tab_IsPinned_CanBeSet) {
+    auto* tab = manager_->CreateTab("https://google.com");
+    EXPECT_FALSE(tab->is_pinned);
+
+    tab->is_pinned = true;
+    EXPECT_TRUE(tab->is_pinned);
+
+    tab->is_pinned = false;
+    EXPECT_FALSE(tab->is_pinned);
+}
+
+TEST_F(TabManagerTest, Tab_MultiplePropertiesIndependent) {
+    auto* tab = manager_->CreateTab("https://google.com");
+
+    // Set all properties
+    tab->is_loading = true;
+    tab->is_pinned = true;
+    tab->is_muted = true;
+
+    // Verify they're independent
+    EXPECT_TRUE(tab->is_loading);
+    EXPECT_TRUE(tab->is_pinned);
+    EXPECT_TRUE(tab->is_muted);
+
+    // Change one, others should remain
+    tab->is_loading = false;
+    EXPECT_FALSE(tab->is_loading);
+    EXPECT_TRUE(tab->is_pinned);
+    EXPECT_TRUE(tab->is_muted);
+}

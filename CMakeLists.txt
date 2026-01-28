@@ -72,6 +72,7 @@ if(APPLE)
         src/ui/ToolbarView.mm
         src/ui/BookmarkEditPopover.mm
         src/ui/AutocompleteDropdown.mm
+        src/ui/FindBarView.mm
         src/ui/components/DesignSystem.mm
         src/ui/components/DSButton.mm
         src/ui/components/DSTextField.mm
@@ -131,6 +132,8 @@ if(APPLE)
         src/ui/SidebarView.mm
         src/ui/ToolbarView.mm
         src/ui/BookmarkEditPopover.mm
+        src/ui/AutocompleteDropdown.mm
+        src/ui/FindBarView.mm
         src/ui/components/DesignSystem.mm
         src/ui/components/DSButton.mm
         src/ui/components/DSTextField.mm

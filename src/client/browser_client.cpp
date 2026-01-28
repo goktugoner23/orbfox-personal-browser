@@ -634,3 +634,21 @@ void BrowserClient::OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
         DownloadManager::GetInstance().SaveToDisk();
     }
 }
+
+// CefFindHandler implementation
+void BrowserClient::OnFindResult(CefRefPtr<CefBrowser> browser,
+                                 int identifier,
+                                 int count,
+                                 const CefRect& selectionRect,
+                                 int activeMatchOrdinal,
+                                 bool finalUpdate) {
+    CEF_REQUIRE_UI_THREAD();
+    (void)browser;
+    (void)identifier;
+    (void)selectionRect;
+    (void)finalUpdate;
+
+    if (on_find_result_) {
+        on_find_result_(count, activeMatchOrdinal);
+    }
+}

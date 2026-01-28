@@ -49,6 +49,10 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 - **Collapsible sidebar** - click active panel icon to toggle
 - **History panel** with browsing history
   - Search/filter history entries in real-time
+  - Clear all history with confirmation
+- **Find in Page** (Cmd+F) - search text within pages
+  - Floating find bar with match count
+  - Previous/Next navigation
 - **URL bar autocomplete** - suggestions from bookmarks and history
   - Domain-based filtering (shows only relevant domains)
   - Favicon display for each suggestion
@@ -108,11 +112,11 @@ cmake --build build-test --target OrbFoxTests
 ./build-test/OrbFoxTests --gtest_filter="DownloadManagerTest.*"
 ```
 
-**Test coverage:**
+**Test coverage (198 tests):**
 - Download manager (36 tests) - progress calculation, state transitions, cancel/pause
-- Tab manager (48 tests) - workspace/tab CRUD, active tracking, callbacks
+- Tab manager (52 tests) - workspace/tab CRUD, active tracking, callbacks, tab properties
 - Tab manager integration (25 tests) - multi-workspace operations, callback sequences
-- Persistence (17 tests) - history storage, window settings, session storage
+- Persistence (22 tests) - history storage, window settings, session storage, tab properties
 - Bookmark storage (63 tests) - CRUD, folders, positions, edge cases
 
 ## Project Structure
@@ -230,6 +234,7 @@ Helper apps in `Contents/Frameworks/` handle subprocess execution.
 | Cmd+Shift+N | New bookmark folder |
 | Cmd+Shift+Y | Show History |
 | Cmd+Shift+B | Show Bookmarks |
+| Cmd+F | Find in Page |
 
 ## License
 

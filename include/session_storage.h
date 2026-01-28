@@ -8,6 +8,7 @@ struct SavedTab {
     std::string url;
     std::string title;
     bool is_pinned = false;
+    bool is_muted = false;
 };
 
 // Represents a saved workspace

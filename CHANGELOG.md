@@ -25,6 +25,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Right-click tab → "Mute Tab" / "Unmute Tab"
   - Muted speaker icon displays on muted tabs
   - Uses CEF's native audio muting API
+- **Find in Page** (Cmd+F) - Search for text within pages
+  - Floating find bar at top-right of browser
+  - Match highlighting on page
+  - "X of Y" match count display
+  - Previous/Next navigation (Enter, Shift+Enter, or arrow buttons)
+  - Escape or × button to close
+- **Clear History Button** - Clear all browsing history
+  - "Clear" button in history panel title bar
+  - Confirmation dialog before clearing
 - **Persistent Favicon Cache** - Favicons saved to disk and restored on app launch
   - Stored in `~/Library/Application Support/OrbFox/cache/{domain}.png`
   - Automatically cached when visiting pages in tabs
@@ -76,7 +85,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Real-time Bookmark Updates** - Favicons and titles update live
   - When visiting a page, matching bookmarks update immediately
   - No need to reload bookmarks panel
-- Total tests: 189 (was 171) - added 18 folder management tests
+- Total tests: 198 (was 189) - added tab property and session storage tests
 
 ### Fixed
 - **Folder Deletion** - Now properly deletes folders and their bookmarks

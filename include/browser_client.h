@@ -9,6 +9,7 @@
 #include "include/cef_context_menu_handler.h"
 #include "include/cef_keyboard_handler.h"
 #include "include/cef_download_handler.h"
+#include "include/cef_find_handler.h"
 
 #include <functional>
 #include <string>
@@ -27,7 +28,8 @@ class BrowserClient : public CefClient,
                       public CefResourceRequestHandler,
                       public CefContextMenuHandler,
                       public CefKeyboardHandler,
-                      public CefDownloadHandler {
+                      public CefDownloadHandler,
+                      public CefFindHandler {
 public:
     // Callback types for UI updates
     using BrowserCreatedCallback = std::function<void(CefRefPtr<CefBrowser>)>;
@@ -39,6 +41,7 @@ public:
     using FaviconChangeCallback = std::function<void(const std::string& url, const std::vector<unsigned char>& png_data)>;
     using BlockedCountCallback = std::function<void(int blockedCount)>;
     using FullscreenChangeCallback = std::function<void(bool fullscreen)>;
+    using FindResultCallback = std::function<void(int count, int activeMatch)>;
 
     // Download dialog callback: filename, size, callback to continue with path (empty = cancel)
     using DownloadDialogCallback = std::function<void(
@@ -59,6 +62,7 @@ public:
     void SetDownloadDialogCallback(DownloadDialogCallback callback) { on_download_dialog_ = std::move(callback); }
     void SetBlockedCountCallback(BlockedCountCallback callback) { on_blocked_count_ = std::move(callback); }
     void SetFullscreenChangeCallback(FullscreenChangeCallback callback) { on_fullscreen_change_ = std::move(callback); }
+    void SetFindResultCallback(FindResultCallback callback) { on_find_result_ = std::move(callback); }
 
     // Get blocked request count for this browser
     int GetBlockedCount() const { return blocked_count_; }
@@ -71,6 +75,7 @@ public:
     CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
     CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
     CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
+    CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
 
     // CefLifeSpanHandler methods
     void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
@@ -160,6 +165,14 @@ public:
                            CefRefPtr<CefDownloadItem> download_item,
                            CefRefPtr<CefDownloadItemCallback> callback) override;
 
+    // CefFindHandler methods
+    void OnFindResult(CefRefPtr<CefBrowser> browser,
+                      int identifier,
+                      int count,
+                      const CefRect& selectionRect,
+                      int activeMatchOrdinal,
+                      bool finalUpdate) override;
+
     // Get the browser instance
     CefRefPtr<CefBrowser> GetBrowser() const { return browser_; }
 
@@ -177,6 +190,7 @@ private:
     DownloadDialogCallback on_download_dialog_;
     BlockedCountCallback on_blocked_count_;
     FullscreenChangeCallback on_fullscreen_change_;
+    FindResultCallback on_find_result_;
 
     // Download callbacks (keyed by download ID)
     std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> download_callbacks_;

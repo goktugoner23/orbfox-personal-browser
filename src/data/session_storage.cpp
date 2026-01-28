@@ -124,7 +124,8 @@ void SessionStorage::Save(const SavedSession& session) {
             file << "        {\n";
             file << "          \"url\": \"" << EscapeJson(tab.url) << "\",\n";
             file << "          \"title\": \"" << EscapeJson(tab.title) << "\",\n";
-            file << "          \"is_pinned\": " << (tab.is_pinned ? "true" : "false") << "\n";
+            file << "          \"is_pinned\": " << (tab.is_pinned ? "true" : "false") << ",\n";
+            file << "          \"is_muted\": " << (tab.is_muted ? "true" : "false") << "\n";
             file << "        }";
             if (ti < ws.tabs.size() - 1) file << ",";
             file << "\n";
@@ -193,6 +194,7 @@ SavedSession SessionStorage::Load() {
                     tab.url = ExtractString(tabJson, "url");
                     tab.title = ExtractString(tabJson, "title");
                     tab.is_pinned = ExtractBool(tabJson, "is_pinned");
+                    tab.is_muted = ExtractBool(tabJson, "is_muted");
 
                     if (!tab.url.empty()) {
                         ws.tabs.push_back(tab);
