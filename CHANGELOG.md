@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **History Panel Search** - Filter history entries with search field
+  - Search field at top of history panel
+  - Real-time filtering as you type
+  - Searches both URLs and page titles
+- **URL Bar Autocomplete** - Smart suggestions while typing in address bar
+  - Dropdown appears below URL bar with matching suggestions
+  - Shows bookmarks first, then history entries
+  - Domain-based filtering (typing "youtube" only shows youtube.com pages)
+  - Displays favicons for each suggestion
+  - Keyboard navigation with up/down arrows
+  - Click or Enter to navigate to selected URL
+- **URL Bar Horizontal Scrolling** - Two-finger trackpad swipe to scroll long URLs
+  - Works when URL field is focused
+  - Smooth cursor-based scrolling through text
 - **Persistent Favicon Cache** - Favicons saved to disk and restored on app launch
   - Stored in `~/Library/Application Support/OrbFox/cache/{domain}.png`
   - Automatically cached when visiting pages in tabs

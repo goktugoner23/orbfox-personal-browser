@@ -47,6 +47,12 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
   - Double-click to open, right-click for context menu
 - **Collapsible sidebar** - click active panel icon to toggle
 - **History panel** with browsing history
+  - Search/filter history entries in real-time
+- **URL bar autocomplete** - suggestions from bookmarks and history
+  - Domain-based filtering (shows only relevant domains)
+  - Favicon display for each suggestion
+  - Keyboard navigation support
+- **URL bar horizontal scrolling** - two-finger swipe to scroll long URLs
 - **Menu bar integration** - dynamic bookmark and history menus
   - Bookmarks menu shows all bookmarks with folders as submenus
   - History menu shows 15 most recent entries
