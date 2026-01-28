@@ -14,6 +14,7 @@ struct SavedTab {
 // Represents a saved workspace
 struct SavedWorkspace {
     std::string name;
+    std::string color;
     std::vector<SavedTab> tabs;
     int active_tab_index = 0;
 };

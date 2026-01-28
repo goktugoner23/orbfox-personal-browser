@@ -1682,6 +1682,16 @@ static void CacheTitle(NSString* urlString, NSString* title) {
 // SIDEBAR VIEW
 // ============================================================================
 
+// Helper: Convert hex color string (e.g. "#007AFF") to NSColor
+static NSColor* NSColorFromHex(const std::string& hex) {
+    if (hex.length() < 7 || hex[0] != '#') {
+        return [NSColor systemBlueColor];
+    }
+    unsigned int r = 0, g = 0, b = 0;
+    sscanf(hex.c_str() + 1, "%02x%02x%02x", &r, &g, &b);
+    return [NSColor colorWithRed:r/255.0 green:g/255.0 blue:b/255.0 alpha:1.0];
+}
+
 @implementation SidebarView {
     NSView* _iconStrip;
 
@@ -2254,19 +2264,30 @@ static void CacheTitle(NSString* urlString, NSString* title) {
         tabContainer.layer.cornerRadius = [DSLayout cornerRadiusMedium];
         tabContainer.layer.backgroundColor = isActive ? [DSColors surfaceActive].CGColor : [NSColor clearColor].CGColor;
 
-        // Calculate total width: padding + text + gap + close button + padding
+        // Calculate total width: padding + dot + gap + text + gap + close button + padding
         NSString* title = [NSString stringWithUTF8String:workspace->name.c_str()];
         NSDictionary* attrs = @{NSFontAttributeName: [NSFont systemFontOfSize:13 weight:NSFontWeightMedium]};
         CGFloat textWidth = [title sizeWithAttributes:attrs].width;
         CGFloat innerPadding = 10;
-        CGFloat totalWidth = innerPadding + textWidth + 6 + closeSize + innerPadding;
-        totalWidth = MAX(70, totalWidth);
+        CGFloat dotSize = 8;
+        CGFloat dotGap = 6;
+        CGFloat totalWidth = innerPadding + dotSize + dotGap + textWidth + 6 + closeSize + innerPadding;
+        totalWidth = MAX(80, totalWidth);
 
         tabContainer.frame = NSMakeRect(x, (kWorkspaceHeight - tabHeight) / 2, totalWidth, tabHeight);
 
-        // Title label
+        // Color dot
+        NSView* colorDot = [[NSView alloc] initWithFrame:NSMakeRect(
+            innerPadding, (tabHeight - dotSize) / 2, dotSize, dotSize)];
+        colorDot.wantsLayer = YES;
+        colorDot.layer.cornerRadius = dotSize / 2;
+        colorDot.layer.backgroundColor = NSColorFromHex(workspace->color).CGColor;
+        [tabContainer addSubview:colorDot];
+
+        // Title label (offset by dot + gap)
+        CGFloat labelX = innerPadding + dotSize + dotGap;
         NSTextField* label = [[NSTextField alloc] initWithFrame:NSMakeRect(
-            innerPadding, (tabHeight - 18) / 2, textWidth + 4, 18)];
+            labelX, (tabHeight - 18) / 2, textWidth + 4, 18)];
         label.stringValue = title;
         label.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
         label.textColor = [DSColors textPrimary];
@@ -2339,6 +2360,35 @@ static void CacheTitle(NSString* urlString, NSString* title) {
 
     [menu addItem:[NSMenuItem separatorItem]];
 
+    // Change Color submenu
+    NSMenuItem* colorItem = [[NSMenuItem alloc] initWithTitle:@"Change Color" action:nil keyEquivalent:@""];
+    NSMenu* colorMenu = [[NSMenu alloc] initWithTitle:@"Change Color"];
+
+    NSArray* colorNames = @[@"Blue", @"Red", @"Green", @"Orange", @"Purple", @"Pink", @"Teal", @"Yellow"];
+    for (int i = 0; i < 8; i++) {
+        NSMenuItem* ci = [[NSMenuItem alloc] initWithTitle:colorNames[i]
+                                                    action:@selector(changeWorkspaceColor:)
+                                             keyEquivalent:@""];
+        ci.target = self;
+        ci.tag = workspaceId;
+        ci.representedObject = @(i);
+
+        // Create color swatch image
+        NSImage* swatch = [[NSImage alloc] initWithSize:NSMakeSize(12, 12)];
+        [swatch lockFocus];
+        NSColor* swatchColor = NSColorFromHex(WorkspaceColors::ForIndex(i));
+        [swatchColor setFill];
+        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(0, 0, 12, 12)] fill];
+        [swatch unlockFocus];
+        ci.image = swatch;
+
+        [colorMenu addItem:ci];
+    }
+    colorItem.submenu = colorMenu;
+    [menu addItem:colorItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
     // Delete (only if more than 1 workspace)
     NSMenuItem* deleteItem = [[NSMenuItem alloc] initWithTitle:@"Delete Space"
                                                          action:canDelete ? @selector(deleteWorkspace:) : nil
@@ -2359,6 +2409,22 @@ static void CacheTitle(NSString* urlString, NSString* title) {
 
 - (void)deleteWorkspace:(NSMenuItem*)sender {
     [self deleteWorkspaceById:(int)sender.tag];
+}
+
+- (void)changeWorkspaceColor:(NSMenuItem*)sender {
+    if (!_windowController || !_windowController.tabManager) return;
+
+    int workspaceId = (int)sender.tag;
+    int colorIndex = [sender.representedObject intValue];
+
+    for (const auto& workspace : _windowController.tabManager->GetWorkspaces()) {
+        if (workspace->id == workspaceId) {
+            workspace->color = WorkspaceColors::ForIndex(colorIndex);
+            break;
+        }
+    }
+
+    [self reloadWorkspaceTabs];
 }
 
 - (void)deleteWorkspaceById:(int)workspaceId {

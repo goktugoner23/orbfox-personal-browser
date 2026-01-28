@@ -443,6 +443,10 @@ void BrowserClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
     if (!browser->CanGoForward()) {
         model->SetEnabled(MENU_ID_FORWARD, false);
     }
+
+    // Always add Inspect at the bottom
+    model->AddSeparator();
+    model->AddItem(MENU_ID_INSPECT_ELEMENT, "Inspect");
 }
 
 bool BrowserClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
@@ -489,6 +493,12 @@ bool BrowserClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
         }
         case MENU_ID_COPY_TEXT: {
             frame->Copy();
+            return true;
+        }
+        case MENU_ID_INSPECT_ELEMENT: {
+            if (on_inspect_element_) {
+                on_inspect_element_(params->GetXCoord(), params->GetYCoord());
+            }
             return true;
         }
     }

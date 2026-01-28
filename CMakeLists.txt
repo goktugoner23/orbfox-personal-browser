@@ -115,10 +115,12 @@ if(APPLE)
 
     find_library(COCOA_LIBRARY Cocoa REQUIRED)
     find_library(APPKIT_LIBRARY AppKit REQUIRED)
+    find_library(QUARTZCORE_LIBRARY QuartzCore REQUIRED)
 
     target_link_libraries(OrbFox PRIVATE
         ${COCOA_LIBRARY}
         ${APPKIT_LIBRARY}
+        ${QUARTZCORE_LIBRARY}
         sqlite3
     )
 

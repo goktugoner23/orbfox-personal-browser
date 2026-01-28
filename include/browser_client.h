@@ -44,6 +44,7 @@ public:
     using FindResultCallback = std::function<void(int count, int activeMatch)>;
     using OpenLinkCallback = std::function<void(const std::string& url, bool background)>;
     using CopyToClipboardCallback = std::function<void(const std::string& text)>;
+    using InspectElementCallback = std::function<void(int x, int y)>;
 
     // Download dialog callback: filename, size, callback to continue with path (empty = cancel)
     using DownloadDialogCallback = std::function<void(
@@ -57,6 +58,7 @@ public:
         MENU_ID_OPEN_LINK_BACKGROUND = 50001,
         MENU_ID_COPY_LINK_ADDRESS = 50002,
         MENU_ID_COPY_TEXT = 50003,
+        MENU_ID_INSPECT_ELEMENT = 50004,
     };
 
     BrowserClient();
@@ -75,6 +77,7 @@ public:
     void SetFindResultCallback(FindResultCallback callback) { on_find_result_ = std::move(callback); }
     void SetOpenLinkCallback(OpenLinkCallback callback) { on_open_link_ = std::move(callback); }
     void SetCopyToClipboardCallback(CopyToClipboardCallback callback) { on_copy_to_clipboard_ = std::move(callback); }
+    void SetInspectElementCallback(InspectElementCallback callback) { on_inspect_element_ = std::move(callback); }
 
     // Get blocked request count for this browser
     int GetBlockedCount() const { return blocked_count_; }
@@ -205,6 +208,7 @@ private:
     FindResultCallback on_find_result_;
     OpenLinkCallback on_open_link_;
     CopyToClipboardCallback on_copy_to_clipboard_;
+    InspectElementCallback on_inspect_element_;
 
     // Download callbacks (keyed by download ID)
     std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> download_callbacks_;

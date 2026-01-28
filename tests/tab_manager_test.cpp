@@ -780,3 +780,29 @@ TEST_F(TabManagerTest, CreateWorkspace_EmptyNameGeneratesUnique) {
     auto* ws = manager_->CreateWorkspace("");
     EXPECT_EQ(ws->name, "WS 2");
 }
+
+TEST_F(TabManagerTest, CreateWorkspace_AssignsColorsFromPalette) {
+    // Default workspace (index 0) gets first color
+    auto& workspaces = manager_->GetWorkspaces();
+    EXPECT_EQ(workspaces[0]->color, WorkspaceColors::palette[0]);
+
+    // Second workspace gets second color
+    auto* ws2 = manager_->CreateWorkspace("WS 2");
+    EXPECT_EQ(ws2->color, WorkspaceColors::palette[1]);
+
+    // Third workspace gets third color
+    auto* ws3 = manager_->CreateWorkspace("WS 3");
+    EXPECT_EQ(ws3->color, WorkspaceColors::palette[2]);
+}
+
+TEST_F(TabManagerTest, WorkspaceColors_PaletteCycles) {
+    // Create enough workspaces to wrap around the palette
+    for (int i = 0; i < 8; i++) {
+        manager_->CreateWorkspace();
+    }
+    // 9th workspace (index 8) should cycle back to palette[0]
+    // But the first workspace takes index 0, so 9 workspaces total = index 8
+    auto& workspaces = manager_->GetWorkspaces();
+    EXPECT_EQ(workspaces.size(), 9u);
+    EXPECT_EQ(workspaces[8]->color, WorkspaceColors::palette[0]);
+}

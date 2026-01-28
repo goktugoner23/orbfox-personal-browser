@@ -116,6 +116,7 @@ static const CGFloat kResizeHandleWidth = 6.0;
 
 @end
 
+
 @interface MainWindowController ()
 @property (nonatomic, readwrite) TabManager* tabManager;
 @property (nonatomic, readwrite) SidebarView* sidebarView;
@@ -125,6 +126,8 @@ static const CGFloat kResizeHandleWidth = 6.0;
 @property (nonatomic, assign) CGFloat currentSidebarWidth;
 @property (nonatomic, strong) FindBarView* findBar;
 @property (nonatomic, copy) NSString* lastSearchText;
+// DevTools - opens in separate native window (CEF manages the window)
+@property (nonatomic, readwrite) BOOL devToolsOpen;
 @end
 
 @implementation MainWindowController
@@ -425,6 +428,15 @@ static const CGFloat kResizeHandleWidth = 6.0;
         });
     });
 
+    client->SetInspectElementCallback([weakSelf](int x, int y) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MainWindowController* strongSelf = weakSelf;
+            if (strongSelf) {
+                [strongSelf showDevToolsAtPoint:x y:y];
+            }
+        });
+    });
+
     // Handle favicon changes
     client->SetFaviconChangeCallback([weakSelf, tabId](const std::string& url, const std::vector<unsigned char>& png_data) {
         MainWindowController* strongSelf = weakSelf;
@@ -676,6 +688,97 @@ static const CGFloat kResizeHandleWidth = 6.0;
     }
 }
 
+- (void)toggleDevTools {
+    Tab* tab = _tabManager->GetActiveTab();
+    if (!tab || !tab->browser) return;
+
+    if (tab->browser->GetHost()->HasDevTools()) {
+        [self closeDevTools];
+    } else {
+        [self showDevToolsAtPoint:-1 y:-1];
+    }
+}
+
+- (void)showDevToolsAtPoint:(int)x y:(int)y {
+    Tab* tab = _tabManager->GetActiveTab();
+    if (!tab || !tab->browser) return;
+
+    // If DevTools already open, just return (CEF handles focus)
+    if (tab->browser->GetHost()->HasDevTools()) {
+        return;
+    }
+
+    _devToolsOpen = YES;
+
+    // Use default CefWindowInfo - CEF will create a separate native window
+    // This is how Chrome, Safari, and other browsers show DevTools
+    CefWindowInfo windowInfo;
+    // Do NOT call SetAsChild - let CEF create a standalone window
+
+    CefBrowserSettings settings;
+    CefPoint inspectPoint;
+    if (x >= 0 && y >= 0) {
+        inspectPoint.Set(x, y);
+    }
+
+    // Pass nullptr for client - CEF manages the DevTools window
+    tab->browser->GetHost()->ShowDevTools(windowInfo, nullptr, settings, inspectPoint);
+}
+
+- (void)closeDevTools {
+    Tab* tab = _tabManager->GetActiveTab();
+    if (tab && tab->browser) {
+        tab->browser->GetHost()->CloseDevTools();
+    }
+    _devToolsOpen = NO;
+}
+
+- (void)switchToPreviousWorkspace {
+    const auto& workspaces = _tabManager->GetWorkspaces();
+    if (workspaces.size() <= 1) return;
+
+    Workspace* active = _tabManager->GetActiveWorkspace();
+    if (!active) return;
+
+    for (size_t i = 0; i < workspaces.size(); ++i) {
+        if (workspaces[i]->id == active->id) {
+            int prevIndex = (i == 0) ? (int)workspaces.size() - 1 : (int)i - 1;
+            _tabManager->SetActiveWorkspace(workspaces[prevIndex]->id);
+            [_sidebarView reloadWorkspaceTabs];
+            [_sidebarView reloadTabs];
+
+            Tab* activeTab = _tabManager->GetActiveTab();
+            if (activeTab) {
+                [self activateTab:activeTab->id];
+            }
+            return;
+        }
+    }
+}
+
+- (void)switchToNextWorkspace {
+    const auto& workspaces = _tabManager->GetWorkspaces();
+    if (workspaces.size() <= 1) return;
+
+    Workspace* active = _tabManager->GetActiveWorkspace();
+    if (!active) return;
+
+    for (size_t i = 0; i < workspaces.size(); ++i) {
+        if (workspaces[i]->id == active->id) {
+            int nextIndex = (i + 1 >= workspaces.size()) ? 0 : (int)i + 1;
+            _tabManager->SetActiveWorkspace(workspaces[nextIndex]->id);
+            [_sidebarView reloadWorkspaceTabs];
+            [_sidebarView reloadTabs];
+
+            Tab* activeTab = _tabManager->GetActiveTab();
+            if (activeTab) {
+                [self activateTab:activeTab->id];
+            }
+            return;
+        }
+    }
+}
+
 #pragma mark - UI Updates
 
 - (void)updateURLBar:(NSString*)url {
@@ -767,8 +870,9 @@ static const CGFloat kIconStripWidth = 44.0;
 
         // Animate browser container position and width
         CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
-        NSRect browserFrame = NSMakeRect(newSidebarWidth, kToolbarHeight,
-                                          contentView.bounds.size.width - newSidebarWidth, browserHeight);
+        CGFloat browserWidth = contentView.bounds.size.width - newSidebarWidth;
+
+        NSRect browserFrame = NSMakeRect(newSidebarWidth, kToolbarHeight, browserWidth, browserHeight);
         _browserContainer.animator.frame = browserFrame;
 
     } completionHandler:^{
@@ -1025,6 +1129,25 @@ static const CGFloat kIconStripWidth = 44.0;
         if (event.modifierFlags & NSEventModifierFlagCommand) {
             NSString* chars = event.charactersIgnoringModifiers;
             BOOL hasShift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
+            BOOL hasOption = (event.modifierFlags & NSEventModifierFlagOption) != 0;
+
+            // Cmd+Opt shortcuts
+            if (hasOption) {
+                if ([chars isEqualToString:@"i"]) {
+                    // Cmd+Opt+I: Toggle DevTools
+                    [self toggleDevTools];
+                    return nil;
+                }
+
+                // Cmd+Opt+Left/Right: Switch workspace
+                if (event.keyCode == 123) {  // Left arrow
+                    [self switchToPreviousWorkspace];
+                    return nil;
+                } else if (event.keyCode == 124) {  // Right arrow
+                    [self switchToNextWorkspace];
+                    return nil;
+                }
+            }
 
             if ([chars isEqualToString:@"t"] && hasShift) {
                 // Cmd+Shift+T: Reopen closed tab
@@ -1083,7 +1206,15 @@ static const CGFloat kIconStripWidth = 44.0;
 
 - (void)windowWillClose:(NSNotification*)notification {
     (void)notification;
+    // Close DevTools if open (CEF will close its window)
+    [self closeDevTools];
     CefQuitMessageLoop();
+}
+
+- (void)windowDidResize:(NSNotification*)notification {
+    (void)notification;
+    // DevTools is now a separate native window managed by CEF
+    // No manual repositioning needed
 }
 
 #pragma mark - Find in Page

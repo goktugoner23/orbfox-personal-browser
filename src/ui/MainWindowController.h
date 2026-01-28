@@ -71,4 +71,10 @@
 - (void)showFindBar;
 - (void)hideFindBar;
 
+// DevTools
+- (void)toggleDevTools;
+- (void)showDevToolsAtPoint:(int)x y:(int)y;
+- (void)closeDevTools;
+@property (nonatomic, readonly) BOOL devToolsOpen;
+
 @end

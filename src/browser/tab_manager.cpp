@@ -42,6 +42,8 @@ Workspace* TabManager::CreateWorkspace(const std::string& name) {
     }
 
     auto workspace = std::make_unique<Workspace>(next_workspace_id_++, final_name);
+    // Assign color from palette based on workspace count
+    workspace->color = WorkspaceColors::ForIndex(static_cast<int>(workspaces_.size()));
     Workspace* ptr = workspace.get();
     workspaces_.push_back(std::move(workspace));
 

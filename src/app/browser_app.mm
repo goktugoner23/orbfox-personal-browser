@@ -44,6 +44,7 @@ void SaveSession() {
         const auto& ws = workspaces[i];
         SavedWorkspace savedWs;
         savedWs.name = ws->name;
+        savedWs.color = ws->color;
         savedWs.active_tab_index = ws->active_tab_index;
 
         if (activeWorkspace && ws->id == activeWorkspace->id) {
@@ -123,6 +124,9 @@ void BrowserApp::OnContextInitialized() {
             for (size_t wi = 0; wi < session.workspaces.size(); ++wi) {
                 const auto& savedWs = session.workspaces[wi];
                 Workspace* ws = g_tab_manager->CreateWorkspace(savedWs.name);
+                if (!savedWs.color.empty()) {
+                    ws->color = savedWs.color;
+                }
 
                 if (static_cast<int>(wi) == session.active_workspace_index) {
                     g_tab_manager->SetActiveWorkspace(ws->id);

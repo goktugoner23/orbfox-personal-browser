@@ -116,6 +116,7 @@ void SessionStorage::Save(const SavedSession& session) {
         const auto& ws = session.workspaces[wi];
         file << "    {\n";
         file << "      \"name\": \"" << EscapeJson(ws.name) << "\",\n";
+        file << "      \"color\": \"" << EscapeJson(ws.color) << "\",\n";
         file << "      \"active_tab_index\": " << ws.active_tab_index << ",\n";
         file << "      \"tabs\": [\n";
 
@@ -179,6 +180,7 @@ SavedSession SessionStorage::Load() {
 
             SavedWorkspace ws;
             ws.name = ExtractString(wsJson, "name");
+            ws.color = ExtractString(wsJson, "color");
             ws.active_tab_index = ExtractInt(wsJson, "active_tab_index", 0);
 
             // Parse tabs within this workspace

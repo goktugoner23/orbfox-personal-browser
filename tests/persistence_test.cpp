@@ -178,6 +178,7 @@ TEST(SavedTabTest, IsMuted_CanBeSet) {
 TEST(SavedWorkspaceTest, DefaultValues) {
     SavedWorkspace ws;
     EXPECT_TRUE(ws.name.empty());
+    EXPECT_TRUE(ws.color.empty());
     EXPECT_TRUE(ws.tabs.empty());
     EXPECT_EQ(ws.active_tab_index, 0);
 }

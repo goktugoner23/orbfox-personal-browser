@@ -52,6 +52,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - New workspaces automatically named WS 1, WS 2, WS 3...
   - Skips existing numbers (e.g., if WS 2 exists, next is WS 3)
   - Duplicate names get suffix (e.g., "WS 1" → "WS 1 2")
+- **Workspace Colors** - Color indicators on workspace tabs
+  - 8-color palette: Blue, Red, Green, Orange, Purple, Pink, Teal, Yellow
+  - Color dot shown on each workspace tab
+  - Right-click → "Change Color" submenu with color swatches
+  - Colors auto-assigned from palette on workspace creation
+  - Colors persist across sessions
+- **DevTools** (Cmd+Opt+I) - Toggle Chrome DevTools
+  - Opens in separate window
+  - Toggle to close
+- **Workspace Switching Shortcuts** - Navigate between workspaces
+  - Cmd+Opt+Left: Previous workspace (wraps around)
+  - Cmd+Opt+Right: Next workspace (wraps around)
 - **Persistent Favicon Cache** - Favicons saved to disk and restored on app launch
   - Stored in `~/Library/Application Support/OrbFox/cache/{domain}.png`
   - Automatically cached when visiting pages in tabs
@@ -103,7 +115,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Real-time Bookmark Updates** - Favicons and titles update live
   - When visiting a page, matching bookmarks update immediately
   - No need to reload bookmarks panel
-- Total tests: 217 (was 210) - added unique workspace naming tests
+- Total tests: 219 (was 217) - added workspace color tests
 - Removed redundant "Open in Space" from tab context menu (now use "Move to" with "New Space")
 
 ### Fixed
