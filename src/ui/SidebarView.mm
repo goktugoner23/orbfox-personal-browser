@@ -1941,7 +1941,7 @@ static void CacheTitle(NSString* urlString, NSString* title) {
 
     // History title
     NSTextField* historyTitle = [[NSTextField alloc] initWithFrame:NSMakeRect(
-        [DSSpacing md], height - 40, width - [DSSpacing xl], 24)];
+        [DSSpacing md], height - 40, width - [DSSpacing xl] - 50, 24)];
     historyTitle.stringValue = @"History";
     historyTitle.font = [DSTypography fontWithStyle:DSFontStyleHeadline];
     historyTitle.textColor = [DSColors textPrimary];
@@ -1951,6 +1951,14 @@ static void CacheTitle(NSString* urlString, NSString* title) {
     historyTitle.selectable = NO;
     historyTitle.autoresizingMask = NSViewMinYMargin;
     [_historyPanelContainer addSubview:historyTitle];
+
+    // Clear history button
+    DSButton* clearButton = [DSButton buttonWithTitle:@"Clear" variant:DSButtonVariantGhost];
+    clearButton.frame = NSMakeRect(width - 55, height - 42, 50, 24);
+    clearButton.autoresizingMask = NSViewMinYMargin | NSViewMinXMargin;
+    clearButton.target = self;
+    clearButton.action = @selector(clearHistoryClicked:);
+    [_historyPanelContainer addSubview:clearButton];
 
     // History search field
     CGFloat searchFieldY = height - 76;
@@ -3538,6 +3546,24 @@ static void CacheTitle(NSString* urlString, NSString* title) {
 
 - (void)reloadHistory {
     [self reloadHistoryWithQuery:_historySearchQuery];
+}
+
+- (void)clearHistoryClicked:(id)sender {
+    (void)sender;
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = @"Clear Browsing History?";
+    alert.informativeText = @"This will permanently delete all browsing history. This action cannot be undone.";
+    alert.alertStyle = NSAlertStyleWarning;
+    [alert addButtonWithTitle:@"Clear History"];
+    [alert addButtonWithTitle:@"Cancel"];
+
+    if ([alert runModal] == NSAlertFirstButtonReturn) {
+        HistoryStorage* history = GetHistoryStorage();
+        if (history) {
+            history->ClearAllHistory();
+            [self reloadHistory];
+        }
+    }
 }
 
 - (void)reloadHistoryWithQuery:(NSString*)query {
