@@ -14,13 +14,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Added `IsValidDownloadPath()` utility function
   - Blocks paths with `..`, null bytes, and system directories (`/etc/`, `/usr/`, etc.)
   - Applied to both settings API and settings file loading
+- **CORS/CSRF Protection** - Secure orbfox:// settings API
+  - Removed dangerous `Access-Control-Allow-Origin: *` header
+  - Added origin validation for POST requests (only accepts `orbfox://` origin)
+  - Prevents malicious websites from modifying browser settings
+- **Download Filename Sanitization** - Prevent path traversal via malicious filenames
+  - Strip path components (`/`, `\`) from suggested download filenames
+  - Remove `..` sequences to prevent directory traversal
+  - Default to "download" if filename empty after sanitization
+- **Remote Debugging Restricted** - Only enable DevTools remote debugging in debug builds
+  - Port 9222 no longer exposed in release builds
+- **URL Encoding for Error Pages** - Properly encode error page content in data: URLs
+  - Added `UrlEncode()` utility function
+  - Prevents issues with special characters in error messages
 
 ### Fixed
 - **Session Restore Infinite Loop** - Fixed hang on startup when restoring session
   - `DeleteWorkspace()` wouldn't delete the last workspace, causing infinite loop
   - Now creates restored workspaces first, then deletes default workspace
+- **Tracking Protection Live Update** - Settings changes now take effect immediately
+  - Previously required app restart for tracking protection toggle to work
 
 ### Changed
+- **Atomic File Writes** - All persistent storage now uses atomic write pattern
+  - Added `AtomicWriteFile()` - writes to `.tmp` then renames
+  - Applied to settings, session, and window storage
+  - Prevents corrupt files on crash during write
+- **Thread-Safe Settings** - SettingsStorage now fully thread-safe
+  - Added mutex protection for all read/write operations
+  - `Get()` returns copy instead of reference for safety
 - Total tests: 284 (was 219) - added settings storage tests, security validation tests
 
 ### Added

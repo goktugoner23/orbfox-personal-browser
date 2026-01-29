@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <string>
 
 struct Settings {
@@ -23,7 +24,7 @@ public:
     void Load();
     void Save();
 
-    const Settings& Get() const { return settings_; }
+    Settings Get() const;  // Returns a copy for thread safety
     void Set(const Settings& settings);
 
     // Individual setters
@@ -51,5 +52,6 @@ private:
 
     std::string GetSettingsPath() const;
 
+    mutable std::mutex mutex_;
     Settings settings_;
 };

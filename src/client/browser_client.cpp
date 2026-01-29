@@ -47,9 +47,7 @@ private:
     DISALLOW_COPY_AND_ASSIGN(FaviconDownloadCallback);
 };
 
-BrowserClient::BrowserClient()
-    : tracking_protection_enabled_(SettingsStorage::GetInstance().Get().tracking_protection) {
-}
+BrowserClient::BrowserClient() = default;
 
 // CefLifeSpanHandler methods
 
@@ -171,7 +169,8 @@ void BrowserClient::OnLoadError(CefRefPtr<CefBrowser> browser,
        << "<p>Error: " << escaped_error << " (" << errorCode << ")</p>"
        << "</body></html>";
 
-    frame->LoadURL("data:text/html;charset=utf-8," + ss.str());
+    // URL-encode the HTML content for the data: URL to handle special characters
+    frame->LoadURL("data:text/html;charset=utf-8," + orbfox::utils::UrlEncode(ss.str()));
 }
 
 // CefDisplayHandler methods
@@ -388,9 +387,9 @@ CefResourceRequestHandler::ReturnValue BrowserClient::OnBeforeResourceLoad(
     CefRefPtr<CefCallback> callback) {
     CEF_REQUIRE_IO_THREAD();
 
-    // Use cached tracking protection setting for thread-safe IO thread access
-    // (SettingsStorage is not thread-safe and should only be accessed from UI thread)
-    if (!tracking_protection_enabled_.load()) {
+    // Read tracking protection setting directly from SettingsStorage (now thread-safe)
+    // This ensures live updates when settings change
+    if (!SettingsStorage::GetInstance().Get().tracking_protection) {
         return RV_CONTINUE;  // Tracking protection disabled, allow all
     }
 
@@ -582,7 +581,31 @@ bool BrowserClient::OnBeforeDownload(CefRefPtr<CefBrowser> browser,
     }
 
     // Fallback: direct download to ~/Downloads
-    std::string downloads_path = orbfox::utils::GetHomeDirectory() + "/Downloads/" + suggested_name.ToString();
+    // Sanitize filename to prevent path traversal attacks
+    std::string filename = suggested_name.ToString();
+
+    // Remove any path components (keep only the filename)
+    size_t last_slash = filename.rfind('/');
+    if (last_slash != std::string::npos) {
+        filename = filename.substr(last_slash + 1);
+    }
+    size_t last_backslash = filename.rfind('\\');
+    if (last_backslash != std::string::npos) {
+        filename = filename.substr(last_backslash + 1);
+    }
+
+    // Remove any remaining .. sequences
+    while (filename.find("..") != std::string::npos) {
+        size_t pos = filename.find("..");
+        filename.erase(pos, 2);
+    }
+
+    // If filename is empty after sanitization, use a default
+    if (filename.empty()) {
+        filename = "download";
+    }
+
+    std::string downloads_path = orbfox::utils::GetHomeDirectory() + "/Downloads/" + filename;
 
     callback->Continue(downloads_path, false);
     return true;

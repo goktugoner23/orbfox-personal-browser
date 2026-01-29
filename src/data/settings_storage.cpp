@@ -27,6 +27,8 @@ std::string SettingsStorage::GetSettingsPath() const {
 }
 
 void SettingsStorage::Load() {
+    std::lock_guard<std::mutex> lock(mutex_);
+
     std::ifstream file(GetSettingsPath());
     if (!file.is_open()) {
         return;  // Use defaults
@@ -41,39 +43,48 @@ void SettingsStorage::Load() {
 }
 
 void SettingsStorage::Save() {
-    std::ofstream file(GetSettingsPath());
-    if (!file.is_open()) {
-        return;
-    }
-    file << ToJson();
+    // Note: caller must hold mutex_
+    // Intentionally ignore return - Save() is best-effort and callers don't expect errors
+    (void)orbfox::utils::AtomicWriteFile(GetSettingsPath(), ToJson());
+}
+
+Settings SettingsStorage::Get() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return settings_;  // Return a copy
 }
 
 void SettingsStorage::Set(const Settings& settings) {
+    std::lock_guard<std::mutex> lock(mutex_);
     settings_ = settings;
     Save();
 }
 
 void SettingsStorage::SetHomepage(const std::string& url) {
+    std::lock_guard<std::mutex> lock(mutex_);
     settings_.homepage_url = url;
     Save();
 }
 
 void SettingsStorage::SetNewTabUrl(const std::string& url) {
+    std::lock_guard<std::mutex> lock(mutex_);
     settings_.new_tab_url = url;
     Save();
 }
 
 void SettingsStorage::SetRestoreSession(bool restore) {
+    std::lock_guard<std::mutex> lock(mutex_);
     settings_.restore_session = restore;
     Save();
 }
 
 void SettingsStorage::SetTrackingProtection(bool enabled) {
+    std::lock_guard<std::mutex> lock(mutex_);
     settings_.tracking_protection = enabled;
     Save();
 }
 
 void SettingsStorage::SetDownloadPath(const std::string& path) {
+    std::lock_guard<std::mutex> lock(mutex_);
     // Validate path to prevent path traversal attacks
     if (!path.empty() && !orbfox::utils::IsValidDownloadPath(path)) {
         return;  // Silently reject invalid paths
@@ -83,6 +94,7 @@ void SettingsStorage::SetDownloadPath(const std::string& path) {
 }
 
 void SettingsStorage::SetAskBeforeDownload(bool ask) {
+    std::lock_guard<std::mutex> lock(mutex_);
     settings_.ask_before_download = ask;
     Save();
 }
@@ -105,6 +117,7 @@ std::string SettingsStorage::GetSearchUrl(const std::string& query) {
 }
 
 std::string SettingsStorage::GetResolvedDownloadPath() const {
+    std::lock_guard<std::mutex> lock(mutex_);
     if (settings_.download_path.empty()) {
         return orbfox::utils::GetHomeDirectory() + "/Downloads";
     }

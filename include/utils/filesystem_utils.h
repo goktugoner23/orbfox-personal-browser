@@ -32,6 +32,15 @@ std::string GetAppSupportPath();
 /// Falls back to /tmp if HOME is not set and getpwuid fails.
 std::string GetHomeDirectory();
 
+/// URL-encodes a string for use in data: URLs or query parameters.
+/// Encodes all non-alphanumeric characters except - _ . ~
+std::string UrlEncode(const std::string& str);
+
+/// Atomically writes content to a file using temp file + rename pattern.
+/// This ensures the file is never left in a partial/corrupt state on crash.
+/// Returns true on success, false on failure.
+[[nodiscard]] bool AtomicWriteFile(const std::string& path, const std::string& content);
+
 }  // namespace utils
 }  // namespace orbfox
 

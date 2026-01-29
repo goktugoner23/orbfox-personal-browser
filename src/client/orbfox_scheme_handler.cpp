@@ -662,12 +662,36 @@ bool OrbfoxResourceHandler::Open(CefRefPtr<CefRequest> request,
         path = path.substr(0, query_pos);
     }
 
+    // Check origin for state-changing requests (CSRF protection)
+    auto IsValidOrigin = [&request]() -> bool {
+        CefString origin = request->GetHeaderByName("Origin");
+        CefString referer = request->GetHeaderByName("Referer");
+        std::string origin_str = origin.ToString();
+        std::string referer_str = referer.ToString();
+
+        // Allow if origin is orbfox:// or empty (same-origin requests may not have Origin)
+        if (origin_str.empty() || origin_str.find("orbfox://") == 0) {
+            // Also check referer if present
+            if (referer_str.empty() || referer_str.find("orbfox://") == 0) {
+                return true;
+            }
+        }
+        return false;
+    };
+
     // Route the request
     if (path == "settings" || path == "settings/") {
         HandleSettingsPage();
     } else if (path == "settings/api/get") {
         HandleSettingsApiGet();
     } else if (path == "settings/api/set" && method == "POST") {
+        // CSRF check for state-changing endpoint
+        if (!IsValidOrigin()) {
+            data_ = R"({"success": false, "error": "Invalid origin"})";
+            mime_type_ = "application/json";
+            status_code_ = 403;
+            return true;
+        }
         // Get POST data
         CefRefPtr<CefPostData> post_data = request->GetPostData();
         std::string post_body;
@@ -682,6 +706,13 @@ bool OrbfoxResourceHandler::Open(CefRefPtr<CefRequest> request,
         }
         HandleSettingsApiSet(post_body);
     } else if (path == "settings/api/clear" && method == "POST") {
+        // CSRF check for state-changing endpoint
+        if (!IsValidOrigin()) {
+            data_ = R"({"success": false, "error": "Invalid origin"})";
+            mime_type_ = "application/json";
+            status_code_ = 403;
+            return true;
+        }
         // Clear browsing data
         bool success = true;
 
@@ -713,9 +744,8 @@ void OrbfoxResourceHandler::GetResponseHeaders(CefRefPtr<CefResponse> response,
     response->SetMimeType(mime_type_);
     response->SetStatus(status_code_);
 
-    if (mime_type_ == "application/json") {
-        response->SetHeaderByName("Access-Control-Allow-Origin", "*", true);
-    }
+    // No CORS headers - orbfox:// is same-origin for orbfox:// pages
+    // This prevents external websites from accessing the settings API
 
     response_length = static_cast<int64_t>(data_.size());
 }

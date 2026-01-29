@@ -1,5 +1,6 @@
 #include "utils/filesystem_utils.h"
 
+#include <iomanip>
 #include <sstream>
 #include <string>
 
@@ -116,6 +117,68 @@ std::string GetAppSupportPath() {
     return app_support;
 #else
     return ".";
+#endif
+}
+
+std::string UrlEncode(const std::string& str) {
+    std::ostringstream encoded;
+    encoded.fill('0');
+    encoded << std::hex << std::uppercase;
+
+    for (unsigned char c : str) {
+        // Keep alphanumeric and - _ . ~ unchanged
+        if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            encoded << c;
+        } else {
+            // Percent-encode everything else
+            encoded << '%' << std::setw(2) << static_cast<int>(c);
+        }
+    }
+    return encoded.str();
+}
+
+bool AtomicWriteFile(const std::string& path, const std::string& content) {
+#ifdef __APPLE__
+    // Write to temp file first
+    std::string temp_path = path + ".tmp";
+
+    // Write content to temp file
+    std::FILE* file = std::fopen(temp_path.c_str(), "w");
+    if (!file) {
+        return false;
+    }
+
+    size_t written = std::fwrite(content.data(), 1, content.size(), file);
+    bool write_ok = (written == content.size());
+
+    // Flush to disk before closing
+    if (write_ok) {
+        write_ok = (std::fflush(file) == 0);
+    }
+
+    std::fclose(file);
+
+    if (!write_ok) {
+        std::remove(temp_path.c_str());
+        return false;
+    }
+
+    // Atomic rename (POSIX guarantees this is atomic on same filesystem)
+    if (std::rename(temp_path.c_str(), path.c_str()) != 0) {
+        std::remove(temp_path.c_str());
+        return false;
+    }
+
+    return true;
+#else
+    // Fallback for non-Apple platforms: direct write
+    std::FILE* file = std::fopen(path.c_str(), "w");
+    if (!file) {
+        return false;
+    }
+    size_t written = std::fwrite(content.data(), 1, content.size(), file);
+    std::fclose(file);
+    return written == content.size();
 #endif
 }
 

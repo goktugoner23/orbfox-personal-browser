@@ -12,41 +12,43 @@ std::string SessionStorage::GetSessionPath() {
 }
 
 void SessionStorage::Save(const SavedSession& session) {
-    std::ofstream file(GetSessionPath());
-    if (!file.is_open()) return;
+    std::ostringstream ss;
 
-    file << "{\n";
-    file << "  \"active_workspace_index\": " << session.active_workspace_index << ",\n";
-    file << "  \"workspaces\": [\n";
+    ss << "{\n";
+    ss << "  \"active_workspace_index\": " << session.active_workspace_index << ",\n";
+    ss << "  \"workspaces\": [\n";
 
     for (size_t wi = 0; wi < session.workspaces.size(); ++wi) {
         const auto& ws = session.workspaces[wi];
-        file << "    {\n";
-        file << "      \"name\": \"" << orbfox::utils::EscapeJsonString(ws.name) << "\",\n";
-        file << "      \"color\": \"" << orbfox::utils::EscapeJsonString(ws.color) << "\",\n";
-        file << "      \"active_tab_index\": " << ws.active_tab_index << ",\n";
-        file << "      \"tabs\": [\n";
+        ss << "    {\n";
+        ss << "      \"name\": \"" << orbfox::utils::EscapeJsonString(ws.name) << "\",\n";
+        ss << "      \"color\": \"" << orbfox::utils::EscapeJsonString(ws.color) << "\",\n";
+        ss << "      \"active_tab_index\": " << ws.active_tab_index << ",\n";
+        ss << "      \"tabs\": [\n";
 
         for (size_t ti = 0; ti < ws.tabs.size(); ++ti) {
             const auto& tab = ws.tabs[ti];
-            file << "        {\n";
-            file << "          \"url\": \"" << orbfox::utils::EscapeJsonString(tab.url) << "\",\n";
-            file << "          \"title\": \"" << orbfox::utils::EscapeJsonString(tab.title) << "\",\n";
-            file << "          \"is_pinned\": " << (tab.is_pinned ? "true" : "false") << ",\n";
-            file << "          \"is_muted\": " << (tab.is_muted ? "true" : "false") << "\n";
-            file << "        }";
-            if (ti < ws.tabs.size() - 1) file << ",";
-            file << "\n";
+            ss << "        {\n";
+            ss << "          \"url\": \"" << orbfox::utils::EscapeJsonString(tab.url) << "\",\n";
+            ss << "          \"title\": \"" << orbfox::utils::EscapeJsonString(tab.title) << "\",\n";
+            ss << "          \"is_pinned\": " << (tab.is_pinned ? "true" : "false") << ",\n";
+            ss << "          \"is_muted\": " << (tab.is_muted ? "true" : "false") << "\n";
+            ss << "        }";
+            if (ti < ws.tabs.size() - 1) ss << ",";
+            ss << "\n";
         }
 
-        file << "      ]\n";
-        file << "    }";
-        if (wi < session.workspaces.size() - 1) file << ",";
-        file << "\n";
+        ss << "      ]\n";
+        ss << "    }";
+        if (wi < session.workspaces.size() - 1) ss << ",";
+        ss << "\n";
     }
 
-    file << "  ]\n";
-    file << "}\n";
+    ss << "  ]\n";
+    ss << "}\n";
+
+    // Intentionally ignore return - Save() is best-effort
+    (void)orbfox::utils::AtomicWriteFile(GetSessionPath(), ss.str());
 }
 
 SavedSession SessionStorage::Load() {

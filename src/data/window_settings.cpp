@@ -38,16 +38,15 @@ WindowSettings WindowSettings::Load() {
 }
 
 void WindowSettings::Save() const {
-    std::ofstream file(GetSettingsPath());
-    if (!file.is_open()) {
-        return;
-    }
+    std::ostringstream ss;
+    ss << "{\n";
+    ss << "  \"x\": " << x << ",\n";
+    ss << "  \"y\": " << y << ",\n";
+    ss << "  \"width\": " << width << ",\n";
+    ss << "  \"height\": " << height << ",\n";
+    ss << "  \"maximized\": " << (maximized ? "true" : "false") << "\n";
+    ss << "}\n";
 
-    file << "{\n";
-    file << "  \"x\": " << x << ",\n";
-    file << "  \"y\": " << y << ",\n";
-    file << "  \"width\": " << width << ",\n";
-    file << "  \"height\": " << height << ",\n";
-    file << "  \"maximized\": " << (maximized ? "true" : "false") << "\n";
-    file << "}\n";
+    // Intentionally ignore return - Save() is best-effort
+    (void)orbfox::utils::AtomicWriteFile(GetSettingsPath(), ss.str());
 }
