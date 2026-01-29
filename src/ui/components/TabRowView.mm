@@ -45,11 +45,11 @@
 
         // Close button
         _closeButton = [DSIconButton buttonWithIcon:@"xmark"];
-        _closeButton.frame = NSMakeRect(frame.size.width - 28, (frame.size.height - 20) / 2, 20, 20);
+        _closeButton.frame = NSMakeRect(frame.size.width - 32, (frame.size.height - 20) / 2, 20, 20);
 
         // Pin icon (same position as close button - they swap based on hover)
         _pinIconView = [[NSImageView alloc] initWithFrame:NSMakeRect(
-            frame.size.width - 25, (frame.size.height - 14) / 2, 14, 14)];
+            frame.size.width - 29, (frame.size.height - 14) / 2, 14, 14)];
         _pinIconView.image = [NSImage imageWithSystemSymbolName:@"pin.fill" accessibilityDescription:@"Pinned"];
         _pinIconView.contentTintColor = [DSColors textSecondary];
         _pinIconView.imageScaling = NSImageScaleProportionallyUpOrDown;
