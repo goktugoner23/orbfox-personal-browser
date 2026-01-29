@@ -930,6 +930,26 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     [self deleteWorkspaceById:(int)sender.tag];
 }
 
+- (void)otherMouseDown:(NSEvent*)event {
+    // Middle-click (button 3) closes workspace tabs
+    if (event.buttonNumber == 2) {
+        NSPoint location = [self convertPoint:event.locationInWindow fromView:nil];
+        NSPoint containerLocation = [_workspaceTabsContainer convertPoint:location fromView:self];
+
+        // Check if click is on a workspace tab
+        for (NSView* tabView in _workspaceTabs) {
+            if (NSPointInRect(containerLocation, tabView.frame)) {
+                NSNumber* workspaceIdNum = objc_getAssociatedObject(tabView, "workspaceId");
+                if (workspaceIdNum) {
+                    [self deleteWorkspaceById:workspaceIdNum.intValue];
+                }
+                return;
+            }
+        }
+    }
+    [super otherMouseDown:event];
+}
+
 - (void)deleteWorkspace:(NSMenuItem*)sender {
     [self deleteWorkspaceById:(int)sender.tag];
 }

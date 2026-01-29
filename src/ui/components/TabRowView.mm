@@ -113,6 +113,13 @@
     [self showContextMenu:event];
 }
 
+- (void)otherMouseDown:(NSEvent*)event {
+    // Middle-click (button 3) closes the tab
+    if (event.buttonNumber == 2) {
+        [self closeTab:nil];
+    }
+}
+
 - (void)showContextMenu:(NSEvent*)event {
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Tab"];
 
