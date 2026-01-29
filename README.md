@@ -126,12 +126,14 @@ cmake --build build-test --target OrbFoxTests
 ./build-test/OrbFoxTests --gtest_filter="DownloadManagerTest.*"
 ```
 
-**Test coverage (219 tests):**
-- Download manager (37 tests) - progress calculation, state transitions, cancel/pause
+**Test coverage (284 tests):**
+- Download manager (47 tests) - progress calculation, state transitions, cancel/pause, persistence
 - Tab manager (73 tests) - workspace/tab CRUD, active tracking, callbacks, reopen closed, move tabs, unique naming, colors
 - Tab manager integration (25 tests) - multi-workspace operations, callback sequences
 - Persistence (22 tests) - history storage, window settings, session storage, tab properties
 - Bookmark storage (63 tests) - CRUD, folders, positions, edge cases
+- Settings storage (49 tests) - JSON serialization, path validation, security
+- Filesystem utils (5 tests) - path validation, HTML escaping
 
 ## Project Structure
 

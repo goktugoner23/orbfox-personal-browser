@@ -41,56 +41,35 @@ void SettingsStorage::Load() {
 }
 
 void SettingsStorage::Save() {
-    std::lock_guard<std::mutex> lock(mutex_);
     std::ofstream file(GetSettingsPath());
     if (!file.is_open()) {
         return;
     }
-    file << ToJsonLocked();
-}
-
-Settings SettingsStorage::Get() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return settings_;
+    file << ToJson();
 }
 
 void SettingsStorage::Set(const Settings& settings) {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        settings_ = settings;
-    }
+    settings_ = settings;
     Save();
 }
 
 void SettingsStorage::SetHomepage(const std::string& url) {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        settings_.homepage_url = url;
-    }
+    settings_.homepage_url = url;
     Save();
 }
 
 void SettingsStorage::SetNewTabUrl(const std::string& url) {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        settings_.new_tab_url = url;
-    }
+    settings_.new_tab_url = url;
     Save();
 }
 
 void SettingsStorage::SetRestoreSession(bool restore) {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        settings_.restore_session = restore;
-    }
+    settings_.restore_session = restore;
     Save();
 }
 
 void SettingsStorage::SetTrackingProtection(bool enabled) {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        settings_.tracking_protection = enabled;
-    }
+    settings_.tracking_protection = enabled;
     Save();
 }
 
@@ -99,18 +78,12 @@ void SettingsStorage::SetDownloadPath(const std::string& path) {
     if (!path.empty() && !orbfox::utils::IsValidDownloadPath(path)) {
         return;  // Silently reject invalid paths
     }
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        settings_.download_path = path;
-    }
+    settings_.download_path = path;
     Save();
 }
 
 void SettingsStorage::SetAskBeforeDownload(bool ask) {
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        settings_.ask_before_download = ask;
-    }
+    settings_.ask_before_download = ask;
     Save();
 }
 
@@ -132,7 +105,6 @@ std::string SettingsStorage::GetSearchUrl(const std::string& query) {
 }
 
 std::string SettingsStorage::GetResolvedDownloadPath() const {
-    std::lock_guard<std::mutex> lock(mutex_);
     if (settings_.download_path.empty()) {
         return orbfox::utils::GetHomeDirectory() + "/Downloads";
     }
@@ -140,11 +112,6 @@ std::string SettingsStorage::GetResolvedDownloadPath() const {
 }
 
 std::string SettingsStorage::ToJson() const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return ToJsonLocked();
-}
-
-std::string SettingsStorage::ToJsonLocked() const {
     std::ostringstream ss;
     ss << "{\n";
     ss << "  \"homepage_url\": \"" << orbfox::utils::EscapeJsonString(settings_.homepage_url) << "\",\n";
@@ -158,7 +125,6 @@ std::string SettingsStorage::ToJsonLocked() const {
 }
 
 bool SettingsStorage::FromJson(const std::string& json) {
-    std::lock_guard<std::mutex> lock(mutex_);
     settings_.homepage_url = orbfox::utils::GetJsonString(json, "homepage_url", settings_.homepage_url);
     settings_.new_tab_url = orbfox::utils::GetJsonString(json, "new_tab_url", settings_.new_tab_url);
     settings_.restore_session = orbfox::utils::GetJsonBool(json, "restore_session", settings_.restore_session);

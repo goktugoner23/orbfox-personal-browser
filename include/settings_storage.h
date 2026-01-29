@@ -1,6 +1,5 @@
 #pragma once
 
-#include <mutex>
 #include <string>
 
 struct Settings {
@@ -24,7 +23,7 @@ public:
     void Load();
     void Save();
 
-    Settings Get() const;  // Returns copy for thread safety
+    const Settings& Get() const { return settings_; }
     void Set(const Settings& settings);
 
     // Individual setters
@@ -51,8 +50,6 @@ private:
     SettingsStorage& operator=(const SettingsStorage&) = delete;
 
     std::string GetSettingsPath() const;
-    std::string ToJsonLocked() const;  // Must hold mutex_
 
-    mutable std::mutex mutex_;
     Settings settings_;
 };

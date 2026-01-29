@@ -136,9 +136,11 @@ void BrowserApp::OnContextInitialized() {
     if (settings.restore_session && g_session_storage->HasSavedSession()) {
         SavedSession session = g_session_storage->Load();
         if (!session.workspaces.empty()) {
-            // Clear default workspace created by TabManager
-            while (!g_tab_manager->GetWorkspaces().empty()) {
-                g_tab_manager->DeleteWorkspace(g_tab_manager->GetWorkspaces()[0]->id);
+            // Remember the default workspace ID to delete it after creating restored ones
+            // (DeleteWorkspace won't delete if it's the only workspace)
+            int defaultWorkspaceId = -1;
+            if (!g_tab_manager->GetWorkspaces().empty()) {
+                defaultWorkspaceId = g_tab_manager->GetWorkspaces()[0]->id;
             }
 
             // Restore workspaces and tabs
@@ -172,6 +174,11 @@ void BrowserApp::OnContextInitialized() {
                 if (savedWs.active_tab_index >= 0 && savedWs.active_tab_index < static_cast<int>(ws->tabs.size())) {
                     ws->active_tab_index = savedWs.active_tab_index;
                 }
+            }
+
+            // Delete the default workspace now that we have restored workspaces
+            if (defaultWorkspaceId >= 0) {
+                g_tab_manager->DeleteWorkspace(defaultWorkspaceId);
             }
 
             // Switch to the saved active workspace

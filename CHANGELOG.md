@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+- **XSS Prevention in Error Pages** - HTML-escape untrusted content in 404 and error pages
+  - Added `EscapeHtml()` utility function to escape `<`, `>`, `&`, `"`, `'`
+  - Applied to error page URL and error message display
+- **Path Traversal Prevention** - Validate download paths against directory traversal attacks
+  - Added `IsValidDownloadPath()` utility function
+  - Blocks paths with `..`, null bytes, and system directories (`/etc/`, `/usr/`, etc.)
+  - Applied to both settings API and settings file loading
+
+### Fixed
+- **Session Restore Infinite Loop** - Fixed hang on startup when restoring session
+  - `DeleteWorkspace()` wouldn't delete the last workspace, causing infinite loop
+  - Now creates restored workspaces first, then deletes default workspace
+
+### Changed
+- Total tests: 284 (was 219) - added settings storage tests, security validation tests
+
 ### Added
 - **History Panel Search** - Filter history entries with search field
   - Search field at top of history panel
@@ -133,7 +150,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Real-time Bookmark Updates** - Favicons and titles update live
   - When visiting a page, matching bookmarks update immediately
   - No need to reload bookmarks panel
-- Total tests: 219 (was 217) - added workspace color tests
+- Total tests: 284 (was 219) - added settings storage tests (41 tests), security validation
 - Removed redundant "Open in Space" from tab context menu (now use "Move to" with "New Space")
 
 ### Fixed
