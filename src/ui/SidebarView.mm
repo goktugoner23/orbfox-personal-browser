@@ -385,8 +385,8 @@ static NSColor* NSColorFromHex(const std::string& hex) {
 
     // New Tab button at bottom - same size as tab rows (4pt inset on sides like TabRowView)
     CGFloat tabInset = [DSSpacing xs];
-    _newTabButton = [DSButton buttonWithTitle:@"New Tab" icon:@"plus" variant:DSButtonVariantGhost];
-    _newTabButton.imagePosition = NSImageTrailing;
+    _newTabButton = [DSButton buttonWithTitle:@"New Tab" variant:DSButtonVariantGhost];
+    _newTabButton.alignment = NSTextAlignmentCenter;
     _newTabButton.frame = NSMakeRect(tabInset, padding, width - tabInset * 2, 34);
     _newTabButton.autoresizingMask = NSViewMaxYMargin | NSViewWidthSizable;
     _newTabButton.target = self;
@@ -924,6 +924,26 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     }
     [menu addItem:deleteItem];
 
+    // Close Others (only show if more than 1 workspace)
+    BOOL hasMultipleWorkspaces = _windowController && _windowController.tabManager &&
+                                  _windowController.tabManager->GetWorkspaces().size() > 1;
+    if (hasMultipleWorkspaces) {
+        NSMenuItem* closeOthersItem = [[NSMenuItem alloc] initWithTitle:@"Close Others"
+                                                                  action:@selector(closeOtherWorkspaces:)
+                                                           keyEquivalent:@""];
+        closeOthersItem.target = self;
+        closeOthersItem.tag = workspaceId;
+        [menu addItem:closeOthersItem];
+    }
+
+    // Close All
+    NSMenuItem* closeAllItem = [[NSMenuItem alloc] initWithTitle:@"Close All"
+                                                           action:@selector(closeAllWorkspaces:)
+                                                    keyEquivalent:@""];
+    closeAllItem.target = self;
+    closeAllItem.tag = workspaceId;
+    [menu addItem:closeAllItem];
+
     return menu;
 }
 
@@ -953,6 +973,57 @@ static NSColor* NSColorFromHex(const std::string& hex) {
 
 - (void)deleteWorkspace:(NSMenuItem*)sender {
     [self deleteWorkspaceById:(int)sender.tag];
+}
+
+- (void)closeOtherWorkspaces:(NSMenuItem*)sender {
+    if (!_windowController || !_windowController.tabManager) return;
+
+    int keepWorkspaceId = (int)sender.tag;
+
+    // Collect IDs of workspaces to delete (can't modify while iterating)
+    std::vector<int> toDelete;
+    for (const auto& workspace : _windowController.tabManager->GetWorkspaces()) {
+        if (workspace->id != keepWorkspaceId) {
+            toDelete.push_back(workspace->id);
+        }
+    }
+
+    // Switch to the workspace we're keeping first
+    _windowController.tabManager->SetActiveWorkspace(keepWorkspaceId);
+
+    // Delete all other workspaces
+    for (int wsId : toDelete) {
+        [self performWorkspaceDeletion:wsId];
+    }
+
+    [self reloadWorkspaceTabs];
+    [self reloadTabs];
+}
+
+- (void)closeAllWorkspaces:(NSMenuItem*)sender {
+    (void)sender;
+    if (!_windowController || !_windowController.tabManager) return;
+
+    // Collect all workspace IDs
+    std::vector<int> toDelete;
+    for (const auto& workspace : _windowController.tabManager->GetWorkspaces()) {
+        toDelete.push_back(workspace->id);
+    }
+
+    // Create a new workspace first
+    Workspace* newWs = _windowController.tabManager->CreateWorkspace("");
+    _windowController.tabManager->SetActiveWorkspace(newWs->id);
+
+    // Delete all old workspaces
+    for (int wsId : toDelete) {
+        [self performWorkspaceDeletion:wsId];
+    }
+
+    // Create a default tab in the new workspace
+    [_windowController createNewTab:@""];
+
+    [self reloadWorkspaceTabs];
+    [self reloadTabs];
 }
 
 - (void)changeWorkspaceColor:(NSMenuItem*)sender {

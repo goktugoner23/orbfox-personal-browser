@@ -146,7 +146,13 @@ void BrowserApp::OnContextInitialized() {
             // Restore workspaces and tabs
             for (size_t wi = 0; wi < session.workspaces.size(); ++wi) {
                 const auto& savedWs = session.workspaces[wi];
-                Workspace* ws = g_tab_manager->CreateWorkspace(savedWs.name);
+                // For auto-generated names (WS N pattern), let CreateWorkspace generate fresh names
+                // to ensure proper numbering starting from WS 1
+                std::string wsName = savedWs.name;
+                if (wsName.rfind("WS ", 0) == 0) {
+                    wsName = "";  // Let CreateWorkspace generate a unique name
+                }
+                Workspace* ws = g_tab_manager->CreateWorkspace(wsName);
                 if (!savedWs.color.empty()) {
                     ws->color = savedWs.color;
                 }
@@ -179,6 +185,17 @@ void BrowserApp::OnContextInitialized() {
             // Delete the default workspace now that we have restored workspaces
             if (defaultWorkspaceId >= 0) {
                 g_tab_manager->DeleteWorkspace(defaultWorkspaceId);
+            }
+
+            // Renumber auto-generated workspace names (WS N) starting from 1
+            // Also reassign colors based on index to ensure variety
+            int wsIndex = 0;
+            for (auto& ws : g_tab_manager->GetWorkspaces()) {
+                if (ws->name.rfind("WS ", 0) == 0) {
+                    ws->name = "WS " + std::to_string(wsIndex + 1);
+                }
+                ws->color = WorkspaceColors::ForIndex(wsIndex);
+                wsIndex++;
             }
 
             // Switch to the saved active workspace
