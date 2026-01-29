@@ -38,7 +38,10 @@ public:
     SavedSession Load();
 
     // Check if a saved session exists
-    bool HasSavedSession();
+    [[nodiscard]] bool HasSavedSession();
+
+    // Clear the saved session
+    static void Clear();
 
 private:
     static std::string GetSessionPath();

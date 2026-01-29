@@ -1,6 +1,6 @@
-#ifndef SETTINGS_STORAGE_H_
-#define SETTINGS_STORAGE_H_
+#pragma once
 
+#include <mutex>
 #include <string>
 
 struct Settings {
@@ -24,7 +24,7 @@ public:
     void Load();
     void Save();
 
-    const Settings& Get() const { return settings_; }
+    Settings Get() const;  // Returns copy for thread safety
     void Set(const Settings& settings);
 
     // Individual setters
@@ -43,7 +43,7 @@ public:
 
     // Convert to/from JSON
     std::string ToJson() const;
-    bool FromJson(const std::string& json);
+    [[nodiscard]] bool FromJson(const std::string& json);
 
 private:
     SettingsStorage() = default;
@@ -51,8 +51,8 @@ private:
     SettingsStorage& operator=(const SettingsStorage&) = delete;
 
     std::string GetSettingsPath() const;
+    std::string ToJsonLocked() const;  // Must hold mutex_
 
+    mutable std::mutex mutex_;
     Settings settings_;
 };
-
-#endif  // SETTINGS_STORAGE_H_

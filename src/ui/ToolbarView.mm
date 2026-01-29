@@ -5,8 +5,6 @@
 #import "Components.h"
 #include "bookmark_storage.h"
 
-extern BookmarkStorage* GetBookmarkStorage();
-
 // ============================================================================
 // SCROLLABLE URL FIELD
 // Custom NSTextField that forwards scroll events to field editor when editing
@@ -289,12 +287,12 @@ extern BookmarkStorage* GetBookmarkStorage();
     NSString* url = [NSString stringWithUTF8String:activeTab->url.c_str()];
     NSString* folder = @"";
 
-    if (bookmarks->IsBookmarked(activeTab->url)) {
+    auto existingBookmark = bookmarks->GetBookmarkByUrl(activeTab->url);
+    if (existingBookmark) {
         // Already bookmarked - get existing bookmark data
-        Bookmark bm = bookmarks->GetBookmarkByUrl(activeTab->url);
-        bookmarkId = bm.id;
-        title = [NSString stringWithUTF8String:bm.title.c_str()];
-        folder = [NSString stringWithUTF8String:bm.folder.c_str()];
+        bookmarkId = existingBookmark->id;
+        title = [NSString stringWithUTF8String:existingBookmark->title.c_str()];
+        folder = [NSString stringWithUTF8String:existingBookmark->folder.c_str()];
     } else {
         // Not bookmarked - add and show popover
         bookmarkId = bookmarks->AddBookmark(activeTab->url, activeTab->title);

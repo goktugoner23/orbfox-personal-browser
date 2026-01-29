@@ -8,6 +8,8 @@
 // Minimal CefApp for helper processes - just registers custom schemes
 class HelperApp : public CefApp {
 public:
+    HelperApp() = default;
+
     void OnRegisterCustomSchemes(CefRawPtr<CefSchemeRegistrar> registrar) override {
         // Register "orbfox" scheme in all processes
         registrar->AddCustomScheme(
@@ -21,6 +23,7 @@ public:
 
 private:
     IMPLEMENT_REFCOUNTING(HelperApp);
+    DISALLOW_COPY_AND_ASSIGN(HelperApp);
 };
 
 // Entry point for CEF sub-processes

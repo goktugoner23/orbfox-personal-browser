@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.15...4.0)
 
+# Set deployment target before project() for proper compiler/SDK configuration
+set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
+
 project(OrbFox
     VERSION 0.1.0
     DESCRIPTION "OrbFox browser built with CEF"
@@ -33,37 +36,101 @@ endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CEF_ROOT}/cmake")
 find_package(CEF REQUIRED)
+find_package(SQLite3 REQUIRED)
 
 # Add CEF wrapper library
 add_subdirectory(${CEF_LIBCEF_DLL_WRAPPER_PATH} libcef_dll_wrapper)
 
-# Source files
-set(SOURCES
-    src/main.cpp
-    src/client/browser_client.cpp
-    src/client/download_manager.cpp
-    src/client/orbfox_scheme_handler.cpp
+# ============================================================
+# OrbFoxCore - Shared library for testable components
+# ============================================================
+
+set(CORE_SOURCES
     src/data/window_settings.cpp
     src/data/history_storage.cpp
     src/data/bookmark_storage.cpp
     src/data/session_storage.cpp
     src/data/settings_storage.cpp
     src/browser/tab_manager.cpp
+    src/client/download_manager.cpp
+    src/utils/filesystem_utils.cpp
+    src/utils/json_utils.cpp
 )
 
-set(HEADERS
-    include/browser_app.h
-    include/browser_client.h
-    include/download_manager.h
+set(CORE_HEADERS
     include/window_settings.h
     include/history_storage.h
     include/bookmark_storage.h
     include/session_storage.h
     include/settings_storage.h
-    include/orbfox_scheme_handler.h
     include/tab.h
     include/workspace.h
     include/tab_manager.h
+    include/download_manager.h
+    include/utils/filesystem_utils.h
+    include/utils/json_utils.h
+)
+
+add_library(OrbFoxCore STATIC ${CORE_SOURCES} ${CORE_HEADERS})
+
+target_include_directories(OrbFoxCore PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+    ${CEF_ROOT}
+)
+
+target_link_libraries(OrbFoxCore PUBLIC
+    SQLite::SQLite3
+)
+
+set_target_properties(OrbFoxCore PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+
+if(NOT MSVC)
+    target_compile_options(OrbFoxCore PRIVATE -Wall -Wextra)
+endif()
+
+# ============================================================
+# OrbFox - Main application
+# ============================================================
+
+# App-specific source files (not in core library)
+set(SOURCES
+    src/main.cpp
+    src/client/browser_client.cpp
+    src/client/orbfox_scheme_handler.cpp
+)
+
+set(HEADERS
+    include/browser_app.h
+    include/browser_client.h
+    include/orbfox_scheme_handler.h
+)
+
+# UI headers (for IDE indexing)
+set(UI_HEADERS
+    src/ui/MainWindowController.h
+    src/ui/SidebarView.h
+    src/ui/ToolbarView.h
+    src/ui/BookmarkEditPopover.h
+    src/ui/AutocompleteDropdown.h
+    src/ui/FindBarView.h
+    src/ui/components/Components.h
+    src/ui/components/DesignSystem.h
+    src/ui/components/DSButton.h
+    src/ui/components/DSTextField.h
+    src/ui/components/DSRow.h
+    src/ui/components/ResizeHandleView.h
+    src/ui/components/DevToolsDividerView.h
+    src/ui/components/DevToolsClient.h
+    src/ui/components/SidebarHelperViews.h
+    src/ui/components/CircularProgressView.h
+    src/ui/components/DownloadRowView.h
+    src/ui/components/TabRowView.h
+    src/ui/components/BookmarkDropContainerView.h
+    src/ui/components/AddBookmarkPopoverController.h
 )
 
 # Platform-specific sources
@@ -81,12 +148,20 @@ if(APPLE)
         src/ui/components/DSButton.mm
         src/ui/components/DSTextField.mm
         src/ui/components/DSRow.mm
+        src/ui/components/ResizeHandleView.mm
+        src/ui/components/DevToolsDividerView.mm
+        src/ui/components/SidebarHelperViews.mm
+        src/ui/components/CircularProgressView.mm
+        src/ui/components/DownloadRowView.mm
+        src/ui/components/TabRowView.mm
+        src/ui/components/BookmarkDropContainerView.mm
+        src/ui/components/AddBookmarkPopoverController.mm
     )
 endif()
 
 # Create executable
 if(APPLE)
-    add_executable(OrbFox MACOSX_BUNDLE ${SOURCES} ${HEADERS})
+    add_executable(OrbFox MACOSX_BUNDLE ${SOURCES} ${HEADERS} ${UI_HEADERS})
 
     set_target_properties(OrbFox PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/resources/Info.plist"
@@ -109,14 +184,13 @@ target_include_directories(OrbFox PRIVATE
 
 # Link libraries
 target_link_libraries(OrbFox PRIVATE
+    OrbFoxCore
     libcef_dll_wrapper
     ${CEF_STANDARD_LIBS}
 )
 
 # Platform-specific configuration
 if(APPLE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version")
-
     find_library(COCOA_LIBRARY Cocoa REQUIRED)
     find_library(APPKIT_LIBRARY AppKit REQUIRED)
     find_library(QUARTZCORE_LIBRARY QuartzCore REQUIRED)
@@ -125,7 +199,6 @@ if(APPLE)
         ${COCOA_LIBRARY}
         ${APPKIT_LIBRARY}
         ${QUARTZCORE_LIBRARY}
-        sqlite3
     )
 
     target_compile_definitions(OrbFox PRIVATE PLATFORM_MAC)
@@ -144,6 +217,14 @@ if(APPLE)
         src/ui/components/DSButton.mm
         src/ui/components/DSTextField.mm
         src/ui/components/DSRow.mm
+        src/ui/components/ResizeHandleView.mm
+        src/ui/components/DevToolsDividerView.mm
+        src/ui/components/SidebarHelperViews.mm
+        src/ui/components/CircularProgressView.mm
+        src/ui/components/DownloadRowView.mm
+        src/ui/components/TabRowView.mm
+        src/ui/components/BookmarkDropContainerView.mm
+        src/ui/components/AddBookmarkPopoverController.mm
         PROPERTIES COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
     )
 
@@ -301,23 +382,28 @@ if(BUILD_TESTS)
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(googletest)
 
-    # Test sources (non-UI, testable without CEF runtime)
+    # Test sources
     set(TEST_SOURCES
         tests/download_manager_test.cpp
         tests/tab_manager_test.cpp
         tests/tab_manager_integration_test.cpp
         tests/persistence_test.cpp
         tests/bookmark_storage_test.cpp
+        tests/settings_storage_test.cpp
     )
 
-    # Source files needed for testing (excluding UI/platform-specific)
+    # Source files needed for testing (compiled with UNIT_TEST to disable CEF)
+    # Note: Cannot use OrbFoxCore here because it's compiled with CEF headers
     set(TESTABLE_SOURCES
         src/data/window_settings.cpp
         src/data/history_storage.cpp
         src/data/bookmark_storage.cpp
         src/data/session_storage.cpp
+        src/data/settings_storage.cpp
         src/browser/tab_manager.cpp
         src/client/download_manager.cpp
+        src/utils/filesystem_utils.cpp
+        src/utils/json_utils.cpp
     )
 
     # Create test executable
@@ -330,17 +416,11 @@ if(BUILD_TESTS)
     target_link_libraries(OrbFoxTests PRIVATE
         gtest
         gtest_main
-        sqlite3
+        SQLite::SQLite3
     )
 
     # UNIT_TEST disables CEF dependencies in headers
     target_compile_definitions(OrbFoxTests PRIVATE UNIT_TEST)
-
-    set_target_properties(OrbFoxTests PROPERTIES
-        CXX_STANDARD 17
-        CXX_STANDARD_REQUIRED ON
-        CXX_EXTENSIONS OFF
-    )
 
     # Compiler warnings for tests
     if(NOT MSVC)

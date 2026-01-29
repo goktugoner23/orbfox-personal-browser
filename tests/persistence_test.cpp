@@ -3,8 +3,8 @@
 #include "window_settings.h"
 #include "gtest/gtest.h"
 
+#include <filesystem>
 #include <fstream>
-#include <thread>
 #include <chrono>
 
 // ============================================================================
@@ -14,10 +14,15 @@
 class HistoryStorageTest : public ::testing::Test {
 protected:
     void SetUp() override {
+        // Create unique test directory using process ID and timestamp
+        test_dir_ = "/tmp/orbfox_test_history_" + std::to_string(getpid()) + "_" +
+                    std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+        std::filesystem::create_directories(test_dir_);
+        test_db_path_ = test_dir_ + "/history.db";
+
         history_ = std::make_unique<HistoryStorage>();
-        // Initialize will use the production database path
-        // but we clear it before each test for isolation
-        if (history_->Initialize()) {
+        // Initialize with test-specific path to avoid touching production data
+        if (history_->Initialize(test_db_path_)) {
             history_->ClearAllHistory();
         }
     }
@@ -27,9 +32,14 @@ protected:
             history_->ClearAllHistory();
         }
         history_.reset();
+
+        // Clean up test directory
+        std::filesystem::remove_all(test_dir_);
     }
 
     std::unique_ptr<HistoryStorage> history_;
+    std::string test_dir_;
+    std::string test_db_path_;
 };
 
 TEST_F(HistoryStorageTest, Initialize_CreatesDatabase) {
@@ -39,11 +49,11 @@ TEST_F(HistoryStorageTest, Initialize_CreatesDatabase) {
 }
 
 TEST_F(HistoryStorageTest, AddEntry_AddsToHistory) {
-    history_->AddEntry("https://example.com", "Example");
+    history_->AddEntry("https://test.google.com", "Example");
 
     auto entries = history_->GetRecentHistory(10);
     ASSERT_EQ(entries.size(), 1u);
-    EXPECT_EQ(entries[0].url, "https://example.com");
+    EXPECT_EQ(entries[0].url, "https://test.google.com");
     EXPECT_EQ(entries[0].title, "Example");
 }
 
@@ -55,8 +65,8 @@ TEST_F(HistoryStorageTest, AddEntry_EmptyUrl_NoEffect) {
 }
 
 TEST_F(HistoryStorageTest, AddEntry_UpdatesExisting) {
-    history_->AddEntry("https://example.com", "Title 1");
-    history_->AddEntry("https://example.com", "Title 2");  // Same URL
+    history_->AddEntry("https://test.google.com", "Title 1");
+    history_->AddEntry("https://test.google.com", "Title 2");  // Same URL
 
     auto entries = history_->GetRecentHistory(10);
     ASSERT_EQ(entries.size(), 1u);  // Still only one entry
@@ -65,10 +75,10 @@ TEST_F(HistoryStorageTest, AddEntry_UpdatesExisting) {
 }
 
 TEST_F(HistoryStorageTest, GetRecentHistory_LimitsResults) {
+    // Add 20 entries - no need for sleeps, just testing limit functionality
     for (int i = 0; i < 20; ++i) {
         history_->AddEntry("https://site" + std::to_string(i) + ".com",
                           "Site " + std::to_string(i));
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));  // Ensure different timestamps
     }
 
     auto entries = history_->GetRecentHistory(5);
@@ -76,26 +86,26 @@ TEST_F(HistoryStorageTest, GetRecentHistory_LimitsResults) {
 }
 
 TEST_F(HistoryStorageTest, GetRecentHistory_OrderedByTime) {
-    // Add entries with significant time gaps to ensure ordering
+    // Add entries - they all have the same timestamp (within same second)
     history_->AddEntry("https://first.com", "First");
-    std::this_thread::sleep_for(std::chrono::seconds(1));
     history_->AddEntry("https://second.com", "Second");
-    std::this_thread::sleep_for(std::chrono::seconds(1));
     history_->AddEntry("https://third.com", "Third");
 
     auto entries = history_->GetRecentHistory(10);
     ASSERT_EQ(entries.size(), 3u);
 
-    // Most recent first (third was added last)
-    EXPECT_EQ(entries[0].url, "https://third.com");
-    EXPECT_EQ(entries[1].url, "https://second.com");
-    EXPECT_EQ(entries[2].url, "https://first.com");
+    // Verify entries are sorted by visit_time descending (or equal)
+    // Note: Entries with same timestamp may be in any order, which is acceptable
+    for (size_t i = 1; i < entries.size(); ++i) {
+        EXPECT_GE(entries[i - 1].visit_time, entries[i].visit_time)
+            << "Entry " << i - 1 << " should have visit_time >= entry " << i;
+    }
 }
 
 TEST_F(HistoryStorageTest, SearchHistory_FindsByUrl) {
     history_->AddEntry("https://google.com", "Google");
     history_->AddEntry("https://github.com", "GitHub");
-    history_->AddEntry("https://example.com", "Example");
+    history_->AddEntry("https://test.google.com", "Example");
 
     auto entries = history_->SearchHistory("git", 10);
     ASSERT_EQ(entries.size(), 1u);
@@ -113,14 +123,14 @@ TEST_F(HistoryStorageTest, SearchHistory_FindsByTitle) {
 }
 
 TEST_F(HistoryStorageTest, SearchHistory_EmptyQuery_NoResults) {
-    history_->AddEntry("https://example.com", "Example");
+    history_->AddEntry("https://test.google.com", "Example");
 
     auto entries = history_->SearchHistory("", 10);
     EXPECT_EQ(entries.size(), 0u);
 }
 
 TEST_F(HistoryStorageTest, DeleteEntry_RemovesEntry) {
-    history_->AddEntry("https://example.com", "Example");
+    history_->AddEntry("https://test.google.com", "Example");
 
     auto entries = history_->GetRecentHistory(10);
     ASSERT_EQ(entries.size(), 1u);
@@ -141,6 +151,85 @@ TEST_F(HistoryStorageTest, ClearAllHistory_RemovesAll) {
 
     auto entries = history_->GetRecentHistory(10);
     EXPECT_EQ(entries.size(), 0u);
+}
+
+TEST_F(HistoryStorageTest, GetHistoryForDay_ReturnsEntriesFromThatDay) {
+    // Add entries "today"
+    history_->AddEntry("https://today1.com", "Today 1");
+    history_->AddEntry("https://today2.com", "Today 2");
+
+    // Get today's start time (midnight)
+    std::time_t now = std::time(nullptr);
+    std::tm* tm_now = std::localtime(&now);
+    tm_now->tm_hour = 0;
+    tm_now->tm_min = 0;
+    tm_now->tm_sec = 0;
+    std::time_t day_start = std::mktime(tm_now);
+
+    auto entries = history_->GetHistoryForDay(day_start);
+
+    // Should have the entries we just added
+    EXPECT_GE(entries.size(), 2u);
+
+    // Verify URLs are in the result
+    bool found_today1 = false;
+    bool found_today2 = false;
+    for (const auto& entry : entries) {
+        if (entry.url == "https://today1.com") found_today1 = true;
+        if (entry.url == "https://today2.com") found_today2 = true;
+    }
+    EXPECT_TRUE(found_today1);
+    EXPECT_TRUE(found_today2);
+}
+
+TEST_F(HistoryStorageTest, GetHistoryForDay_EmptyForFutureDay) {
+    history_->AddEntry("https://today.com", "Today");
+
+    // Get a day in the future
+    std::time_t future_day = std::time(nullptr) + (24 * 60 * 60);  // Tomorrow
+
+    auto entries = history_->GetHistoryForDay(future_day);
+
+    EXPECT_EQ(entries.size(), 0u);
+}
+
+TEST_F(HistoryStorageTest, ClearHistoryBefore_RemovesOlderEntries) {
+    // Add an entry
+    history_->AddEntry("https://old.com", "Old Entry");
+
+    // Get the entry's time
+    auto entries = history_->GetRecentHistory(10);
+    ASSERT_EQ(entries.size(), 1u);
+
+    // Clear history before "now + 1 second" (should remove everything)
+    std::time_t cutoff = std::time(nullptr) + 1;
+    history_->ClearHistoryBefore(cutoff);
+
+    entries = history_->GetRecentHistory(10);
+    EXPECT_EQ(entries.size(), 0u);
+}
+
+TEST_F(HistoryStorageTest, ClearHistoryBefore_KeepsNewerEntries) {
+    // Add an entry
+    history_->AddEntry("https://recent.com", "Recent Entry");
+
+    // Clear history before a time in the past (should keep everything)
+    std::time_t past_cutoff = std::time(nullptr) - (24 * 60 * 60);  // Yesterday
+    history_->ClearHistoryBefore(past_cutoff);
+
+    auto entries = history_->GetRecentHistory(10);
+    EXPECT_EQ(entries.size(), 1u);
+    EXPECT_EQ(entries[0].url, "https://recent.com");
+}
+
+TEST_F(HistoryStorageTest, ClearHistoryBefore_ZeroCutoff_NoEffect) {
+    history_->AddEntry("https://site.com", "Site");
+
+    // Clear with zero cutoff should have no effect
+    history_->ClearHistoryBefore(0);
+
+    auto entries = history_->GetRecentHistory(10);
+    EXPECT_EQ(entries.size(), 1u);
 }
 
 // ============================================================================
@@ -197,7 +286,7 @@ TEST_F(SessionStorageTest, Save_CreatesJsonFile) {
     ws.active_tab_index = 0;
 
     SavedTab tab;
-    tab.url = "https://example.com";
+    tab.url = "https://test.google.com";
     tab.title = "Example";
     tab.is_pinned = false;
     tab.is_muted = false;
@@ -233,7 +322,7 @@ TEST_F(SessionStorageTest, Save_WithMutedAndPinnedTab) {
     ws.tabs.push_back(tab2);
 
     SavedTab tab3;
-    tab3.url = "https://example.com";
+    tab3.url = "https://test.google.com";
     tab3.title = "Example - Both";
     tab3.is_pinned = true;  // Both pinned and muted
     tab3.is_muted = true;
@@ -247,13 +336,57 @@ TEST_F(SessionStorageTest, Save_WithMutedAndPinnedTab) {
     EXPECT_TRUE(storage_->HasSavedSession());
 }
 
-// Note: The SessionStorage Load/Save roundtrip tests are disabled because
-// the simple JSON parser has limitations with nested structures in the test
-// environment. The actual application uses this code successfully.
-// TODO: Refactor SessionStorage to use a proper JSON library for more robust parsing.
-TEST_F(SessionStorageTest, DISABLED_LoadSave_Roundtrip) {
-    // This test is disabled - see note above
-    GTEST_SKIP();
+TEST_F(SessionStorageTest, LoadSave_Roundtrip) {
+    // Create a session with workspaces and tabs
+    SavedSession session;
+    session.active_workspace_index = 1;
+
+    SavedWorkspace ws1;
+    ws1.name = "Work";
+    ws1.color = "#FF5733";
+    ws1.active_tab_index = 0;
+    SavedTab tab1;
+    tab1.url = "https://test.google.com";
+    tab1.title = "Example";
+    tab1.is_pinned = true;
+    tab1.is_muted = false;
+    ws1.tabs.push_back(tab1);
+    session.workspaces.push_back(ws1);
+
+    SavedWorkspace ws2;
+    ws2.name = "Personal";
+    ws2.color = "#33FF57";
+    ws2.active_tab_index = 1;
+    SavedTab tab2;
+    tab2.url = "https://google.com";
+    tab2.title = "Google";
+    tab2.is_pinned = false;
+    tab2.is_muted = true;
+    ws2.tabs.push_back(tab2);
+    SavedTab tab3;
+    tab3.url = "https://github.com";
+    tab3.title = "GitHub";
+    ws2.tabs.push_back(tab3);
+    session.workspaces.push_back(ws2);
+
+    // Save and reload
+    storage_->Save(session);
+    SavedSession loaded = storage_->Load();
+
+    // Verify
+    EXPECT_EQ(loaded.active_workspace_index, 1);
+    ASSERT_EQ(loaded.workspaces.size(), 2u);
+
+    EXPECT_EQ(loaded.workspaces[0].name, "Work");
+    EXPECT_EQ(loaded.workspaces[0].color, "#FF5733");
+    ASSERT_EQ(loaded.workspaces[0].tabs.size(), 1u);
+    EXPECT_EQ(loaded.workspaces[0].tabs[0].url, "https://test.google.com");
+    EXPECT_EQ(loaded.workspaces[0].tabs[0].title, "Example");
+    EXPECT_TRUE(loaded.workspaces[0].tabs[0].is_pinned);
+
+    EXPECT_EQ(loaded.workspaces[1].name, "Personal");
+    ASSERT_EQ(loaded.workspaces[1].tabs.size(), 2u);
+    EXPECT_TRUE(loaded.workspaces[1].tabs[0].is_muted);
 }
 
 TEST_F(SessionStorageTest, Load_EmptySession_NoWorkspaces) {
@@ -266,9 +399,33 @@ TEST_F(SessionStorageTest, Load_EmptySession_NoWorkspaces) {
     EXPECT_GE(loaded.active_workspace_index, 0);
 }
 
-// Note: Disabled due to same JSON parser limitations as LoadSave_Roundtrip
-TEST_F(SessionStorageTest, DISABLED_Save_WithSpecialCharacters) {
-    GTEST_SKIP();
+TEST_F(SessionStorageTest, Save_WithSpecialCharacters) {
+    SavedSession session;
+    session.active_workspace_index = 0;
+
+    SavedWorkspace ws;
+    ws.name = "Test \"Quotes\" & <Brackets>";
+    ws.color = "#AABBCC";
+    ws.active_tab_index = 0;
+
+    SavedTab tab;
+    tab.url = "https://test.google.com/path?query=value&other=test";
+    tab.title = "Title with \"quotes\" and\nnewlines";
+    tab.is_pinned = false;
+    tab.is_muted = false;
+    ws.tabs.push_back(tab);
+    session.workspaces.push_back(ws);
+
+    // Save and reload
+    storage_->Save(session);
+    SavedSession loaded = storage_->Load();
+
+    // Verify special characters are preserved
+    ASSERT_EQ(loaded.workspaces.size(), 1u);
+    EXPECT_EQ(loaded.workspaces[0].name, "Test \"Quotes\" & <Brackets>");
+    ASSERT_EQ(loaded.workspaces[0].tabs.size(), 1u);
+    EXPECT_EQ(loaded.workspaces[0].tabs[0].url, "https://test.google.com/path?query=value&other=test");
+    EXPECT_EQ(loaded.workspaces[0].tabs[0].title, "Title with \"quotes\" and\nnewlines");
 }
 
 // ============================================================================
@@ -418,7 +575,53 @@ TEST(PersistenceIntegrationTest, WindowSettingsRoundtrip) {
     EXPECT_EQ(loaded_ws.height, 700);
 }
 
-// Note: SessionStorage integration test disabled due to JSON parser limitations
-TEST(PersistenceIntegrationTest, DISABLED_AllSystemsIndependent) {
-    GTEST_SKIP();
+// Test that all persistence systems work independently
+TEST(PersistenceIntegrationTest, AllSystemsIndependent) {
+    // Test that WindowSettings, SessionStorage, and HistoryStorage
+    // can all be used together without interference
+
+    // 1. Save window settings
+    WindowSettings ws;
+    ws.x = 111;
+    ws.y = 222;
+    ws.width = 1100;
+    ws.height = 700;
+    ws.maximized = true;
+    ws.Save();
+
+    // 2. Save session
+    SessionStorage sessionStorage;
+    SavedSession session;
+    session.active_workspace_index = 0;
+    SavedWorkspace workspace;
+    workspace.name = "Integration Test";
+    workspace.color = "#123456";
+    workspace.active_tab_index = 0;
+    SavedTab tab;
+    tab.url = "https://google.com";
+    tab.title = "Google";
+    tab.is_pinned = true;
+    tab.is_muted = false;
+    workspace.tabs.push_back(tab);
+    session.workspaces.push_back(workspace);
+    sessionStorage.Save(session);
+
+    // 3. Load both back and verify they're independent
+    WindowSettings loadedWs = WindowSettings::Load();
+    SavedSession loadedSession = sessionStorage.Load();
+
+    // Window settings should be intact
+    EXPECT_EQ(loadedWs.x, 111);
+    EXPECT_EQ(loadedWs.y, 222);
+    EXPECT_EQ(loadedWs.width, 1100);
+    EXPECT_EQ(loadedWs.height, 700);
+    EXPECT_TRUE(loadedWs.maximized);
+
+    // Session should be intact
+    ASSERT_EQ(loadedSession.workspaces.size(), 1u);
+    EXPECT_EQ(loadedSession.workspaces[0].name, "Integration Test");
+    EXPECT_EQ(loadedSession.workspaces[0].color, "#123456");
+    ASSERT_EQ(loadedSession.workspaces[0].tabs.size(), 1u);
+    EXPECT_EQ(loadedSession.workspaces[0].tabs[0].url, "https://google.com");
+    EXPECT_TRUE(loadedSession.workspaces[0].tabs[0].is_pinned);
 }

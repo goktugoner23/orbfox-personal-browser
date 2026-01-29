@@ -1,107 +1,14 @@
 #include "session_storage.h"
 
-#include <cstdlib>
+#include <cstdio>
 #include <fstream>
 #include <sstream>
 
-#ifdef __APPLE__
-#include <pwd.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
-
-namespace {
-
-void EnsureDirectoryExists(const std::string& path) {
-#ifdef __APPLE__
-    struct stat st;
-    if (stat(path.c_str(), &st) != 0) {
-        mkdir(path.c_str(), 0755);
-    }
-#endif
-}
-
-// Simple JSON escaping
-std::string EscapeJson(const std::string& str) {
-    std::string result;
-    result.reserve(str.size() + 16);
-    for (char c : str) {
-        switch (c) {
-            case '"': result += "\\\""; break;
-            case '\\': result += "\\\\"; break;
-            case '\n': result += "\\n"; break;
-            case '\r': result += "\\r"; break;
-            case '\t': result += "\\t"; break;
-            default: result += c; break;
-        }
-    }
-    return result;
-}
-
-// Simple JSON string extraction
-std::string ExtractString(const std::string& json, const std::string& key) {
-    std::string search = "\"" + key + "\":\"";
-    auto pos = json.find(search);
-    if (pos == std::string::npos) return "";
-
-    pos += search.length();
-    std::string result;
-    while (pos < json.length() && json[pos] != '"') {
-        if (json[pos] == '\\' && pos + 1 < json.length()) {
-            pos++;
-            switch (json[pos]) {
-                case 'n': result += '\n'; break;
-                case 'r': result += '\r'; break;
-                case 't': result += '\t'; break;
-                case '"': result += '"'; break;
-                case '\\': result += '\\'; break;
-                default: result += json[pos]; break;
-            }
-        } else {
-            result += json[pos];
-        }
-        pos++;
-    }
-    return result;
-}
-
-bool ExtractBool(const std::string& json, const std::string& key) {
-    std::string search = "\"" + key + "\":";
-    auto pos = json.find(search);
-    if (pos == std::string::npos) return false;
-    pos += search.length();
-    while (pos < json.length() && (json[pos] == ' ' || json[pos] == '\t')) pos++;
-    return json.substr(pos, 4) == "true";
-}
-
-int ExtractInt(const std::string& json, const std::string& key, int defaultValue = 0) {
-    std::string search = "\"" + key + "\":";
-    auto pos = json.find(search);
-    if (pos == std::string::npos) return defaultValue;
-    pos += search.length();
-    while (pos < json.length() && (json[pos] == ' ' || json[pos] == '\t')) pos++;
-    std::string num;
-    while (pos < json.length() && (std::isdigit(json[pos]) || json[pos] == '-')) {
-        num += json[pos++];
-    }
-    return num.empty() ? defaultValue : std::stoi(num);
-}
-
-}  // namespace
+#include "utils/filesystem_utils.h"
+#include "utils/json_utils.h"
 
 std::string SessionStorage::GetSessionPath() {
-#ifdef __APPLE__
-    const char* home = std::getenv("HOME");
-    if (!home) {
-        struct passwd* pw = getpwuid(getuid());
-        home = pw ? pw->pw_dir : "/tmp";
-    }
-    std::string app_support = std::string(home) + "/Library/Application Support/OrbFox";
-    EnsureDirectoryExists(app_support);
-    return app_support + "/session.json";
-#else
-    return "session.json";
-#endif
+    return orbfox::utils::GetAppSupportPath() + "/session.json";
 }
 
 void SessionStorage::Save(const SavedSession& session) {
@@ -115,16 +22,16 @@ void SessionStorage::Save(const SavedSession& session) {
     for (size_t wi = 0; wi < session.workspaces.size(); ++wi) {
         const auto& ws = session.workspaces[wi];
         file << "    {\n";
-        file << "      \"name\": \"" << EscapeJson(ws.name) << "\",\n";
-        file << "      \"color\": \"" << EscapeJson(ws.color) << "\",\n";
+        file << "      \"name\": \"" << orbfox::utils::EscapeJsonString(ws.name) << "\",\n";
+        file << "      \"color\": \"" << orbfox::utils::EscapeJsonString(ws.color) << "\",\n";
         file << "      \"active_tab_index\": " << ws.active_tab_index << ",\n";
         file << "      \"tabs\": [\n";
 
         for (size_t ti = 0; ti < ws.tabs.size(); ++ti) {
             const auto& tab = ws.tabs[ti];
             file << "        {\n";
-            file << "          \"url\": \"" << EscapeJson(tab.url) << "\",\n";
-            file << "          \"title\": \"" << EscapeJson(tab.title) << "\",\n";
+            file << "          \"url\": \"" << orbfox::utils::EscapeJsonString(tab.url) << "\",\n";
+            file << "          \"title\": \"" << orbfox::utils::EscapeJsonString(tab.title) << "\",\n";
             file << "          \"is_pinned\": " << (tab.is_pinned ? "true" : "false") << ",\n";
             file << "          \"is_muted\": " << (tab.is_muted ? "true" : "false") << "\n";
             file << "        }";
@@ -152,7 +59,7 @@ SavedSession SessionStorage::Load() {
     buffer << file.rdbuf();
     std::string json = buffer.str();
 
-    session.active_workspace_index = ExtractInt(json, "active_workspace_index", 0);
+    session.active_workspace_index = orbfox::utils::GetJsonInt(json, "active_workspace_index", 0);
 
     // Parse workspaces array
     auto workspacesPos = json.find("\"workspaces\":");
@@ -179,9 +86,9 @@ SavedSession SessionStorage::Load() {
             std::string wsJson = json.substr(pos, endPos - pos);
 
             SavedWorkspace ws;
-            ws.name = ExtractString(wsJson, "name");
-            ws.color = ExtractString(wsJson, "color");
-            ws.active_tab_index = ExtractInt(wsJson, "active_tab_index", 0);
+            ws.name = orbfox::utils::GetJsonString(wsJson, "name");
+            ws.color = orbfox::utils::GetJsonString(wsJson, "color");
+            ws.active_tab_index = orbfox::utils::GetJsonInt(wsJson, "active_tab_index", 0);
 
             // Parse tabs within this workspace
             size_t tabPos = 0;
@@ -193,10 +100,10 @@ SavedSession SessionStorage::Load() {
                     std::string tabJson = wsJson.substr(objStart, objEnd - objStart + 1);
 
                     SavedTab tab;
-                    tab.url = ExtractString(tabJson, "url");
-                    tab.title = ExtractString(tabJson, "title");
-                    tab.is_pinned = ExtractBool(tabJson, "is_pinned");
-                    tab.is_muted = ExtractBool(tabJson, "is_muted");
+                    tab.url = orbfox::utils::GetJsonString(tabJson, "url");
+                    tab.title = orbfox::utils::GetJsonString(tabJson, "title");
+                    tab.is_pinned = orbfox::utils::GetJsonBool(tabJson, "is_pinned");
+                    tab.is_muted = orbfox::utils::GetJsonBool(tabJson, "is_muted");
 
                     if (!tab.url.empty()) {
                         ws.tabs.push_back(tab);
@@ -219,4 +126,8 @@ SavedSession SessionStorage::Load() {
 bool SessionStorage::HasSavedSession() {
     std::ifstream file(GetSessionPath());
     return file.good();
+}
+
+void SessionStorage::Clear() {
+    std::remove(GetSessionPath().c_str());
 }

@@ -139,10 +139,10 @@ TEST_F(TabManagerTest, SetActiveWorkspace_InvalidId_NoChange) {
 // ============================================================================
 
 TEST_F(TabManagerTest, CreateTab_AddsToActiveWorkspace) {
-    auto* tab = manager_->CreateTab("https://example.com");
+    auto* tab = manager_->CreateTab("https://test.google.com");
 
     ASSERT_NE(tab, nullptr);
-    EXPECT_EQ(tab->url, "https://example.com");
+    EXPECT_EQ(tab->url, "https://test.google.com");
 
     auto* ws = manager_->GetActiveWorkspace();
     EXPECT_EQ(ws->tabs.size(), 1u);
@@ -185,7 +185,7 @@ TEST_F(TabManagerTest, CreateTab_WithUrl) {
 // ============================================================================
 
 TEST_F(TabManagerTest, CloseTab_RemovesTab) {
-    auto* tab = manager_->CreateTab("https://example.com");
+    auto* tab = manager_->CreateTab("https://test.google.com");
     int tabId = tab->id;
 
     manager_->CloseTab(tabId);
@@ -221,7 +221,7 @@ TEST_F(TabManagerTest, CloseTab_AdjustsActiveIndex_ClosedBefore) {
 }
 
 TEST_F(TabManagerTest, CloseTab_LastTab_ActiveIndexNegative) {
-    auto* tab = manager_->CreateTab("https://example.com");
+    auto* tab = manager_->CreateTab("https://test.google.com");
 
     manager_->CloseTab(tab->id);
 
@@ -231,7 +231,7 @@ TEST_F(TabManagerTest, CloseTab_LastTab_ActiveIndexNegative) {
 }
 
 TEST_F(TabManagerTest, CloseTab_InvalidId_NoEffect) {
-    manager_->CreateTab("https://example.com");
+    manager_->CreateTab("https://test.google.com");
 
     manager_->CloseTab(9999);
 
@@ -269,14 +269,14 @@ TEST_F(TabManagerTest, SetActiveTab_InvalidId_NoChange) {
 // ============================================================================
 
 TEST_F(TabManagerTest, GetTabById_Found) {
-    auto* tab = manager_->CreateTab("https://example.com");
+    auto* tab = manager_->CreateTab("https://test.google.com");
 
     auto* result = manager_->GetTabById(tab->id);
     EXPECT_EQ(result, tab);
 }
 
 TEST_F(TabManagerTest, GetTabById_NotFound) {
-    manager_->CreateTab("https://example.com");
+    manager_->CreateTab("https://test.google.com");
 
     auto* result = manager_->GetTabById(9999);
     EXPECT_EQ(result, nullptr);
@@ -303,7 +303,7 @@ TEST_F(TabManagerTest, GetTabById_SearchesAllWorkspaces) {
 // ============================================================================
 
 TEST_F(TabManagerTest, UpdateTabTitle_UpdatesTitle) {
-    auto* tab = manager_->CreateTab("https://example.com");
+    auto* tab = manager_->CreateTab("https://test.google.com");
     tab->title = "Old Title";
 
     manager_->UpdateTabTitle(tab->id, "New Title");
@@ -312,7 +312,7 @@ TEST_F(TabManagerTest, UpdateTabTitle_UpdatesTitle) {
 }
 
 TEST_F(TabManagerTest, UpdateTabTitle_InvalidId_NoEffect) {
-    auto* tab = manager_->CreateTab("https://example.com");
+    auto* tab = manager_->CreateTab("https://test.google.com");
     tab->title = "Original";
 
     manager_->UpdateTabTitle(9999, "Changed");
@@ -329,7 +329,7 @@ TEST_F(TabManagerTest, UpdateTabUrl_UpdatesUrl) {
 }
 
 TEST_F(TabManagerTest, UpdateTabLoadingState_UpdatesState) {
-    auto* tab = manager_->CreateTab("https://example.com");
+    auto* tab = manager_->CreateTab("https://test.google.com");
     tab->is_loading = false;
 
     manager_->UpdateTabLoadingState(tab->id, true);
@@ -338,12 +338,12 @@ TEST_F(TabManagerTest, UpdateTabLoadingState_UpdatesState) {
 }
 
 TEST_F(TabManagerTest, UpdateTabFavicon_UpdatesFavicon) {
-    auto* tab = manager_->CreateTab("https://example.com");
+    auto* tab = manager_->CreateTab("https://test.google.com");
 
     std::vector<unsigned char> png_data = {0x89, 0x50, 0x4E, 0x47};
-    manager_->UpdateTabFavicon(tab->id, "https://example.com/favicon.ico", png_data);
+    manager_->UpdateTabFavicon(tab->id, "https://test.google.com/favicon.ico", png_data);
 
-    EXPECT_EQ(tab->favicon_url, "https://example.com/favicon.ico");
+    EXPECT_EQ(tab->favicon_url, "https://test.google.com/favicon.ico");
     EXPECT_EQ(tab->favicon_data, png_data);
 }
 
@@ -359,7 +359,7 @@ TEST_F(TabManagerTest, Callbacks_OnTabCreated) {
     };
     manager_->SetCallbacks(callbacks);
 
-    auto* tab = manager_->CreateTab("https://example.com");
+    auto* tab = manager_->CreateTab("https://test.google.com");
 
     EXPECT_EQ(created_tab, tab);
 }
@@ -372,7 +372,7 @@ TEST_F(TabManagerTest, Callbacks_OnTabClosed) {
     };
     manager_->SetCallbacks(callbacks);
 
-    auto* tab = manager_->CreateTab("https://example.com");
+    auto* tab = manager_->CreateTab("https://test.google.com");
     int tabId = tab->id;
     manager_->CloseTab(tabId);
 
@@ -406,7 +406,7 @@ TEST_F(TabManagerTest, Callbacks_OnTabUpdated) {
     };
     manager_->SetCallbacks(callbacks);
 
-    auto* tab = manager_->CreateTab("https://example.com");
+    auto* tab = manager_->CreateTab("https://test.google.com");
 
     manager_->UpdateTabTitle(tab->id, "New Title");
     EXPECT_EQ(updated_tab, tab);
@@ -471,7 +471,7 @@ TEST_F(TabManagerTest, Workspace_GetActiveTab_EmptyWorkspace) {
 }
 
 TEST_F(TabManagerTest, Workspace_GetActiveTab_WithTabs) {
-    auto* tab = manager_->CreateTab("https://example.com");
+    auto* tab = manager_->CreateTab("https://test.google.com");
 
     auto* ws = manager_->GetActiveWorkspace();
     Tab* active = ws->GetActiveTab();
@@ -714,7 +714,7 @@ TEST_F(TabManagerTest, MoveTabToWorkspace_AdjustsSourceActiveIndex) {
     // Create 3 tabs, active index will be 2 (last tab)
     manager_->CreateTab("https://google.com");
     auto* tab2 = manager_->CreateTab("https://github.com");
-    manager_->CreateTab("https://example.com");
+    manager_->CreateTab("https://test.google.com");
 
     EXPECT_EQ(ws1->active_tab_index, 2);
 

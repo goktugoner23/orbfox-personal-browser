@@ -1,36 +1,16 @@
 #include "download_manager.h"
+#include "utils/filesystem_utils.h"
+
 #include <algorithm>
-#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <sstream>
 #include <string>
 
-#ifdef __APPLE__
-#include <pwd.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
-
 namespace {
 
 std::string GetDownloadsFilePath() {
-#ifdef __APPLE__
-    const char* home = std::getenv("HOME");
-    if (!home) {
-        struct passwd* pw = getpwuid(getuid());
-        home = pw ? pw->pw_dir : "/tmp";
-    }
-    std::string app_support = std::string(home) + "/Library/Application Support/OrbFox";
-    // Ensure directory exists
-    struct stat st;
-    if (stat(app_support.c_str(), &st) != 0) {
-        mkdir(app_support.c_str(), 0755);
-    }
-    return app_support + "/downloads.json";
-#else
-    return "downloads.json";
-#endif
+    return orbfox::utils::GetAppSupportPath() + "/downloads.json";
 }
 
 // Simple JSON escape
@@ -75,9 +55,15 @@ std::string UnescapeJson(const std::string& s) {
 
 // Extract string value from JSON key
 std::string ExtractJsonString(const std::string& json, const std::string& key) {
-    std::string pattern = "\"" + key + "\":\"";
+    // Try with space after colon first (matches our SaveToDisk format)
+    std::string pattern = "\"" + key + "\": \"";
     size_t pos = json.find(pattern);
-    if (pos == std::string::npos) return "";
+    if (pos == std::string::npos) {
+        // Fallback to no space
+        pattern = "\"" + key + "\":\"";
+        pos = json.find(pattern);
+        if (pos == std::string::npos) return "";
+    }
     pos += pattern.size();
     size_t end = json.find("\"", pos);
     while (end != std::string::npos && end > 0 && json[end - 1] == '\\') {
@@ -160,16 +146,16 @@ std::vector<DownloadItem> DownloadManager::GetDownloads() const {
     return result;
 }
 
-DownloadItem* DownloadManager::GetDownload(uint32_t id) {
+std::optional<DownloadItem> DownloadManager::GetDownload(uint32_t id) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     auto it = std::find_if(downloads_.begin(), downloads_.end(),
         [id](const DownloadItem& d) { return d.id == id; });
 
     if (it != downloads_.end()) {
-        return &(*it);
+        return *it;  // Return copy for thread safety
     }
-    return nullptr;
+    return std::nullopt;
 }
 
 void DownloadManager::SetCancelCallback(uint32_t id, DownloadCancelCallback callback) {
@@ -353,8 +339,8 @@ void DownloadManager::RemoveDownload(uint32_t id) {
     SaveToDisk();
 }
 
-void DownloadManager::LoadFromDisk() {
-    std::string path = GetDownloadsFilePath();
+void DownloadManager::LoadFromDisk(const std::string& custom_path) {
+    std::string path = custom_path.empty() ? GetDownloadsFilePath() : custom_path;
     std::ifstream file(path);
     if (!file.is_open()) {
         return;
@@ -395,7 +381,12 @@ void DownloadManager::LoadFromDisk() {
         item.end_time = static_cast<std::time_t>(ExtractJsonInt64(obj, "end_time"));
 
         int state = static_cast<int>(ExtractJsonInt64(obj, "state"));
-        item.state = static_cast<DownloadState>(state);
+        // Validate enum value before casting (0=InProgress, 1=Complete, 2=Canceled, 3=Interrupted, 4=Paused)
+        if (state >= 0 && state <= 4) {
+            item.state = static_cast<DownloadState>(state);
+        } else {
+            item.state = DownloadState::Canceled;  // Default to canceled for invalid values
+        }
 
         // Only load completed or canceled downloads (not in-progress ones)
         if (item.state == DownloadState::Complete ||
@@ -408,7 +399,7 @@ void DownloadManager::LoadFromDisk() {
     }
 }
 
-void DownloadManager::SaveToDisk() {
+void DownloadManager::SaveToDisk(const std::string& custom_path) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     std::ostringstream json;
@@ -444,10 +435,19 @@ void DownloadManager::SaveToDisk() {
 
     json << "\n]\n";
 
-    std::string path = GetDownloadsFilePath();
+    std::string path = custom_path.empty() ? GetDownloadsFilePath() : custom_path;
     std::ofstream file(path);
     if (file.is_open()) {
         file << json.str();
         file.close();
     }
+}
+
+void DownloadManager::ResetForTesting() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    downloads_.clear();
+    cancel_callbacks_.clear();
+    on_update_ = nullptr;
+    pending_original_url_.clear();
+    is_restart_ = false;
 }

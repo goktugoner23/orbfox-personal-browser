@@ -4,8 +4,6 @@
 #include "history_storage.h"
 #include "bookmark_storage.h"
 
-extern HistoryStorage* GetHistoryStorage();
-extern BookmarkStorage* GetBookmarkStorage();
 extern NSImage* GetCachedFavicon(NSString* urlString);
 
 // ============================================================================

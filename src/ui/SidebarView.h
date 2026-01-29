@@ -4,6 +4,7 @@
 
 @class MainWindowController;
 @class DownloadRowView;
+@class TabRowView;
 
 // Sidebar panel type
 typedef NS_ENUM(NSInteger, SidebarPanel) {
@@ -37,19 +38,5 @@ typedef NS_ENUM(NSInteger, SidebarPanel) {
 - (void)selectDownloadRow:(DownloadRowView*)row;
 - (void)restartDownload:(NSString*)url;
 - (void)restartDownload:(NSString*)url removingDownloadId:(uint32_t)downloadId;
-
-@end
-
-// Individual tab row in the sidebar
-@interface TabRowView : NSView
-
-@property (nonatomic, assign) int tabId;
-@property (nonatomic, copy) NSString* title;
-@property (nonatomic, assign) BOOL isSelected;
-@property (nonatomic, assign) BOOL isLoading;
-@property (nonatomic, assign) BOOL isPinned;
-@property (nonatomic, assign) BOOL isMuted;
-@property (nonatomic, strong) NSImage* favicon;
-@property (nonatomic, weak) SidebarView* sidebarView;
 
 @end

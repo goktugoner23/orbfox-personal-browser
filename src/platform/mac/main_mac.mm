@@ -8,10 +8,6 @@
 #include "include/cef_application_mac.h"
 #include "include/wrapper/cef_library_loader.h"
 
-// External access to storage singletons
-extern BookmarkStorage* GetBookmarkStorage();
-extern HistoryStorage* GetHistoryStorage();
-
 // Forward declarations for menu actions
 @class MainWindowController;
 

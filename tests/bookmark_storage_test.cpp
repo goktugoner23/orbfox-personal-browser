@@ -1,6 +1,10 @@
 #include "bookmark_storage.h"
 #include "gtest/gtest.h"
 
+#include <chrono>
+#include <filesystem>
+#include <unistd.h>
+
 // ============================================================================
 // BookmarkStorage Tests
 // ============================================================================
@@ -8,8 +12,15 @@
 class BookmarkStorageTest : public ::testing::Test {
 protected:
     void SetUp() override {
+        // Create unique test directory using process ID and timestamp
+        test_dir_ = "/tmp/orbfox_test_bookmarks_" + std::to_string(getpid()) + "_" +
+                    std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+        std::filesystem::create_directories(test_dir_);
+        test_db_path_ = test_dir_ + "/bookmarks.db";
+
         storage_ = std::make_unique<BookmarkStorage>();
-        if (storage_->Initialize()) {
+        // Initialize with test-specific path to avoid touching production data
+        if (storage_->Initialize(test_db_path_)) {
             storage_->ClearAllBookmarks();
         }
     }
@@ -19,9 +30,14 @@ protected:
             storage_->ClearAllBookmarks();
         }
         storage_.reset();
+
+        // Clean up test directory
+        std::filesystem::remove_all(test_dir_);
     }
 
     std::unique_ptr<BookmarkStorage> storage_;
+    std::string test_dir_;
+    std::string test_db_path_;
 };
 
 // ============================================================================
@@ -38,13 +54,13 @@ TEST_F(BookmarkStorageTest, Initialize_CreatesDatabase) {
 // ============================================================================
 
 TEST_F(BookmarkStorageTest, AddBookmark_AddsToStorage) {
-    int64_t id = storage_->AddBookmark("https://example.com", "Example");
+    int64_t id = storage_->AddBookmark("https://test.google.com", "Example");
 
     EXPECT_GT(id, 0);
 
     auto bookmarks = storage_->GetAllBookmarks();
     ASSERT_EQ(bookmarks.size(), 1u);
-    EXPECT_EQ(bookmarks[0].url, "https://example.com");
+    EXPECT_EQ(bookmarks[0].url, "https://test.google.com");
     EXPECT_EQ(bookmarks[0].title, "Example");
 }
 
@@ -66,8 +82,8 @@ TEST_F(BookmarkStorageTest, AddBookmark_WithFolder) {
 }
 
 TEST_F(BookmarkStorageTest, AddBookmark_DuplicateUrl_UpdatesTitleAndFolder) {
-    storage_->AddBookmark("https://example.com", "Original Title", "");
-    storage_->AddBookmark("https://example.com", "Updated Title", "NewFolder");
+    storage_->AddBookmark("https://test.google.com", "Original Title", "");
+    storage_->AddBookmark("https://test.google.com", "Updated Title", "NewFolder");
 
     auto bookmarks = storage_->GetAllBookmarks();
     ASSERT_EQ(bookmarks.size(), 1u);  // Still only one bookmark
@@ -77,7 +93,7 @@ TEST_F(BookmarkStorageTest, AddBookmark_DuplicateUrl_UpdatesTitleAndFolder) {
 
 TEST_F(BookmarkStorageTest, AddBookmark_SetsCreatedTime) {
     std::time_t before = std::time(nullptr);
-    storage_->AddBookmark("https://example.com", "Example");
+    storage_->AddBookmark("https://test.google.com", "Example");
     std::time_t after = std::time(nullptr);
 
     auto bookmarks = storage_->GetAllBookmarks();
@@ -104,9 +120,9 @@ TEST_F(BookmarkStorageTest, AddBookmark_AssignsIncrementingPositions) {
 // ============================================================================
 
 TEST_F(BookmarkStorageTest, IsBookmarked_ExistingUrl_ReturnsTrue) {
-    storage_->AddBookmark("https://example.com", "Example");
+    storage_->AddBookmark("https://test.google.com", "Example");
 
-    EXPECT_TRUE(storage_->IsBookmarked("https://example.com"));
+    EXPECT_TRUE(storage_->IsBookmarked("https://test.google.com"));
 }
 
 TEST_F(BookmarkStorageTest, IsBookmarked_NonexistentUrl_ReturnsFalse) {
@@ -118,11 +134,11 @@ TEST_F(BookmarkStorageTest, IsBookmarked_EmptyUrl_ReturnsFalse) {
 }
 
 TEST_F(BookmarkStorageTest, IsBookmarked_AfterDelete_ReturnsFalse) {
-    storage_->AddBookmark("https://example.com", "Example");
-    EXPECT_TRUE(storage_->IsBookmarked("https://example.com"));
+    storage_->AddBookmark("https://test.google.com", "Example");
+    EXPECT_TRUE(storage_->IsBookmarked("https://test.google.com"));
 
-    storage_->DeleteBookmarkByUrl("https://example.com");
-    EXPECT_FALSE(storage_->IsBookmarked("https://example.com"));
+    storage_->DeleteBookmarkByUrl("https://test.google.com");
+    EXPECT_FALSE(storage_->IsBookmarked("https://test.google.com"));
 }
 
 // ============================================================================
@@ -130,27 +146,27 @@ TEST_F(BookmarkStorageTest, IsBookmarked_AfterDelete_ReturnsFalse) {
 // ============================================================================
 
 TEST_F(BookmarkStorageTest, GetBookmarkByUrl_Exists_ReturnsBookmark) {
-    storage_->AddBookmark("https://example.com", "Example", "MyFolder");
+    storage_->AddBookmark("https://test.google.com", "Example", "MyFolder");
 
-    auto bookmark = storage_->GetBookmarkByUrl("https://example.com");
+    auto bookmark = storage_->GetBookmarkByUrl("https://test.google.com");
 
-    EXPECT_GT(bookmark.id, 0);
-    EXPECT_EQ(bookmark.url, "https://example.com");
-    EXPECT_EQ(bookmark.title, "Example");
-    EXPECT_EQ(bookmark.folder, "MyFolder");
+    ASSERT_TRUE(bookmark.has_value());
+    EXPECT_GT(bookmark->id, 0);
+    EXPECT_EQ(bookmark->url, "https://test.google.com");
+    EXPECT_EQ(bookmark->title, "Example");
+    EXPECT_EQ(bookmark->folder, "MyFolder");
 }
 
-TEST_F(BookmarkStorageTest, GetBookmarkByUrl_NotExists_ReturnsEmptyBookmark) {
+TEST_F(BookmarkStorageTest, GetBookmarkByUrl_NotExists_ReturnsNullopt) {
     auto bookmark = storage_->GetBookmarkByUrl("https://notfound.com");
 
-    EXPECT_EQ(bookmark.id, 0);
-    EXPECT_TRUE(bookmark.url.empty());
+    EXPECT_FALSE(bookmark.has_value());
 }
 
-TEST_F(BookmarkStorageTest, GetBookmarkByUrl_EmptyUrl_ReturnsEmptyBookmark) {
+TEST_F(BookmarkStorageTest, GetBookmarkByUrl_EmptyUrl_ReturnsNullopt) {
     auto bookmark = storage_->GetBookmarkByUrl("");
 
-    EXPECT_EQ(bookmark.id, 0);
+    EXPECT_FALSE(bookmark.has_value());
 }
 
 // ============================================================================
@@ -213,7 +229,7 @@ TEST_F(BookmarkStorageTest, GetBookmarksInFolder_SpecificFolder_ReturnsOnlyThatF
 }
 
 TEST_F(BookmarkStorageTest, GetBookmarksInFolder_NonexistentFolder_ReturnsEmpty) {
-    storage_->AddBookmark("https://example.com", "Example", "");
+    storage_->AddBookmark("https://test.google.com", "Example", "");
 
     auto bookmarks = storage_->GetBookmarksInFolder("DoesNotExist");
     EXPECT_EQ(bookmarks.size(), 0u);
@@ -243,7 +259,7 @@ TEST_F(BookmarkStorageTest, GetFolders_NoBookmarks_ReturnsEmpty) {
 }
 
 TEST_F(BookmarkStorageTest, GetFolders_OnlyRootBookmarks_ReturnsEmpty) {
-    storage_->AddBookmark("https://example.com", "Example", "");
+    storage_->AddBookmark("https://test.google.com", "Example", "");
 
     auto folders = storage_->GetFolders();
     EXPECT_EQ(folders.size(), 0u);  // Empty folder not included
@@ -278,31 +294,34 @@ TEST_F(BookmarkStorageTest, GetFolders_MultipleFolders_ReturnsAllSorted) {
 // ============================================================================
 
 TEST_F(BookmarkStorageTest, UpdateBookmark_UpdatesTitle) {
-    int64_t id = storage_->AddBookmark("https://example.com", "Original", "");
+    int64_t id = storage_->AddBookmark("https://test.google.com", "Original", "");
 
     storage_->UpdateBookmark(id, "Updated Title", "");
 
-    auto bookmark = storage_->GetBookmarkByUrl("https://example.com");
-    EXPECT_EQ(bookmark.title, "Updated Title");
+    auto bookmark = storage_->GetBookmarkByUrl("https://test.google.com");
+    ASSERT_TRUE(bookmark.has_value());
+    EXPECT_EQ(bookmark->title, "Updated Title");
 }
 
 TEST_F(BookmarkStorageTest, UpdateBookmark_UpdatesFolder) {
-    int64_t id = storage_->AddBookmark("https://example.com", "Example", "");
+    int64_t id = storage_->AddBookmark("https://test.google.com", "Example", "");
 
     storage_->UpdateBookmark(id, "Example", "NewFolder");
 
-    auto bookmark = storage_->GetBookmarkByUrl("https://example.com");
-    EXPECT_EQ(bookmark.folder, "NewFolder");
+    auto bookmark = storage_->GetBookmarkByUrl("https://test.google.com");
+    ASSERT_TRUE(bookmark.has_value());
+    EXPECT_EQ(bookmark->folder, "NewFolder");
 }
 
 TEST_F(BookmarkStorageTest, UpdateBookmark_InvalidId_NoEffect) {
-    storage_->AddBookmark("https://example.com", "Example", "");
+    storage_->AddBookmark("https://test.google.com", "Example", "");
 
     storage_->UpdateBookmark(99999, "New Title", "NewFolder");
 
-    auto bookmark = storage_->GetBookmarkByUrl("https://example.com");
-    EXPECT_EQ(bookmark.title, "Example");  // Unchanged
-    EXPECT_EQ(bookmark.folder, "");         // Unchanged
+    auto bookmark = storage_->GetBookmarkByUrl("https://test.google.com");
+    ASSERT_TRUE(bookmark.has_value());
+    EXPECT_EQ(bookmark->title, "Example");  // Unchanged
+    EXPECT_EQ(bookmark->folder, "");         // Unchanged
 }
 
 // ============================================================================
@@ -310,7 +329,7 @@ TEST_F(BookmarkStorageTest, UpdateBookmark_InvalidId_NoEffect) {
 // ============================================================================
 
 TEST_F(BookmarkStorageTest, DeleteBookmark_ById_RemovesBookmark) {
-    int64_t id = storage_->AddBookmark("https://example.com", "Example");
+    int64_t id = storage_->AddBookmark("https://test.google.com", "Example");
 
     storage_->DeleteBookmark(id);
 
@@ -319,7 +338,7 @@ TEST_F(BookmarkStorageTest, DeleteBookmark_ById_RemovesBookmark) {
 }
 
 TEST_F(BookmarkStorageTest, DeleteBookmark_InvalidId_NoEffect) {
-    storage_->AddBookmark("https://example.com", "Example");
+    storage_->AddBookmark("https://test.google.com", "Example");
 
     storage_->DeleteBookmark(99999);  // Non-existent ID
 
@@ -328,16 +347,16 @@ TEST_F(BookmarkStorageTest, DeleteBookmark_InvalidId_NoEffect) {
 }
 
 TEST_F(BookmarkStorageTest, DeleteBookmarkByUrl_RemovesBookmark) {
-    storage_->AddBookmark("https://example.com", "Example");
+    storage_->AddBookmark("https://test.google.com", "Example");
 
-    storage_->DeleteBookmarkByUrl("https://example.com");
+    storage_->DeleteBookmarkByUrl("https://test.google.com");
 
     auto bookmarks = storage_->GetAllBookmarks();
     EXPECT_EQ(bookmarks.size(), 0u);
 }
 
 TEST_F(BookmarkStorageTest, DeleteBookmarkByUrl_NonexistentUrl_NoEffect) {
-    storage_->AddBookmark("https://example.com", "Example");
+    storage_->AddBookmark("https://test.google.com", "Example");
 
     storage_->DeleteBookmarkByUrl("https://other.com");
 
@@ -346,7 +365,7 @@ TEST_F(BookmarkStorageTest, DeleteBookmarkByUrl_NonexistentUrl_NoEffect) {
 }
 
 TEST_F(BookmarkStorageTest, DeleteBookmarkByUrl_EmptyUrl_NoEffect) {
-    storage_->AddBookmark("https://example.com", "Example");
+    storage_->AddBookmark("https://test.google.com", "Example");
 
     storage_->DeleteBookmarkByUrl("");
 
@@ -359,25 +378,27 @@ TEST_F(BookmarkStorageTest, DeleteBookmarkByUrl_EmptyUrl_NoEffect) {
 // ============================================================================
 
 TEST_F(BookmarkStorageTest, MoveBookmark_ChangesFolder) {
-    int64_t id = storage_->AddBookmark("https://example.com", "Example", "OldFolder");
+    int64_t id = storage_->AddBookmark("https://test.google.com", "Example", "OldFolder");
 
     storage_->MoveBookmark(id, "NewFolder", 1);
 
-    auto bookmark = storage_->GetBookmarkByUrl("https://example.com");
-    EXPECT_EQ(bookmark.folder, "NewFolder");
+    auto bookmark = storage_->GetBookmarkByUrl("https://test.google.com");
+    ASSERT_TRUE(bookmark.has_value());
+    EXPECT_EQ(bookmark->folder, "NewFolder");
 }
 
 TEST_F(BookmarkStorageTest, MoveBookmark_ChangesPosition) {
-    int64_t id = storage_->AddBookmark("https://example.com", "Example", "Folder");
+    int64_t id = storage_->AddBookmark("https://test.google.com", "Example", "Folder");
 
     storage_->MoveBookmark(id, "Folder", 999);
 
-    auto bookmark = storage_->GetBookmarkByUrl("https://example.com");
-    EXPECT_EQ(bookmark.position, 999);
+    auto bookmark = storage_->GetBookmarkByUrl("https://test.google.com");
+    ASSERT_TRUE(bookmark.has_value());
+    EXPECT_EQ(bookmark->position, 999);
 }
 
 TEST_F(BookmarkStorageTest, MoveBookmark_FromRootToFolder) {
-    int64_t id = storage_->AddBookmark("https://example.com", "Example", "");
+    int64_t id = storage_->AddBookmark("https://test.google.com", "Example", "");
 
     storage_->MoveBookmark(id, "Work", 1);
 
@@ -386,11 +407,11 @@ TEST_F(BookmarkStorageTest, MoveBookmark_FromRootToFolder) {
 
     EXPECT_EQ(root.size(), 0u);
     ASSERT_EQ(work.size(), 1u);
-    EXPECT_EQ(work[0].url, "https://example.com");
+    EXPECT_EQ(work[0].url, "https://test.google.com");
 }
 
 TEST_F(BookmarkStorageTest, MoveBookmark_FromFolderToRoot) {
-    int64_t id = storage_->AddBookmark("https://example.com", "Example", "Work");
+    int64_t id = storage_->AddBookmark("https://test.google.com", "Example", "Work");
 
     storage_->MoveBookmark(id, "", 1);
 
@@ -399,16 +420,17 @@ TEST_F(BookmarkStorageTest, MoveBookmark_FromFolderToRoot) {
 
     ASSERT_EQ(root.size(), 1u);
     EXPECT_EQ(work.size(), 0u);
-    EXPECT_EQ(root[0].url, "https://example.com");
+    EXPECT_EQ(root[0].url, "https://test.google.com");
 }
 
 TEST_F(BookmarkStorageTest, MoveBookmark_InvalidId_NoEffect) {
-    storage_->AddBookmark("https://example.com", "Example", "OldFolder");
+    storage_->AddBookmark("https://test.google.com", "Example", "OldFolder");
 
     storage_->MoveBookmark(99999, "NewFolder", 1);
 
-    auto bookmark = storage_->GetBookmarkByUrl("https://example.com");
-    EXPECT_EQ(bookmark.folder, "OldFolder");  // Unchanged
+    auto bookmark = storage_->GetBookmarkByUrl("https://test.google.com");
+    ASSERT_TRUE(bookmark.has_value());
+    EXPECT_EQ(bookmark->folder, "OldFolder");  // Unchanged
 }
 
 // ============================================================================
@@ -441,21 +463,23 @@ TEST_F(BookmarkStorageTest, ClearAllBookmarks_AlsoClaresFolders) {
 // ============================================================================
 
 TEST_F(BookmarkStorageTest, SpecialCharactersInTitle) {
-    storage_->AddBookmark("https://example.com", "Test <>&\"' Special Chars");
+    storage_->AddBookmark("https://test.google.com", "Test <>&\"' Special Chars");
 
-    auto bookmark = storage_->GetBookmarkByUrl("https://example.com");
-    EXPECT_EQ(bookmark.title, "Test <>&\"' Special Chars");
+    auto bookmark = storage_->GetBookmarkByUrl("https://test.google.com");
+    ASSERT_TRUE(bookmark.has_value());
+    EXPECT_EQ(bookmark->title, "Test <>&\"' Special Chars");
 }
 
 TEST_F(BookmarkStorageTest, UnicodeInTitle) {
-    storage_->AddBookmark("https://example.com", "Test \xC3\xA9\xC3\xB1\xC3\xBC Unicode");
+    storage_->AddBookmark("https://test.google.com", "Test \xC3\xA9\xC3\xB1\xC3\xBC Unicode");
 
-    auto bookmark = storage_->GetBookmarkByUrl("https://example.com");
-    EXPECT_EQ(bookmark.title, "Test \xC3\xA9\xC3\xB1\xC3\xBC Unicode");
+    auto bookmark = storage_->GetBookmarkByUrl("https://test.google.com");
+    ASSERT_TRUE(bookmark.has_value());
+    EXPECT_EQ(bookmark->title, "Test \xC3\xA9\xC3\xB1\xC3\xBC Unicode");
 }
 
 TEST_F(BookmarkStorageTest, LongUrl) {
-    std::string long_url = "https://example.com/";
+    std::string long_url = "https://test.google.com/";
     for (int i = 0; i < 100; ++i) {
         long_url += "segment" + std::to_string(i) + "/";
     }
@@ -463,14 +487,16 @@ TEST_F(BookmarkStorageTest, LongUrl) {
     storage_->AddBookmark(long_url, "Long URL");
 
     auto bookmark = storage_->GetBookmarkByUrl(long_url);
-    EXPECT_EQ(bookmark.url, long_url);
+    ASSERT_TRUE(bookmark.has_value());
+    EXPECT_EQ(bookmark->url, long_url);
 }
 
 TEST_F(BookmarkStorageTest, EmptyTitle) {
-    storage_->AddBookmark("https://example.com", "");
+    storage_->AddBookmark("https://test.google.com", "");
 
-    auto bookmark = storage_->GetBookmarkByUrl("https://example.com");
-    EXPECT_TRUE(bookmark.title.empty());
+    auto bookmark = storage_->GetBookmarkByUrl("https://test.google.com");
+    ASSERT_TRUE(bookmark.has_value());
+    EXPECT_TRUE(bookmark->title.empty());
 }
 
 TEST_F(BookmarkStorageTest, MultipleOperationsSequence) {
@@ -489,12 +515,14 @@ TEST_F(BookmarkStorageTest, MultipleOperationsSequence) {
     ASSERT_EQ(all.size(), 2u);
 
     auto s1 = storage_->GetBookmarkByUrl("https://site1.com");
-    EXPECT_EQ(s1.title, "Updated Site 1");
-    EXPECT_EQ(s1.folder, "Work");
+    ASSERT_TRUE(s1.has_value());
+    EXPECT_EQ(s1->title, "Updated Site 1");
+    EXPECT_EQ(s1->folder, "Work");
 
     auto s2 = storage_->GetBookmarkByUrl("https://site2.com");
-    EXPECT_EQ(s2.folder, "Personal");
-    EXPECT_EQ(s2.position, 10);
+    ASSERT_TRUE(s2.has_value());
+    EXPECT_EQ(s2->folder, "Personal");
+    EXPECT_EQ(s2->position, 10);
 
     // Delete one
     storage_->DeleteBookmark(id1);
@@ -540,7 +568,7 @@ TEST_F(BookmarkStorageTest, FolderExists_ExistingEmptyFolder_ReturnsTrue) {
 }
 
 TEST_F(BookmarkStorageTest, FolderExists_FolderFromBookmarks_ReturnsTrue) {
-    storage_->AddBookmark("https://example.com", "Example", "Work");
+    storage_->AddBookmark("https://test.google.com", "Example", "Work");
     EXPECT_TRUE(storage_->FolderExists("Work"));
 }
 
@@ -635,7 +663,7 @@ TEST_F(BookmarkStorageTest, GetNextFolderNumber_MixedFolders_OnlyCountsCollectio
 }
 
 TEST_F(BookmarkStorageTest, GetNextFolderNumber_ImplicitFolderFromBookmarks) {
-    storage_->AddBookmark("https://example.com", "Example", "Collection 3");
+    storage_->AddBookmark("https://test.google.com", "Example", "Collection 3");
 
     int next = storage_->GetNextFolderNumber();
     EXPECT_EQ(next, 4);
@@ -644,7 +672,7 @@ TEST_F(BookmarkStorageTest, GetNextFolderNumber_ImplicitFolderFromBookmarks) {
 TEST_F(BookmarkStorageTest, EmptyFoldersShowInGetFolders) {
     storage_->CreateFolder("EmptyFolder1");
     storage_->CreateFolder("EmptyFolder2");
-    storage_->AddBookmark("https://example.com", "Example", "PopulatedFolder");
+    storage_->AddBookmark("https://test.google.com", "Example", "PopulatedFolder");
 
     auto folders = storage_->GetFolders();
     ASSERT_EQ(folders.size(), 3u);

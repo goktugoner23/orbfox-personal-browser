@@ -4,6 +4,9 @@
 #include <vector>
 #include <ctime>
 
+// Forward declaration for SQLite (avoids including sqlite3.h in header)
+struct sqlite3;
+
 // Represents a single history entry
 struct HistoryEntry {
     int64_t id = 0;
@@ -20,7 +23,9 @@ public:
     ~HistoryStorage();
 
     // Initialize database
-    bool Initialize();
+    // If custom_path is empty, uses default production path
+    // If custom_path is provided, uses that path (for testing)
+    [[nodiscard]] bool Initialize(const std::string& custom_path = "");
 
     // Add a history entry (increments visit_count if URL exists)
     void AddEntry(const std::string& url, const std::string& title);
@@ -36,8 +41,13 @@ public:
     void ClearHistoryBefore(std::time_t before_time);
 
 private:
-    static std::string GetDatabasePath();
+    static std::string GetDefaultDatabasePath();
     void CreateTables();
 
-    void* db_ = nullptr;  // sqlite3*
+    sqlite3* db_ = nullptr;
+    std::string db_path_;  // Actual path used (empty until Initialize is called)
 };
+
+// Global accessor for the shared history storage instance
+// Defined in browser_app.mm
+HistoryStorage* GetHistoryStorage();

@@ -6,6 +6,7 @@
 #include <mutex>
 #include <functional>
 #include <ctime>
+#include <optional>
 
 // Download state enum
 enum class DownloadState {
@@ -48,8 +49,8 @@ public:
     // Get all downloads (most recent first)
     std::vector<DownloadItem> GetDownloads() const;
 
-    // Get download by ID
-    DownloadItem* GetDownload(uint32_t id);
+    // Get download by ID (returns copy for thread safety)
+    std::optional<DownloadItem> GetDownload(uint32_t id);
 
     // Set cancel callback for a download
     void SetCancelCallback(uint32_t id, DownloadCancelCallback callback);
@@ -68,8 +69,10 @@ public:
     void RemoveDownload(uint32_t id);
 
     // Persistence
-    void LoadFromDisk();
-    void SaveToDisk();
+    // If custom_path is empty, uses default production path
+    // If custom_path is provided, uses that path (for testing)
+    void LoadFromDisk(const std::string& custom_path = "");
+    void SaveToDisk(const std::string& custom_path = "");
 
     // Set UI update callback (called when downloads change)
     void SetUpdateCallback(DownloadUpdateCallback callback);
@@ -89,6 +92,9 @@ public:
     // Mark next download as a restart (to apply saved preferences)
     void SetIsRestart(bool is_restart);
     bool GetAndClearIsRestart();
+
+    // Reset all state (for testing only - clears downloads, callbacks, and flags)
+    void ResetForTesting();
 
 private:
     DownloadManager() = default;

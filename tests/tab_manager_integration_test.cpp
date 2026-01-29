@@ -233,7 +233,7 @@ TEST_F(TabManagerIntegrationTest, CreateSwitchDeleteSequence) {
 TEST_F(TabManagerIntegrationTest, TabCreatedCallbackFires) {
     SetupCallbacks();
 
-    Tab* tab = manager_->CreateTab("https://example.com");
+    Tab* tab = manager_->CreateTab("https://test.google.com");
 
     ASSERT_EQ(created_tabs_.size(), 1u);
     EXPECT_EQ(created_tabs_[0], tab->id);
@@ -242,7 +242,7 @@ TEST_F(TabManagerIntegrationTest, TabCreatedCallbackFires) {
 TEST_F(TabManagerIntegrationTest, TabActivatedAfterCreation) {
     SetupCallbacks();
 
-    Tab* tab = manager_->CreateTab("https://example.com");
+    Tab* tab = manager_->CreateTab("https://test.google.com");
 
     // Both created and activated should fire
     ASSERT_EQ(created_tabs_.size(), 1u);
@@ -253,7 +253,7 @@ TEST_F(TabManagerIntegrationTest, TabActivatedAfterCreation) {
 TEST_F(TabManagerIntegrationTest, TabClosedCallbackFires) {
     SetupCallbacks();
 
-    Tab* tab = manager_->CreateTab("https://example.com");
+    Tab* tab = manager_->CreateTab("https://test.google.com");
     int tabId = tab->id;
 
     manager_->CloseTab(tabId);
@@ -305,7 +305,7 @@ TEST_F(TabManagerIntegrationTest, MultipleOperationsCallbackSequence) {
 TEST_F(TabManagerIntegrationTest, TabUpdateCallbackFires) {
     SetupCallbacks();
 
-    Tab* tab = manager_->CreateTab("https://example.com");
+    Tab* tab = manager_->CreateTab("https://test.google.com");
     ResetCallbackTracking();
 
     manager_->UpdateTabTitle(tab->id, "New Title");
@@ -325,7 +325,7 @@ TEST_F(TabManagerIntegrationTest, CreateTabInEmptyWorkspace) {
     EXPECT_EQ(ws->active_tab_index, -1);
 
     // Create first tab
-    Tab* tab = manager_->CreateTab("https://example.com");
+    Tab* tab = manager_->CreateTab("https://test.google.com");
 
     EXPECT_EQ(ws->tabs.size(), 1u);
     EXPECT_EQ(ws->active_tab_index, 0);
@@ -463,7 +463,7 @@ TEST_F(TabManagerIntegrationTest, RapidTabCreateClose) {
 
     std::vector<int> tabIds;
     for (int i = 0; i < 20; ++i) {
-        Tab* tab = manager_->CreateTab("https://example.com");
+        Tab* tab = manager_->CreateTab("https://test.google.com");
         tabIds.push_back(tab->id);
     }
 

@@ -1,5 +1,10 @@
 #include "orbfox_scheme_handler.h"
+#include "download_manager.h"
+#include "history_storage.h"
+#include "session_storage.h"
 #include "settings_storage.h"
+#include "utils/filesystem_utils.h"
+#include "version.h"
 
 #include "include/cef_parser.h"
 
@@ -677,9 +682,22 @@ bool OrbfoxResourceHandler::Open(CefRefPtr<CefRequest> request,
         }
         HandleSettingsApiSet(post_body);
     } else if (path == "settings/api/clear" && method == "POST") {
-        // Clear browsing data - this is a placeholder
-        // In a full implementation, this would clear history, downloads, session
-        data_ = R"({"success": true})";
+        // Clear browsing data
+        bool success = true;
+
+        // Clear history
+        HistoryStorage* history = GetHistoryStorage();
+        if (history) {
+            history->ClearAllHistory();
+        }
+
+        // Clear completed/canceled downloads from download manager
+        DownloadManager::GetInstance().ClearCompleted();
+
+        // Clear session (will start fresh on next launch)
+        SessionStorage::Clear();
+
+        data_ = success ? R"({"success": true})" : R"({"success": false})";
         mime_type_ = "application/json";
         status_code_ = 200;
     } else {
@@ -723,6 +741,15 @@ bool OrbfoxResourceHandler::Read(void* data_out,
 
 void OrbfoxResourceHandler::HandleSettingsPage() {
     data_ = kSettingsPageHtml;
+
+    // Replace version placeholder with actual version from version.h
+    const std::string version_placeholder = "1.0.0</span>";
+    const std::string version_replacement = std::string(ORBFOX_VERSION_STRING) + "</span>";
+    size_t pos = data_.find(version_placeholder);
+    if (pos != std::string::npos) {
+        data_.replace(pos, version_placeholder.length(), version_replacement);
+    }
+
     mime_type_ = "text/html";
     status_code_ = 200;
 }
@@ -750,7 +777,7 @@ void OrbfoxResourceHandler::HandleNotFound(const std::string& path) {
        << "<style>body{background:#1c1c1e;color:#e5e5e5;font-family:-apple-system,sans-serif;"
        << "display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}"
        << "h1{color:#ff6b6b;}</style></head><body>"
-       << "<div><h1>404 Not Found</h1><p>The page <code>" << path << "</code> was not found.</p></div>"
+       << "<div><h1>404 Not Found</h1><p>The page <code>" << orbfox::utils::EscapeHtml(path) << "</code> was not found.</p></div>"
        << "</body></html>";
     data_ = ss.str();
     mime_type_ = "text/html";

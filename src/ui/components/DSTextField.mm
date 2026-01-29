@@ -162,6 +162,22 @@
     _searchIcon.imageScaling = NSImageScaleProportionallyUpOrDown;
     [self addSubview:_searchIcon];
 
+    // Clear button (initially hidden)
+    CGFloat clearButtonSize = iconSize;
+    _clearButton = [[NSButton alloc] initWithFrame:NSMakeRect(
+        self.bounds.size.width - padding - clearButtonSize,
+        (self.bounds.size.height - clearButtonSize) / 2,
+        clearButtonSize, clearButtonSize)];
+    _clearButton.bezelStyle = NSBezelStyleInline;
+    _clearButton.bordered = NO;
+    _clearButton.image = [NSImage imageWithSystemSymbolName:@"xmark.circle.fill"
+                                   accessibilityDescription:@"Clear"];
+    _clearButton.contentTintColor = [DSColors textSecondary];
+    _clearButton.target = self;
+    _clearButton.action = @selector(clearText:);
+    _clearButton.hidden = YES;
+    [self addSubview:_clearButton];
+
     // Adjust text field position
     CGFloat textX = padding + iconSize + padding;
     NSRect textFrame = self.textField.frame;
@@ -172,7 +188,38 @@
 
 - (void)setShowsClearButton:(BOOL)showsClearButton {
     _showsClearButton = showsClearButton;
-    // TODO: Implement clear button
+    [self updateClearButtonVisibility];
+}
+
+- (void)updateClearButtonVisibility {
+    BOOL shouldShow = _showsClearButton && self.textField.stringValue.length > 0;
+    _clearButton.hidden = !shouldShow;
+
+    // Adjust text field width when clear button is visible
+    CGFloat iconSize = [DSLayout iconSizeSmall];
+    CGFloat padding = [DSSpacing sm];
+    CGFloat textX = padding + iconSize + padding;
+    CGFloat rightPadding = shouldShow ? (padding + iconSize + padding) : padding;
+
+    NSRect textFrame = self.textField.frame;
+    textFrame.origin.x = textX;
+    textFrame.size.width = self.bounds.size.width - textX - rightPadding;
+    self.textField.frame = textFrame;
+}
+
+- (void)clearText:(id)sender {
+    (void)sender;
+    self.textField.stringValue = @"";
+    [self updateClearButtonVisibility];
+
+    if (self.onTextChange) {
+        self.onTextChange(@"");
+    }
+}
+
+- (void)controlTextDidChange:(NSNotification*)notification {
+    [super controlTextDidChange:notification];
+    [self updateClearButtonVisibility];
 }
 
 @end

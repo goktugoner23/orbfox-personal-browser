@@ -12,240 +12,18 @@
 #include "bookmark_storage.h"
 #include "download_manager.h"
 #include "settings_storage.h"
+#include "DevToolsClient.h"
 
-// Extern functions to access global storage
-extern HistoryStorage* GetHistoryStorage();
-extern BookmarkStorage* GetBookmarkStorage();
-
+// Layout constants
+static const CGFloat kTitleBarHeight = 28.0;
 static const CGFloat kSidebarDefaultWidth = 280.0;
-static const CGFloat kSidebarMinWidth = 200.0;
-static const CGFloat kSidebarMaxWidth = 450.0;
+static const CGFloat kSidebarCollapsedWidth = 44.0;
 static const CGFloat kToolbarHeight = 44.0;
 static const CGFloat kResizeHandleWidth = 6.0;
-
-// ============================================================================
-// RESIZE HANDLE VIEW
-// Draggable divider for resizing sidebar
-// ============================================================================
-
-@interface ResizeHandleView : NSView
-@property (nonatomic, weak) MainWindowController* windowController;
-@property (nonatomic, assign) CGFloat initialMouseX;
-@property (nonatomic, assign) CGFloat initialSidebarWidth;
-@property (nonatomic, assign) BOOL isDragging;
-@end
-
-@implementation ResizeHandleView {
-    NSTrackingArea* _trackingArea;
-}
-
-- (instancetype)initWithFrame:(NSRect)frame {
-    self = [super initWithFrame:frame];
-    if (self) {
-        self.wantsLayer = YES;
-        self.layer.backgroundColor = [NSColor clearColor].CGColor;
-        _isDragging = NO;
-    }
-    return self;
-}
-
-- (void)updateTrackingAreas {
-    [super updateTrackingAreas];
-    if (_trackingArea) {
-        [self removeTrackingArea:_trackingArea];
-    }
-    _trackingArea = [[NSTrackingArea alloc]
-        initWithRect:self.bounds
-             options:(NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow | NSTrackingCursorUpdate)
-               owner:self
-            userInfo:nil];
-    [self addTrackingArea:_trackingArea];
-}
-
-- (void)cursorUpdate:(NSEvent*)event {
-    (void)event;
-    [[NSCursor resizeLeftRightCursor] set];
-}
-
-- (void)mouseEntered:(NSEvent*)event {
-    (void)event;
-    [[NSCursor resizeLeftRightCursor] set];
-    self.layer.backgroundColor = [DSColors surfaceHover].CGColor;
-}
-
-- (void)mouseExited:(NSEvent*)event {
-    (void)event;
-    if (!_isDragging) {
-        [[NSCursor arrowCursor] set];
-        self.layer.backgroundColor = [NSColor clearColor].CGColor;
-    }
-}
-
-- (void)mouseDown:(NSEvent*)event {
-    _isDragging = YES;
-    _initialMouseX = [self.window convertPointToScreen:event.locationInWindow].x;
-    _initialSidebarWidth = _windowController.sidebarView.frame.size.width;
-    self.layer.backgroundColor = [DSColors accent].CGColor;
-}
-
-- (void)mouseDragged:(NSEvent*)event {
-    if (!_isDragging) return;
-
-    CGFloat currentX = [self.window convertPointToScreen:event.locationInWindow].x;
-    CGFloat deltaX = currentX - _initialMouseX;
-    CGFloat newWidth = _initialSidebarWidth + deltaX;
-
-    // Clamp to min/max
-    newWidth = MAX(kSidebarMinWidth, MIN(kSidebarMaxWidth, newWidth));
-
-    [_windowController resizeSidebarToWidth:newWidth];
-}
-
-- (void)mouseUp:(NSEvent*)event {
-    (void)event;
-    _isDragging = NO;
-    self.layer.backgroundColor = [NSColor clearColor].CGColor;
-    [[NSCursor arrowCursor] set];
-}
-
-- (void)drawRect:(NSRect)dirtyRect {
-    (void)dirtyRect;
-    // Draw a subtle line in the center
-    [[DSColors border] setFill];
-    NSRect lineRect = NSMakeRect(self.bounds.size.width / 2 - 0.5, 0, 1, self.bounds.size.height);
-    NSRectFill(lineRect);
-}
-
-@end
-
-// ============================================================================
-// DEVTOOLS CLIENT
-// Minimal CefClient for DevTools that injects CSS to make room for close button
-// ============================================================================
-
-#include "include/cef_client.h"
-
-// Forward declaration
-@class MainWindowController;
-
-class DevToolsClient : public CefClient,
-                       public CefLifeSpanHandler,
-                       public CefLoadHandler {
-public:
-    DevToolsClient() = default;
-
-    CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
-    CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
-
-    void OnAfterCreated(CefRefPtr<CefBrowser> browser) override {
-        browser_ = browser;
-    }
-
-    bool DoClose(CefRefPtr<CefBrowser> browser) override {
-        (void)browser;
-        return false;
-    }
-
-    void OnBeforeClose(CefRefPtr<CefBrowser> browser) override {
-        (void)browser;
-        browser_ = nullptr;
-    }
-
-    void OnLoadEnd(CefRefPtr<CefBrowser> browser,
-                   CefRefPtr<CefFrame> frame,
-                   int httpStatusCode) override {
-        (void)httpStatusCode;
-        if (!frame->IsMain()) return;
-
-        // No JavaScript injection - we'll use a native header bar instead
-        (void)browser;
-        (void)frame;
-    }
-
-    CefRefPtr<CefBrowser> GetBrowser() const { return browser_; }
-
-private:
-    CefRefPtr<CefBrowser> browser_;
-
-    IMPLEMENT_REFCOUNTING(DevToolsClient);
-    DISALLOW_COPY_AND_ASSIGN(DevToolsClient);
-};
-
-// ============================================================================
-// DEVTOOLS DIVIDER VIEW
-// Draggable divider between browser content and DevTools panel
-// ============================================================================
-
 static const CGFloat kDevToolsDividerWidth = 5.0;
 static const CGFloat kDevToolsDefaultWidth = 420.0;
 static const CGFloat kDevToolsMinWidth = 280.0;
 static const CGFloat kDevToolsMaxWidth = 800.0;
-
-@interface DevToolsDividerView : NSView
-@property (nonatomic, weak) MainWindowController* windowController;
-@end
-
-@implementation DevToolsDividerView {
-    NSTrackingArea* _trackingArea;
-    BOOL _isDragging;
-}
-
-- (void)updateTrackingAreas {
-    [super updateTrackingAreas];
-    if (_trackingArea) [self removeTrackingArea:_trackingArea];
-    _trackingArea = [[NSTrackingArea alloc] initWithRect:self.bounds
-                                                options:NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow
-                                                  owner:self
-                                               userInfo:nil];
-    [self addTrackingArea:_trackingArea];
-}
-
-- (void)drawRect:(NSRect)dirtyRect {
-    (void)dirtyRect;
-    // Subtle divider line
-    [[NSColor colorWithWhite:0.0 alpha:0.3] setFill];
-    NSRectFill(self.bounds);
-
-    // Grip indicator: three small dots vertically centered
-    NSColor* gripColor = [NSColor colorWithWhite:1.0 alpha:0.15];
-    [gripColor setFill];
-    CGFloat cx = NSMidX(self.bounds);
-    CGFloat cy = NSMidY(self.bounds);
-    CGFloat dotSize = 2.0;
-    CGFloat dotSpacing = 5.0;
-    for (int i = -1; i <= 1; i++) {
-        NSRect dot = NSMakeRect(cx - dotSize / 2, cy + i * dotSpacing - dotSize / 2, dotSize, dotSize);
-        [[NSBezierPath bezierPathWithOvalInRect:dot] fill];
-    }
-}
-
-- (void)mouseEntered:(NSEvent*)event {
-    (void)event;
-    [[NSCursor resizeLeftRightCursor] push];
-}
-
-- (void)mouseExited:(NSEvent*)event {
-    (void)event;
-    if (!_isDragging) [NSCursor pop];
-}
-
-- (void)mouseDown:(NSEvent*)event {
-    (void)event;
-    _isDragging = YES;
-}
-
-- (void)mouseUp:(NSEvent*)event {
-    (void)event;
-    _isDragging = NO;
-    [NSCursor pop];
-}
-
-- (BOOL)acceptsFirstMouse:(NSEvent*)event {
-    (void)event;
-    return YES;
-}
-
-@end
 
 
 @interface MainWindowController ()
@@ -275,9 +53,9 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
 @implementation DevToolsDividerView (Dragging)
 
 - (void)mouseDragged:(NSEvent*)event {
-    if (!_windowController) return;
+    if (!self.windowController) return;
 
-    NSView* contentView = _windowController.window.contentView;
+    NSView* contentView = self.windowController.window.contentView;
     NSPoint loc = [contentView convertPoint:event.locationInWindow fromView:nil];
 
     // DevTools width = distance from right edge of content view to mouse
@@ -285,13 +63,14 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
     CGFloat newWidth = rightEdge - loc.x;
     newWidth = MAX(kDevToolsMinWidth, MIN(kDevToolsMaxWidth, newWidth));
 
-    [_windowController resizeDevToolsToWidth:newWidth];
+    [self.windowController resizeDevToolsToWidth:newWidth];
 }
 
 @end
 
 @implementation MainWindowController {
     CefRefPtr<DevToolsClient> _devToolsClient;
+    id _eventMonitor;
 }
 
 - (instancetype)initWithTabManager:(TabManager*)tabManager {
@@ -336,7 +115,7 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
     NSRect bounds = contentView.bounds;
 
     // Account for title bar
-    CGFloat titleBarHeight = 28;
+    CGFloat titleBarHeight = kTitleBarHeight;
     CGFloat contentHeight = bounds.size.height - titleBarHeight;
 
     // Sidebar - extends to bottom of window
@@ -604,6 +383,15 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
         });
     });
 
+    client->SetFocusUrlBarCallback([weakSelf]() {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MainWindowController* strongSelf = weakSelf;
+            if (strongSelf && strongSelf->_toolbarView) {
+                [strongSelf->_toolbarView focusURLField];
+            }
+        });
+    });
+
     // Handle favicon changes
     client->SetFaviconChangeCallback([weakSelf, tabId](const std::string& url, const std::vector<unsigned char>& png_data) {
         MainWindowController* strongSelf = weakSelf;
@@ -723,20 +511,13 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
 }
 
 - (void)showBrowserForTab:(Tab*)tab {
-    // Hide all browser views
-    for (NSView* subview in _browserContainer.subviews) {
-        subview.hidden = YES;
-    }
-
-    // Show the active tab's browser view
+    // Delegate to showBrowserWithRef: to avoid code duplication
     if (tab && tab->browser) {
-        CefRefPtr<CefBrowserHost> host = tab->browser->GetHost();
-        if (host) {
-            NSView* browserView = (__bridge NSView*)host->GetWindowHandle();
-            if (browserView) {
-                browserView.hidden = NO;
-                browserView.frame = _browserContainer.bounds;
-            }
+        [self showBrowserWithRef:tab->browser];
+    } else {
+        // Just hide all views when no valid browser
+        for (NSView* subview in _browserContainer.subviews) {
+            subview.hidden = YES;
         }
     }
 }
@@ -892,7 +673,7 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
     _devToolsWidth = kDevToolsDefaultWidth;
 
     NSView* contentView = self.window.contentView;
-    CGFloat titleBarHeight = 28;
+    CGFloat titleBarHeight = kTitleBarHeight;
     CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
     CGFloat sidebarWidth = _sidebarView.frame.size.width;
 
@@ -923,9 +704,6 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
     // Immediately start looking for the DevTools window to hide it before it flashes
     [self findAndHideDevToolsWindow];
 }
-
-// DevTools toolbar height in pixels
-static const CGFloat kDevToolsToolbarHeight = 28.0;
 
 - (void)findAndHideDevToolsWindow {
     // Immediately look for the DevTools window to hide it before it flashes on screen
@@ -958,8 +736,12 @@ static const CGFloat kDevToolsToolbarHeight = 28.0;
         }
     }
 
+    // Static retry counter for finding DevTools window
+    static int findRetryCount = 0;
+
     if (devToolsWindow) {
-        // Found it! Hide immediately by moving off-screen
+        // Found it! Reset retry count and hide immediately
+        findRetryCount = 0;
         NSRect screenFrame = self.window.screen.frame;
         [devToolsWindow setFrame:NSMakeRect(screenFrame.size.width + 1000, 0, 400, 400) display:NO];
 
@@ -969,7 +751,6 @@ static const CGFloat kDevToolsToolbarHeight = 28.0;
         });
     } else {
         // Not found yet, retry on next run loop
-        static int findRetryCount = 0;
         findRetryCount++;
         if (findRetryCount < 30) {  // Try for up to ~0.5 seconds
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.016 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -983,10 +764,6 @@ static const CGFloat kDevToolsToolbarHeight = 28.0;
         }
         return;
     }
-
-    // Reset retry count on success
-    static int findRetryCount = 0;
-    findRetryCount = 0;
 }
 
 - (void)styleDevToolsWindowAndAnimate:(NSWindow*)devToolsWindow {
@@ -1003,7 +780,7 @@ static const CGFloat kDevToolsToolbarHeight = 28.0;
     _devToolsWindow.titlebarAppearsTransparent = YES;
     _devToolsWindow.titleVisibility = NSWindowTitleHidden;
     _devToolsWindow.styleMask = NSWindowStyleMaskBorderless | NSWindowStyleMaskResizable;
-    _devToolsWindow.backgroundColor = [NSColor colorWithRed:0.141 green:0.141 blue:0.157 alpha:1.0];  // #242428
+    _devToolsWindow.backgroundColor = [DSColors devToolsBackground];
     _devToolsWindow.hasShadow = NO;
     _devToolsWindow.movable = NO;
     _devToolsWindow.level = NSNormalWindowLevel;
@@ -1012,20 +789,19 @@ static const CGFloat kDevToolsToolbarHeight = 28.0;
     [self.window addChildWindow:_devToolsWindow ordered:NSWindowAbove];
 
     // Find the CEF browser view inside the DevTools window and resize it to make room for header
-    static const CGFloat kHeaderHeight = 28.0;
     NSView* devToolsContentView = _devToolsWindow.contentView;
     CGFloat windowHeight = devToolsContentView.bounds.size.height;
 
     // Create a header bar at the top with close button
-    NSView* headerBar = [[NSView alloc] initWithFrame:NSMakeRect(0, windowHeight - kHeaderHeight, _devToolsWidth, kHeaderHeight)];
+    NSView* headerBar = [[NSView alloc] initWithFrame:NSMakeRect(0, windowHeight - kTitleBarHeight, _devToolsWidth, kTitleBarHeight)];
     headerBar.wantsLayer = YES;
-    headerBar.layer.backgroundColor = [NSColor colorWithRed:0.141 green:0.141 blue:0.157 alpha:1.0].CGColor;  // Match DevTools bg
+    headerBar.layer.backgroundColor = [DSColors devToolsBackground].CGColor;
     headerBar.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
 
     // Add a subtle bottom border to header
     NSView* headerBorder = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, _devToolsWidth, 1)];
     headerBorder.wantsLayer = YES;
-    headerBorder.layer.backgroundColor = [NSColor colorWithWhite:0.0 alpha:0.3].CGColor;
+    headerBorder.layer.backgroundColor = [DSColors divider].CGColor;
     headerBorder.autoresizingMask = NSViewWidthSizable;
     [headerBar addSubview:headerBorder];
 
@@ -1058,7 +834,7 @@ static const CGFloat kDevToolsToolbarHeight = 28.0;
 
     // Position close button on right side of header
     CGFloat buttonSize = 24.0;
-    _devToolsCloseButton.frame = NSMakeRect(_devToolsWidth - buttonSize - 22, (kHeaderHeight - buttonSize) / 2, buttonSize, buttonSize);
+    _devToolsCloseButton.frame = NSMakeRect(_devToolsWidth - buttonSize - 22, (kTitleBarHeight - buttonSize) / 2, buttonSize, buttonSize);
     _devToolsCloseButton.autoresizingMask = NSViewMinXMargin;
     [_devToolsCloseButton removeFromSuperview];
     [headerBar addSubview:_devToolsCloseButton];
@@ -1067,7 +843,7 @@ static const CGFloat kDevToolsToolbarHeight = 28.0;
     NSTextField* titleLabel = [NSTextField labelWithString:@"DevTools"];
     titleLabel.font = [NSFont systemFontOfSize:12 weight:NSFontWeightMedium];
     titleLabel.textColor = [NSColor colorWithRed:0.6 green:0.6 blue:0.63 alpha:1.0];
-    titleLabel.frame = NSMakeRect(10, (kHeaderHeight - 16) / 2, 80, 16);
+    titleLabel.frame = NSMakeRect(10, (kTitleBarHeight - 16) / 2, 80, 16);
     [headerBar addSubview:titleLabel];
 
     // Add the header bar to the DevTools window
@@ -1077,7 +853,7 @@ static const CGFloat kDevToolsToolbarHeight = 28.0;
     for (NSView* subview in devToolsContentView.subviews) {
         if (subview != headerBar && subview != _devToolsCloseButton) {
             NSRect frame = subview.frame;
-            frame.size.height = windowHeight - kHeaderHeight;
+            frame.size.height = windowHeight - kTitleBarHeight;
             frame.origin.y = 0;
             subview.frame = frame;
             subview.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
@@ -1086,7 +862,7 @@ static const CGFloat kDevToolsToolbarHeight = 28.0;
 
     // Calculate positions
     NSView* contentView = self.window.contentView;
-    CGFloat titleBarHeight = 28;
+    CGFloat titleBarHeight = kTitleBarHeight;
     CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
     CGFloat sidebarWidth = _sidebarView.frame.size.width;
     CGFloat availableWidth = contentView.bounds.size.width - sidebarWidth;
@@ -1158,7 +934,7 @@ static const CGFloat kDevToolsToolbarHeight = 28.0;
     if (!_devToolsWindow || !_devToolsOpen) return;
 
     NSView* contentView = self.window.contentView;
-    CGFloat titleBarHeight = 28;
+    CGFloat titleBarHeight = kTitleBarHeight;
     CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
     CGFloat sidebarWidth = _sidebarView.frame.size.width;
     CGFloat availableWidth = contentView.bounds.size.width - sidebarWidth;
@@ -1187,7 +963,7 @@ static const CGFloat kDevToolsToolbarHeight = 28.0;
     _devToolsAnimating = YES;
 
     NSView* contentView = self.window.contentView;
-    CGFloat titleBarHeight = 28;
+    CGFloat titleBarHeight = kTitleBarHeight;
     CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
     CGFloat sidebarWidth = _sidebarView.frame.size.width;
     CGFloat fullWidth = contentView.bounds.size.width - sidebarWidth;
@@ -1254,7 +1030,7 @@ static const CGFloat kDevToolsToolbarHeight = 28.0;
     _devToolsWidth = newWidth;
 
     NSView* contentView = self.window.contentView;
-    CGFloat titleBarHeight = 28;
+    CGFloat titleBarHeight = kTitleBarHeight;
     CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
     CGFloat sidebarWidth = _sidebarView.frame.size.width;
     CGFloat browserWidth = contentView.bounds.size.width - sidebarWidth - newWidth - kDevToolsDividerWidth;
@@ -1336,8 +1112,6 @@ static const CGFloat kDevToolsToolbarHeight = 28.0;
 
 #pragma mark - Sidebar
 
-static const CGFloat kIconStripWidth = 44.0;
-
 - (void)resizeSidebarToWidth:(CGFloat)newWidth {
     // Ensure we're not collapsed
     if (_sidebarView.isCollapsed) return;
@@ -1345,7 +1119,7 @@ static const CGFloat kIconStripWidth = 44.0;
     _currentSidebarWidth = newWidth;
 
     NSView* contentView = self.window.contentView;
-    CGFloat titleBarHeight = 28;
+    CGFloat titleBarHeight = kTitleBarHeight;
 
     // Update sidebar frame
     NSRect sidebarFrame = _sidebarView.frame;
@@ -1393,9 +1167,9 @@ static const CGFloat kIconStripWidth = 44.0;
 
 - (void)toggleSidebarCollapse:(BOOL)collapse {
     NSView* contentView = self.window.contentView;
-    CGFloat titleBarHeight = 28;
+    CGFloat titleBarHeight = kTitleBarHeight;
 
-    CGFloat newSidebarWidth = collapse ? kIconStripWidth : _currentSidebarWidth;
+    CGFloat newSidebarWidth = collapse ? kSidebarCollapsedWidth : _currentSidebarWidth;
 
     [NSAnimationContext runAnimationGroup:^(NSAnimationContext* context) {
         context.duration = 0.2;
@@ -1689,7 +1463,7 @@ static const CGFloat kIconStripWidth = 44.0;
 
 - (void)setupKeyboardShortcuts {
     // Monitor for keyboard events
-    [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* event) {
+    _eventMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* event) {
         if (event.modifierFlags & NSEventModifierFlagCommand) {
             NSString* chars = event.charactersIgnoringModifiers;
             BOOL hasShift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
@@ -1753,6 +1527,13 @@ static const CGFloat kIconStripWidth = 44.0;
     }];
 }
 
+- (void)dealloc {
+    if (_eventMonitor) {
+        [NSEvent removeMonitor:_eventMonitor];
+        _eventMonitor = nil;
+    }
+}
+
 #pragma mark - NSWindowDelegate
 
 - (BOOL)windowShouldClose:(NSWindow*)sender {
@@ -1779,7 +1560,7 @@ static const CGFloat kIconStripWidth = 44.0;
     (void)notification;
     if (_devToolsOpen && !_devToolsAnimating) {
         NSView* contentView = self.window.contentView;
-        CGFloat titleBarHeight = 28;
+        CGFloat titleBarHeight = kTitleBarHeight;
         CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
         CGFloat sidebarWidth = _sidebarView.frame.size.width;
         CGFloat availableWidth = contentView.bounds.size.width - sidebarWidth;

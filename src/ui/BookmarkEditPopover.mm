@@ -3,8 +3,6 @@
 #import "components/Components.h"
 #include "bookmark_storage.h"
 
-extern BookmarkStorage* GetBookmarkStorage();
-
 @implementation BookmarkEditPopoverController {
     NSPopover* _popover;
     NSTextField* _nameField;

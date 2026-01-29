@@ -79,6 +79,20 @@
     return [NSColor colorWithWhite:1.0 alpha:0.08];
 }
 
+// Dividers
++ (NSColor*)divider {
+    return [NSColor colorWithWhite:0.0 alpha:0.3];
+}
+
++ (NSColor*)dividerGrip {
+    return [NSColor colorWithWhite:1.0 alpha:0.15];
+}
+
+// Special Panels
++ (NSColor*)devToolsBackground {
+    return [NSColor colorWithRed:0.141 green:0.141 blue:0.157 alpha:1.0];  // #242428
+}
+
 @end
 
 // ============================================================================

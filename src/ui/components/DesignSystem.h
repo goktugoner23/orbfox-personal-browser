@@ -39,6 +39,13 @@
 + (NSColor*)border;               // Default border
 + (NSColor*)borderSubtle;         // Subtle border
 
+// Dividers
++ (NSColor*)divider;              // Divider line background
++ (NSColor*)dividerGrip;          // Divider grip indicator
+
+// Special Panels
++ (NSColor*)devToolsBackground;   // DevTools panel background
+
 @end
 
 #pragma mark - Typography

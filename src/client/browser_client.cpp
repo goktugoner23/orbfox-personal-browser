@@ -2,6 +2,7 @@
 #include "download_manager.h"
 #include "history_storage.h"
 #include "settings_storage.h"
+#include "utils/filesystem_utils.h"
 
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
@@ -10,9 +11,6 @@
 
 #include <sstream>
 #include <filesystem>
-
-// Extern function to access global history storage
-extern HistoryStorage* GetHistoryStorage();
 
 // Callback for favicon download
 class FaviconDownloadCallback : public CefDownloadImageCallback {
@@ -46,9 +44,12 @@ private:
     Callback callback_;
 
     IMPLEMENT_REFCOUNTING(FaviconDownloadCallback);
+    DISALLOW_COPY_AND_ASSIGN(FaviconDownloadCallback);
 };
 
-BrowserClient::BrowserClient() = default;
+BrowserClient::BrowserClient()
+    : tracking_protection_enabled_(SettingsStorage::GetInstance().Get().tracking_protection) {
+}
 
 // CefLifeSpanHandler methods
 
@@ -152,7 +153,10 @@ void BrowserClient::OnLoadError(CefRefPtr<CefBrowser> browser,
         return;
     }
 
-    // Show error page
+    // Show error page - escape user-controlled content to prevent XSS
+    std::string escaped_url = orbfox::utils::EscapeHtml(failedUrl.ToString());
+    std::string escaped_error = orbfox::utils::EscapeHtml(errorText.ToString());
+
     std::ostringstream ss;
     ss << "<html><head><title>Error</title>"
        << "<style>"
@@ -163,8 +167,8 @@ void BrowserClient::OnLoadError(CefRefPtr<CefBrowser> browser,
        << "code { background: #333; padding: 2px 6px; border-radius: 3px; }"
        << "</style></head><body>"
        << "<h1>Failed to load page</h1>"
-       << "<p>URL: <code>" << failedUrl.ToString() << "</code></p>"
-       << "<p>Error: " << errorText.ToString() << " (" << errorCode << ")</p>"
+       << "<p>URL: <code>" << escaped_url << "</code></p>"
+       << "<p>Error: " << escaped_error << " (" << errorCode << ")</p>"
        << "</body></html>";
 
     frame->LoadURL("data:text/html;charset=utf-8," + ss.str());
@@ -371,6 +375,8 @@ CefRefPtr<CefResourceRequestHandler> BrowserClient::GetResourceRequestHandler(
     bool is_download,
     const CefString& request_initiator,
     bool& disable_default_handling) {
+    // Note: This method can be called on any thread (UI thread for navigations,
+    // IO thread for sub-resources). No thread assertion here intentionally.
     // Return this to handle resource requests
     return this;
 }
@@ -380,9 +386,11 @@ CefResourceRequestHandler::ReturnValue BrowserClient::OnBeforeResourceLoad(
     CefRefPtr<CefFrame> frame,
     CefRefPtr<CefRequest> request,
     CefRefPtr<CefCallback> callback) {
+    CEF_REQUIRE_IO_THREAD();
 
-    // Check if tracking protection is enabled in settings
-    if (!SettingsStorage::GetInstance().Get().tracking_protection) {
+    // Use cached tracking protection setting for thread-safe IO thread access
+    // (SettingsStorage is not thread-safe and should only be accessed from UI thread)
+    if (!tracking_protection_enabled_.load()) {
         return RV_CONTINUE;  // Tracking protection disabled, allow all
     }
 
@@ -391,9 +399,9 @@ CefResourceRequestHandler::ReturnValue BrowserClient::OnBeforeResourceLoad(
 
     if (IsDomainBlocked(domain, GetBlockedDomains())) {
         blocked_count_++;
-        if (on_blocked_count_) {
-            on_blocked_count_(blocked_count_.load());
-        }
+        // Note: blocked_count_ is atomic, so it's thread-safe to increment from IO thread.
+        // The UI can query GetBlockedCount() when needed.
+        // We don't call on_blocked_count_ callback here since it expects to run on UI thread.
         return RV_CANCEL;  // Block the request
     }
 
@@ -517,6 +525,7 @@ bool BrowserClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
                                    const CefKeyEvent& event,
                                    CefEventHandle os_event,
                                    bool* is_keyboard_shortcut) {
+    CEF_REQUIRE_UI_THREAD();
     // Handle keyboard shortcuts before the page sees them
     if (event.type == KEYEVENT_RAWKEYDOWN) {
         bool is_cmd = (event.modifiers & EVENTFLAG_COMMAND_DOWN) != 0;
@@ -530,9 +539,11 @@ bool BrowserClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
                     return true;
 
                 case 'L':  // Cmd+L: Focus URL bar
-                    // TODO: Signal to focus URL bar
+                    if (on_focus_url_bar_) {
+                        on_focus_url_bar_();
+                    }
                     *is_keyboard_shortcut = true;
-                    return false;
+                    return true;
 
                 case '[':  // Cmd+[: Back (macOS)
                     if (browser->CanGoBack()) {
@@ -571,13 +582,7 @@ bool BrowserClient::OnBeforeDownload(CefRefPtr<CefBrowser> browser,
     }
 
     // Fallback: direct download to ~/Downloads
-    std::string downloads_path;
-    const char* home = getenv("HOME");
-    if (home) {
-        downloads_path = std::string(home) + "/Downloads/" + suggested_name.ToString();
-    } else {
-        downloads_path = "/tmp/" + suggested_name.ToString();
-    }
+    std::string downloads_path = orbfox::utils::GetHomeDirectory() + "/Downloads/" + suggested_name.ToString();
 
     callback->Continue(downloads_path, false);
     return true;
@@ -686,6 +691,7 @@ void BrowserClient::OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
         should_save = true;
     } else if (download_item->IsInterrupted()) {
         item.state = DownloadState::Interrupted;
+        download_callbacks_.erase(download_id);  // Clean up callback for interrupted downloads
         should_save = true;
     } else if (download_item->IsPaused()) {
         item.state = DownloadState::Paused;

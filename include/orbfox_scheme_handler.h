@@ -1,5 +1,4 @@
-#ifndef ORBFOX_SCHEME_HANDLER_H_
-#define ORBFOX_SCHEME_HANDLER_H_
+#pragma once
 
 #include "include/cef_scheme.h"
 #include "include/cef_resource_handler.h"
@@ -56,5 +55,3 @@ private:
 
 // Register the orbfox:// scheme handler
 void RegisterOrbfoxSchemeHandler();
-
-#endif  // ORBFOX_SCHEME_HANDLER_H_
