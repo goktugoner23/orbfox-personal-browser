@@ -15,7 +15,7 @@
 // Layout constants
 static const CGFloat kIconStripWidth = 44.0;
 static const CGFloat kSidebarWidth = 280.0;
-static const CGFloat kWorkspaceHeight = 48.0;
+static const CGFloat kWorkspaceHeight = 72.0;  // Total height of workspace row (taller to avoid clipping tabs)
 static const CGFloat kNewTabButtonHeight = 44.0;
 
 // ============================================================================
@@ -385,7 +385,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
 
     // New Tab button at bottom - full width, icon on right
     _newTabButton = [DSButton buttonWithTitle:@"New Tab" icon:@"plus" variant:DSButtonVariantGhost];
-    _newTabButton.frame = NSMakeRect(padding, padding, width - padding * 2, 34);
+    _newTabButton.frame = NSMakeRect(padding, padding, width - padding * 3, 34);
     _newTabButton.imagePosition = NSImageTrailing;  // Icon on the right
     _newTabButton.autoresizingMask = NSViewMaxYMargin | NSViewWidthSizable;
     _newTabButton.target = self;
@@ -796,7 +796,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
 
         // Position tabs to align with plus button - offset down from center
         CGFloat containerHeight = _workspaceTabsContainer.bounds.size.height;
-        CGFloat tabY = (containerHeight - tabHeight) / 2;
+        CGFloat tabY = (containerHeight - tabHeight) / 2 - 18;
         tabContainer.frame = NSMakeRect(x, tabY, totalWidth, tabHeight);
 
         // Color dot
@@ -1276,7 +1276,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     // Use current sidebar width instead of constant
     CGFloat contentWidth = self.bounds.size.width - kIconStripWidth;
     CGFloat rowHeight = [DSLayout rowHeight];
-    CGFloat topPadding = [DSSpacing lg];  // Padding below workspace row
+    CGFloat topPadding = [DSSpacing sm];  // Small padding below workspace row
     CGFloat totalHeight = workspace->tabs.size() * rowHeight + topPadding;
     CGFloat minHeight = _tabScrollView.bounds.size.height;
 
