@@ -458,18 +458,23 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     client->SetOpenLinkCallback([weakSelf](const std::string& url, bool background) {
         MainWindowController* strongSelf = weakSelf;
         if (strongSelf) {
+            // Copy URL to avoid dangling reference - the original string is destroyed
+            // before dispatch_async block executes
+            std::string urlCopy = url;
             dispatch_async(dispatch_get_main_queue(), ^{
-                [strongSelf openLinkInNewTab:[NSString stringWithUTF8String:url.c_str()] background:background];
+                [strongSelf openLinkInNewTab:[NSString stringWithUTF8String:urlCopy.c_str()] background:background];
             });
         }
     });
 
     // Handle copy to clipboard from context menu
     client->SetCopyToClipboardCallback([](const std::string& text) {
+        // Copy text to avoid dangling reference
+        std::string textCopy = text;
         dispatch_async(dispatch_get_main_queue(), ^{
             NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
             [pasteboard clearContents];
-            [pasteboard setString:[NSString stringWithUTF8String:text.c_str()]
+            [pasteboard setString:[NSString stringWithUTF8String:textCopy.c_str()]
                           forType:NSPasteboardTypeString];
         });
     });

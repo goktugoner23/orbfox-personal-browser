@@ -19,6 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Back/Forward Navigation** - Fixed Cmd+Shift accidentally triggering back navigation
   - Now uses native macOS key codes to correctly identify bracket keys
   - Back/Forward shortcuts require Cmd without Shift modifier
+- **Context Menu Link Actions** - Fixed "Open Link in New Tab", "Open in Background Tab", and "Copy Link Address"
+  - Fixed dangling reference bug where URL was captured by reference in async dispatch block
+  - URL now properly copied before async dispatch to preserve value
 
 ### Added
 - **Tab Drag & Drop Reordering** - Drag tabs to reorder them within a workspace
