@@ -27,6 +27,7 @@
 // Callbacks
 @property (nonatomic, copy) void (^onClick)(void);
 @property (nonatomic, copy) void (^onDoubleClick)(void);
+@property (nonatomic, copy) void (^onMiddleClick)(void);  // Mouse button 3
 @property (nonatomic, copy) void (^onClose)(void);
 @property (nonatomic, copy) void (^onRightClick)(NSEvent* event);
 @property (nonatomic, copy) void (^onDragStarted)(void);

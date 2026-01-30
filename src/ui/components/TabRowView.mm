@@ -166,9 +166,17 @@ NSPasteboardType const TabRowPasteboardType = @"com.orbfox.tabrow";
 }
 
 - (void)otherMouseDown:(NSEvent*)event {
-    // Middle-click (button 3) closes the tab
+    // Middle-click (button 2) duplicates tab in background
     if (event.buttonNumber == 2) {
-        [self closeTab:nil];
+        [self duplicateTabInBackground:nil];
+    }
+}
+
+- (void)duplicateTabInBackground:(id)sender {
+    (void)sender;
+    Tab* tab = _sidebarView.windowController.tabManager->GetTabById(_tabId);
+    if (tab) {
+        [_sidebarView.windowController openUrlInBackgroundTab:[NSString stringWithUTF8String:tab->url.c_str()]];
     }
 }
 
@@ -301,7 +309,7 @@ NSPasteboardType const TabRowPasteboardType = @"com.orbfox.tabrow";
     (void)sender;
     Tab* tab = _sidebarView.windowController.tabManager->GetTabById(_tabId);
     if (tab) {
-        [_sidebarView.windowController createNewTab:[NSString stringWithUTF8String:tab->url.c_str()]];
+        [_sidebarView.windowController openUrlInNewTab:[NSString stringWithUTF8String:tab->url.c_str()]];
     }
 }
 

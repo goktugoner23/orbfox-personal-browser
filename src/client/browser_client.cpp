@@ -99,7 +99,6 @@ bool BrowserClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
     (void)popup_id;
     (void)frame;
     (void)target_frame_name;
-    (void)target_disposition;
     (void)user_gesture;
     (void)popup_features;
     (void)window_info;
@@ -109,12 +108,20 @@ bool BrowserClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
     (void)no_javascript_access;
     CEF_REQUIRE_UI_THREAD();
 
-    // Open popup as new tab
     if (!target_url.empty()) {
-        if (on_popup_request_) {
-            on_popup_request_(target_url.ToString());
+        std::string url = target_url.ToString();
+
+        // Check disposition to determine how to open the link
+        bool background = (target_disposition == CEF_WOD_NEW_BACKGROUND_TAB);
+
+        if (on_open_link_) {
+            // Use the open link callback which supports background tabs
+            on_open_link_(url, background);
+        } else if (on_popup_request_) {
+            // Fallback to popup request callback (always foreground)
+            on_popup_request_(url);
         } else {
-            // Fallback: load in current browser
+            // Final fallback: load in current browser
             browser->GetMainFrame()->LoadURL(target_url);
         }
     }
@@ -248,6 +255,69 @@ bool BrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
                                     bool user_gesture,
                                     bool is_redirect) {
     CEF_REQUIRE_UI_THREAD();
+
+    std::string url = request->GetURL().ToString();
+
+    // Handle bookmark page actions
+    if (url.find("orbfox://bookmarks/action/") == 0) {
+        std::string action = url.substr(26);  // After "orbfox://bookmarks/action/"
+
+        if (action == "add") {
+            // Trigger add bookmark dialog
+            if (on_bookmark_action_) {
+                on_bookmark_action_("add", "");
+            }
+            return true;  // Cancel navigation
+        } else if (action.find("open-new-tab?url=") == 0) {
+            // Open URL in new tab
+            std::string encoded_url = action.substr(17);  // After "open-new-tab?url="
+            // URL decode
+            std::string decoded_url;
+            for (size_t i = 0; i < encoded_url.length(); ++i) {
+                if (encoded_url[i] == '%' && i + 2 < encoded_url.length()) {
+                    int hex = std::stoi(encoded_url.substr(i + 1, 2), nullptr, 16);
+                    decoded_url += static_cast<char>(hex);
+                    i += 2;
+                } else if (encoded_url[i] == '+') {
+                    decoded_url += ' ';
+                } else {
+                    decoded_url += encoded_url[i];
+                }
+            }
+            if (on_open_link_) {
+                on_open_link_(decoded_url, false);
+            }
+            return true;  // Cancel navigation
+        } else if (action.find("open-background?url=") == 0) {
+            // Open URL in background tab
+            std::string encoded_url = action.substr(20);  // After "open-background?url="
+            // URL decode
+            std::string decoded_url;
+            for (size_t i = 0; i < encoded_url.length(); ++i) {
+                if (encoded_url[i] == '%' && i + 2 < encoded_url.length()) {
+                    int hex = std::stoi(encoded_url.substr(i + 1, 2), nullptr, 16);
+                    decoded_url += static_cast<char>(hex);
+                    i += 2;
+                } else if (encoded_url[i] == '+') {
+                    decoded_url += ' ';
+                } else {
+                    decoded_url += encoded_url[i];
+                }
+            }
+            if (on_open_link_) {
+                on_open_link_(decoded_url, true);
+            }
+            return true;  // Cancel navigation
+        } else if (action.find("edit?id=") == 0) {
+            // Edit bookmark
+            std::string id_str = action.substr(8);
+            if (on_bookmark_action_) {
+                on_bookmark_action_("edit", id_str);
+            }
+            return true;  // Cancel navigation
+        }
+        // delete action is handled by scheme handler, allow it to proceed
+    }
 
     // Reset blocked count on main frame navigation
     if (frame->IsMain()) {

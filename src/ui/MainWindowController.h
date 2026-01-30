@@ -22,12 +22,19 @@
 
 // Tab operations
 - (void)createNewTab:(NSString*)url;
+- (void)createBackgroundTab:(NSString*)url;
 - (void)closeTab:(int)tabId;
 - (void)closeCurrentTab;
 - (void)activateTab:(int)tabId;
 - (void)reopenClosedTab;
 - (void)openLinkInNewTab:(NSString*)url background:(BOOL)background;
 - (void)openSettingsInNewTab;
+
+// Reusable browser actions (for context menus, middle-click, etc.)
+- (void)openUrlInCurrentTab:(NSString*)url;
+- (void)openUrlInNewTab:(NSString*)url;
+- (void)openUrlInBackgroundTab:(NSString*)url;
+- (void)copyUrlToClipboard:(NSString*)url;
 
 // Navigation
 - (void)navigateToURL:(NSString*)url;

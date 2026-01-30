@@ -825,6 +825,69 @@ const char* kBookmarksPageHtml = R"HTML(
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
+
+        .add-bookmark-btn {
+            position: fixed;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2c2c2e;
+            color: #e5e5e5;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .add-bookmark-btn:hover {
+            background: #3a3a3c;
+        }
+
+        .add-bookmark-btn::before {
+            content: '+';
+            font-size: 16px;
+            font-weight: 400;
+        }
+
+        /* Context menu (hidden by default) */
+        .context-menu {
+            display: none;
+            position: fixed;
+            background: #2c2c2e;
+            border-radius: 8px;
+            padding: 4px 0;
+            min-width: 180px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+            z-index: 1000;
+        }
+
+        .context-menu.visible {
+            display: block;
+        }
+
+        .context-menu-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #e5e5e5;
+        }
+
+        .context-menu-item:hover {
+            background: #48484a;
+        }
+
+        .context-menu-separator {
+            height: 1px;
+            background: #48484a;
+            margin: 4px 0;
+        }
     </style>
 </head>
 <body>
@@ -836,6 +899,19 @@ const char* kBookmarksPageHtml = R"HTML(
                 <p>Press ⌘+D to bookmark the current page</p>
             </div>
         </div>
+    </div>
+
+    <button class="add-bookmark-btn" onclick="addBookmark()">Bookmark</button>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu">
+        <div class="context-menu-item" data-action="open">Open</div>
+        <div class="context-menu-item" data-action="open-new-tab">Open in New Tab</div>
+        <div class="context-menu-item" data-action="open-background">Open in Background Tab</div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item" data-action="edit">Edit Bookmark...</div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item" data-action="delete">Delete</div>
     </div>
 
     <script>
@@ -940,7 +1016,7 @@ const char* kBookmarksPageHtml = R"HTML(
             const title = bm.title || domain;
 
             return `
-                <a href="${escapeHtml(bm.url)}" class="bookmark-card">
+                <a href="${escapeHtml(bm.url)}" class="bookmark-card" data-id="${bm.id}">
                     <div class="bookmark-icon">
                         ${faviconUrl
                             ? `<img src="${faviconUrl}" onerror="this.parentElement.innerHTML='${initial}'">`
@@ -958,6 +1034,60 @@ const char* kBookmarksPageHtml = R"HTML(
             div.textContent = text;
             return div.innerHTML;
         }
+
+        // Add Bookmark button
+        function addBookmark() {
+            // Navigate to special URL that triggers native add bookmark dialog
+            window.location.href = 'orbfox://bookmarks/action/add';
+        }
+
+        // Context menu handling
+        let contextMenuTarget = null;
+        const contextMenu = document.getElementById('context-menu');
+
+        document.addEventListener('contextmenu', (e) => {
+            const card = e.target.closest('.bookmark-card');
+            if (card) {
+                e.preventDefault();
+                contextMenuTarget = {
+                    url: card.href,
+                    id: card.dataset.id
+                };
+                contextMenu.style.left = e.clientX + 'px';
+                contextMenu.style.top = e.clientY + 'px';
+                contextMenu.classList.add('visible');
+            } else {
+                contextMenu.classList.remove('visible');
+            }
+        });
+
+        document.addEventListener('click', () => {
+            contextMenu.classList.remove('visible');
+        });
+
+        contextMenu.addEventListener('click', (e) => {
+            const action = e.target.dataset.action;
+            if (!action || !contextMenuTarget) return;
+
+            switch (action) {
+                case 'open':
+                    window.location.href = contextMenuTarget.url;
+                    break;
+                case 'open-new-tab':
+                    window.location.href = 'orbfox://bookmarks/action/open-new-tab?url=' + encodeURIComponent(contextMenuTarget.url);
+                    break;
+                case 'open-background':
+                    window.location.href = 'orbfox://bookmarks/action/open-background?url=' + encodeURIComponent(contextMenuTarget.url);
+                    break;
+                case 'edit':
+                    window.location.href = 'orbfox://bookmarks/action/edit?id=' + contextMenuTarget.id;
+                    break;
+                case 'delete':
+                    window.location.href = 'orbfox://bookmarks/action/delete?id=' + contextMenuTarget.id;
+                    break;
+            }
+            contextMenu.classList.remove('visible');
+        });
 
         loadBookmarks();
     </script>
@@ -1072,6 +1202,27 @@ bool OrbfoxResourceHandler::Open(CefRefPtr<CefRequest> request,
         HandleBookmarksPage();
     } else if (path == "bookmarks/api/list") {
         HandleBookmarksApiList();
+    } else if (path.find("bookmarks/action/delete") == 0) {
+        // Handle delete action
+        size_t id_pos = path.find("id=");
+        if (id_pos != std::string::npos) {
+            std::string id_str = path.substr(id_pos + 3);
+            int64_t bookmark_id = std::stoll(id_str);
+            BookmarkStorage* storage = GetBookmarkStorage();
+            if (storage) {
+                storage->DeleteBookmark(bookmark_id);
+            }
+        }
+        // Redirect back to bookmarks page
+        data_ = R"(<html><head><meta http-equiv="refresh" content="0;url=orbfox://bookmarks"></head></html>)";
+        mime_type_ = "text/html";
+        status_code_ = 200;
+    } else if (path.find("bookmarks/action/") == 0) {
+        // Other actions (add, edit, open-new-tab, open-background) handled via OnBeforeBrowse
+        // Return empty response - the navigation will be cancelled
+        data_ = "";
+        mime_type_ = "text/plain";
+        status_code_ = 204;
     } else {
         HandleNotFound(path);
     }

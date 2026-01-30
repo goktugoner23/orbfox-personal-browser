@@ -42,6 +42,7 @@ public:
 
     // Tab management
     Tab* CreateTab(const std::string& url = "");
+    Tab* CreateTabInBackground(const std::string& url = "");  // Creates tab without activating it
     void CloseTab(int tab_id);
     void SetActiveTab(int tab_id);
     Tab* GetActiveTab();

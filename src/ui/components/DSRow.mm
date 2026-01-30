@@ -290,6 +290,13 @@
     }
 }
 
+- (void)otherMouseDown:(NSEvent*)event {
+    // Button 2 is middle mouse button (button 0 = left, 1 = right, 2 = middle)
+    if (event.buttonNumber == 2 && _onMiddleClick) {
+        _onMiddleClick();
+    }
+}
+
 - (void)closeButtonClicked:(id)sender {
     (void)sender;
     if (_onClose) {

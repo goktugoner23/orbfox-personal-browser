@@ -301,9 +301,12 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
                     if (browserView) {
                         browserView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 
-                        // Show this browser if it's the active tab
+                        // Show this browser only if it's the active tab, otherwise hide it
                         if (strongSelf.tabManager->GetActiveTab() == tab) {
                             [strongSelf showBrowserForTab:tab];
+                        } else {
+                            // Hide the browser view for background tabs
+                            browserView.hidden = YES;
                         }
                     }
                 }
@@ -502,6 +505,25 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         });
     });
 
+    // Handle bookmark actions from orbfox://bookmarks page
+    client->SetBookmarkActionCallback([weakSelf](const std::string& action, const std::string& param) {
+        std::string actionCopy = action;
+        std::string paramCopy = param;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MainWindowController* strongSelf = weakSelf;
+            if (!strongSelf) return;
+
+            if (actionCopy == "add") {
+                // Show add bookmark dialog
+                [strongSelf bookmarkThisPage];
+            } else if (actionCopy == "edit") {
+                // Edit bookmark - show edit dialog with bookmark ID
+                int64_t bookmarkId = std::stoll(paramCopy);
+                [strongSelf.sidebarView showEditBookmarkDialog:bookmarkId];
+            }
+        });
+    });
+
     // Handle favicon changes
     client->SetFaviconChangeCallback([weakSelf, tabId](const std::string& url, const std::vector<unsigned char>& png_data) {
         MainWindowController* strongSelf = weakSelf;
@@ -639,6 +661,33 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     _tabManager->CreateTab(urlStr);
 }
 
+- (void)createBackgroundTab:(NSString*)url {
+    std::string urlStr = url ? [url UTF8String] : "";
+    _tabManager->CreateTabInBackground(urlStr);
+}
+
+#pragma mark - Reusable Browser Actions
+
+- (void)openUrlInCurrentTab:(NSString*)url {
+    if (!url || url.length == 0) return;
+    [self navigateToURL:url];
+}
+
+- (void)openUrlInNewTab:(NSString*)url {
+    [self createNewTab:url];
+}
+
+- (void)openUrlInBackgroundTab:(NSString*)url {
+    [self createBackgroundTab:url];
+}
+
+- (void)copyUrlToClipboard:(NSString*)url {
+    if (!url || url.length == 0) return;
+    NSPasteboard* pasteboard = [NSPasteboard generalPasteboard];
+    [pasteboard clearContents];
+    [pasteboard setString:url forType:NSPasteboardTypeString];
+}
+
 - (void)closeTab:(int)tabId {
     _tabManager->CloseTab(tabId);
 
@@ -669,16 +718,10 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 }
 
 - (void)openLinkInNewTab:(NSString*)url background:(BOOL)background {
-    // Remember current active tab if opening in background
-    Tab* previousActiveTab = background ? _tabManager->GetActiveTab() : nullptr;
-    int previousTabId = previousActiveTab ? previousActiveTab->id : -1;
-
-    // Create the new tab
-    [self createNewTab:url];
-
-    // If background, switch back to the previous tab
-    if (background && previousTabId >= 0) {
-        _tabManager->SetActiveTab(previousTabId);
+    if (background) {
+        [self openUrlInBackgroundTab:url];
+    } else {
+        [self openUrlInNewTab:url];
     }
 }
 

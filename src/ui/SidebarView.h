@@ -34,6 +34,7 @@ typedef NS_ENUM(NSInteger, SidebarPanel) {
 - (void)reloadBookmarks;
 - (void)reloadWorkspaceTabs;
 - (void)reloadHistory;
+- (void)showEditBookmarkDialog:(int64_t)bookmarkId;
 - (void)reloadDownloads;
 - (void)selectDownloadRow:(DownloadRowView*)row;
 - (void)restartDownload:(NSString*)url;

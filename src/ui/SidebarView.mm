@@ -1834,6 +1834,13 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         [NSMenu popUpContextMenu:menu withEvent:event forView:row];
     };
 
+    // Middle click = open in background tab
+    row.onMiddleClick = ^{
+        SidebarView* strongSelf = weakSelf;
+        if (!strongSelf) return;
+        [strongSelf.windowController openUrlInBackgroundTab:urlCopy];
+    };
+
     row.onClose = ^{
         SidebarView* strongSelf = weakSelf;
         if (!strongSelf) return;
@@ -1902,6 +1909,14 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     openNewTabItem.target = self;
     objc_setAssociatedObject(openNewTabItem, "url", url, OBJC_ASSOCIATION_RETAIN);
     [menu addItem:openNewTabItem];
+
+    // Open in Background Tab
+    NSMenuItem* openBackgroundItem = [[NSMenuItem alloc] initWithTitle:@"Open in Background Tab"
+                                                                action:@selector(openBookmarkInBackgroundTab:)
+                                                         keyEquivalent:@""];
+    openBackgroundItem.target = self;
+    objc_setAssociatedObject(openBackgroundItem, "url", url, OBJC_ASSOCIATION_RETAIN);
+    [menu addItem:openBackgroundItem];
 
     [menu addItem:[NSMenuItem separatorItem]];
 
@@ -1980,16 +1995,17 @@ static NSColor* NSColorFromHex(const std::string& hex) {
 
 - (void)openBookmarkInCurrentTab:(NSMenuItem*)sender {
     NSString* url = objc_getAssociatedObject(sender, "url");
-    if (url && _windowController) {
-        [_windowController navigateToURL:url];
-    }
+    [_windowController openUrlInCurrentTab:url];
 }
 
 - (void)openBookmarkInNewTab:(NSMenuItem*)sender {
     NSString* url = objc_getAssociatedObject(sender, "url");
-    if (url && _windowController) {
-        [_windowController createNewTab:url];
-    }
+    [_windowController openUrlInNewTab:url];
+}
+
+- (void)openBookmarkInBackgroundTab:(NSMenuItem*)sender {
+    NSString* url = objc_getAssociatedObject(sender, "url");
+    [_windowController openUrlInBackgroundTab:url];
 }
 
 - (void)editBookmarkFromMenu:(NSMenuItem*)sender {
@@ -2080,6 +2096,98 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         bookmarks->DeleteBookmark(bookmarkId);
         _selectedBookmarkId = 0;
         [self reloadBookmarks];
+    }
+}
+
+- (void)showEditBookmarkDialog:(int64_t)bookmarkId {
+    // Create the bookmark popover if needed (reuse for both add and edit)
+    if (!_addBookmarkPopover) {
+        _addBookmarkPopover = [[AddBookmarkPopoverController alloc] init];
+        _addBookmarkPopover.sidebarView = self;
+    }
+
+    // Show as sheet since we don't have an anchor view for the edit action
+    [_addBookmarkPopover showEditAsSheetInWindow:_windowController.window bookmarkId:bookmarkId];
+}
+
+#pragma mark - History Context Menu
+
+- (NSMenu*)createHistoryContextMenu:(NSString*)url entryId:(int64_t)entryId {
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:@"History"];
+
+    // Open (in current tab)
+    NSMenuItem* openItem = [[NSMenuItem alloc] initWithTitle:@"Open"
+                                                      action:@selector(openHistoryInCurrentTab:)
+                                               keyEquivalent:@""];
+    openItem.target = self;
+    objc_setAssociatedObject(openItem, "url", url, OBJC_ASSOCIATION_RETAIN);
+    [menu addItem:openItem];
+
+    // Open in New Tab
+    NSMenuItem* openNewTabItem = [[NSMenuItem alloc] initWithTitle:@"Open in New Tab"
+                                                            action:@selector(openHistoryInNewTab:)
+                                                     keyEquivalent:@""];
+    openNewTabItem.target = self;
+    objc_setAssociatedObject(openNewTabItem, "url", url, OBJC_ASSOCIATION_RETAIN);
+    [menu addItem:openNewTabItem];
+
+    // Open in Background Tab
+    NSMenuItem* openBackgroundItem = [[NSMenuItem alloc] initWithTitle:@"Open in Background Tab"
+                                                                action:@selector(openHistoryInBackgroundTab:)
+                                                         keyEquivalent:@""];
+    openBackgroundItem.target = self;
+    objc_setAssociatedObject(openBackgroundItem, "url", url, OBJC_ASSOCIATION_RETAIN);
+    [menu addItem:openBackgroundItem];
+
+    [menu addItem:[NSMenuItem separatorItem]];
+
+    // Copy URL
+    NSMenuItem* copyItem = [[NSMenuItem alloc] initWithTitle:@"Copy URL"
+                                                      action:@selector(copyHistoryUrl:)
+                                               keyEquivalent:@""];
+    copyItem.target = self;
+    objc_setAssociatedObject(copyItem, "url", url, OBJC_ASSOCIATION_RETAIN);
+    [menu addItem:copyItem];
+
+    // Delete from History
+    NSMenuItem* deleteItem = [[NSMenuItem alloc] initWithTitle:@"Delete from History"
+                                                        action:@selector(deleteFromHistory:)
+                                                 keyEquivalent:@""];
+    deleteItem.target = self;
+    deleteItem.tag = (NSInteger)entryId;
+    [menu addItem:deleteItem];
+
+    return menu;
+}
+
+- (void)openHistoryInCurrentTab:(NSMenuItem*)sender {
+    NSString* url = objc_getAssociatedObject(sender, "url");
+    [_windowController openUrlInCurrentTab:url];
+}
+
+- (void)openHistoryInNewTab:(NSMenuItem*)sender {
+    NSString* url = objc_getAssociatedObject(sender, "url");
+    [_windowController openUrlInNewTab:url];
+}
+
+- (void)openHistoryInBackgroundTab:(NSMenuItem*)sender {
+    NSString* url = objc_getAssociatedObject(sender, "url");
+    [_windowController openUrlInBackgroundTab:url];
+}
+
+- (void)copyHistoryUrl:(NSMenuItem*)sender {
+    NSString* url = objc_getAssociatedObject(sender, "url");
+    [_windowController copyUrlToClipboard:url];
+}
+
+- (void)deleteFromHistory:(NSMenuItem*)sender {
+    int64_t entryId = (int64_t)sender.tag;
+    if (entryId > 0) {
+        HistoryStorage* history = GetHistoryStorage();
+        if (history) {
+            history->DeleteEntry(entryId);
+            [self reloadHistoryWithQuery:_historySearchQuery];
+        }
     }
 }
 
@@ -2406,6 +2514,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
 
         __weak SidebarView* weakSelf = self;
         NSString* urlCopy = row.url;
+        int64_t entryId = entry.id;
         row.onClick = ^{
             SidebarView* strongSelf = weakSelf;
             if (!strongSelf) return;
@@ -2414,6 +2523,20 @@ static NSColor* NSColorFromHex(const std::string& hex) {
             strongSelf->_activePanel = SidebarPanelTabs;
             [strongSelf updateIconSelection];
             [strongSelf updatePanelVisibility];
+        };
+
+        row.onRightClick = ^(NSEvent* event) {
+            SidebarView* strongSelf = weakSelf;
+            if (!strongSelf) return;
+            NSMenu* menu = [strongSelf createHistoryContextMenu:urlCopy entryId:entryId];
+            [NSMenu popUpContextMenu:menu withEvent:event forView:row];
+        };
+
+        // Middle click = open in background tab
+        row.onMiddleClick = ^{
+            SidebarView* strongSelf = weakSelf;
+            if (!strongSelf) return;
+            [strongSelf.windowController openUrlInBackgroundTab:urlCopy];
         };
 
         [_historyContainer addSubview:row];

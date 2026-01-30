@@ -69,6 +69,7 @@
     NSTimer* _loadingAnimationTimer;
     CGFloat _loadingProgress;
     BOOL _isLoading;
+    BOOL _isInternalPage;  // Track if on orbfox:// page
     // Actions area
     NSView* _actionsArea;
     DSIconButton* _bookmarkButton;
@@ -335,6 +336,12 @@
 - (void)setURL:(NSString*)url {
     _urlTextField.stringValue = url ?: @"";
 
+    // Track if this is an internal page (orbfox://)
+    _isInternalPage = [url hasPrefix:@"orbfox://"];
+
+    // Hide reload button for internal pages
+    _reloadButton.hidden = _isInternalPage;
+
     if (!url || url.length == 0) {
         _shieldIcon.hidden = YES;
         _lockIcon.hidden = YES;
@@ -353,7 +360,7 @@
         _lockIcon.contentTintColor = [DSColors warning];
         _lockIcon.hidden = NO;
     } else {
-        // For file://, about:, etc. - hide both
+        // For file://, about:, orbfox://, etc. - hide both
         _shieldIcon.hidden = YES;
         _lockIcon.hidden = YES;
     }

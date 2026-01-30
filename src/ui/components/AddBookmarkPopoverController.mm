@@ -5,17 +5,28 @@
 
 @implementation AddBookmarkPopoverController {
     NSPopover* _popover;
-    NSTextField* _titleField;
+    NSPanel* _panel;  // For sheet mode
     NSTextField* _urlField;
-    NSTextField* _nicknameField;
+    NSTextField* _titleField;
     NSTextView* _descriptionField;
     NSPopUpButton* _folderPicker;
     NSImageView* _bookmarkIcon;
+    NSButton* _actionButton;  // Add or Save button
+    BookmarkPopoverMode _mode;
+    int64_t _editBookmarkId;
 }
 
+@synthesize mode = _mode;
+
 - (void)loadView {
+    [self loadViewWithMode:BookmarkPopoverModeAdd];
+}
+
+- (void)loadViewWithMode:(BookmarkPopoverMode)mode {
+    _mode = mode;
+
     CGFloat width = 340;
-    CGFloat height = 280;
+    CGFloat height = 290;
 
     NSView* contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
     contentView.wantsLayer = YES;
@@ -46,11 +57,11 @@
     _bookmarkIcon.layer.cornerRadius = [DSLayout cornerRadiusMedium];
     [contentView addSubview:_bookmarkIcon];
 
-    // Title field (Address - URL input)
+    // URL field (Address)
     y -= fieldHeight + 4;
     CGFloat fieldWidth = width - padding * 2 - iconSize - [DSSpacing sm];
     _urlField = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, fieldWidth, fieldHeight)];
-    _urlField.font = [DSTypography fontWithStyle:DSFontStyleBody];;
+    _urlField.font = [DSTypography fontWithStyle:DSFontStyleBody];
     _urlField.bezelStyle = NSTextFieldRoundedBezel;
     _urlField.placeholderString = @"Address";
     [contentView addSubview:_urlField];
@@ -66,7 +77,7 @@
     nicknameLabel.editable = NO;
     [contentView addSubview:nicknameLabel];
 
-    // Nickname field
+    // Nickname field (Title)
     y -= fieldHeight + 4;
     _titleField = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, width - padding * 2, fieldHeight)];
     _titleField.font = [DSTypography fontWithStyle:DSFontStyleBody];
@@ -119,22 +130,25 @@
     [self populateFolderPicker];
     [contentView addSubview:_folderPicker];
 
-    // Buttons
-    y -= 40;
-    NSButton* cancelBtn = [[NSButton alloc] initWithFrame:NSMakeRect(padding, y, 70, 28)];
+    // Buttons - Cancel on left, Add/Save on right
+    y -= 44;
+    CGFloat buttonWidth = 80;
+    CGFloat buttonHeight = 28;
+
+    NSButton* cancelBtn = [[NSButton alloc] initWithFrame:NSMakeRect(padding, y, buttonWidth, buttonHeight)];
     cancelBtn.title = @"Cancel";
     cancelBtn.bezelStyle = NSBezelStyleRounded;
     cancelBtn.target = self;
     cancelBtn.action = @selector(cancelClicked:);
     [contentView addSubview:cancelBtn];
 
-    NSButton* addBtn = [[NSButton alloc] initWithFrame:NSMakeRect(width - padding - 70, y, 70, 28)];
-    addBtn.title = @"Add";
-    addBtn.bezelStyle = NSBezelStyleRounded;
-    addBtn.keyEquivalent = @"\r";
-    addBtn.target = self;
-    addBtn.action = @selector(addClicked:);
-    [contentView addSubview:addBtn];
+    _actionButton = [[NSButton alloc] initWithFrame:NSMakeRect(width - padding - buttonWidth, y, buttonWidth, buttonHeight)];
+    _actionButton.title = (mode == BookmarkPopoverModeAdd) ? @"Add" : @"Save";
+    _actionButton.bezelStyle = NSBezelStyleRounded;
+    _actionButton.keyEquivalent = @"\r";
+    _actionButton.target = self;
+    _actionButton.action = @selector(actionClicked:);
+    [contentView addSubview:_actionButton];
 
     self.view = contentView;
 }
@@ -155,18 +169,11 @@
     }
 }
 
+#pragma mark - Public Methods
+
 - (void)showRelativeToView:(NSView*)view withUrl:(NSString*)url title:(NSString*)title {
-    if (!self.view) {
-        [self loadView];
-    }
-
-    // Set default values
-    _urlField.stringValue = url ?: @"";
-    _titleField.stringValue = title ?: @"";
-    _descriptionField.string = @"";
-
-    [self populateFolderPicker];
-    [_folderPicker selectItemAtIndex:0];
+    [self loadViewWithMode:BookmarkPopoverModeAdd];
+    [self setupFieldsWithUrl:url title:title folder:nil];
 
     if (!_popover) {
         _popover = [[NSPopover alloc] init];
@@ -178,20 +185,118 @@
                           ofView:view
                    preferredEdge:NSRectEdgeMinY];
 
-    // Focus the URL field
     [_popover.contentViewController.view.window makeFirstResponder:_urlField];
 }
 
-- (void)close {
-    [_popover close];
+- (void)showEditRelativeToView:(NSView*)view bookmarkId:(int64_t)bookmarkId {
+    [self loadViewWithMode:BookmarkPopoverModeEdit];
+    _editBookmarkId = bookmarkId;
+
+    BookmarkStorage* storage = GetBookmarkStorage();
+    if (storage) {
+        auto allBookmarks = storage->GetAllBookmarks();
+        for (const auto& bm : allBookmarks) {
+            if (bm.id == bookmarkId) {
+                NSString* url = [NSString stringWithUTF8String:bm.url.c_str()];
+                NSString* title = [NSString stringWithUTF8String:bm.title.c_str()];
+                NSString* folder = [NSString stringWithUTF8String:bm.folder.c_str()];
+                [self setupFieldsWithUrl:url title:title folder:folder];
+                break;
+            }
+        }
+    }
+
+    if (!_popover) {
+        _popover = [[NSPopover alloc] init];
+        _popover.contentViewController = self;
+        _popover.behavior = NSPopoverBehaviorTransient;
+    }
+
+    [_popover showRelativeToRect:view.bounds
+                          ofView:view
+                   preferredEdge:NSRectEdgeMinY];
+
+    [_popover.contentViewController.view.window makeFirstResponder:_titleField];
 }
+
+- (void)showAsSheetInWindow:(NSWindow*)window withUrl:(NSString*)url title:(NSString*)title {
+    [self loadViewWithMode:BookmarkPopoverModeAdd];
+    [self setupFieldsWithUrl:url title:title folder:nil];
+
+    if (!_panel) {
+        _panel = [[NSPanel alloc] initWithContentRect:self.view.bounds
+                                            styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                                              backing:NSBackingStoreBuffered
+                                                defer:YES];
+        _panel.contentView = self.view;
+        _panel.title = @"Add Bookmark";
+    }
+
+    [window beginSheet:_panel completionHandler:nil];
+    [_panel makeFirstResponder:_urlField];
+}
+
+- (void)showEditAsSheetInWindow:(NSWindow*)window bookmarkId:(int64_t)bookmarkId {
+    [self loadViewWithMode:BookmarkPopoverModeEdit];
+    _editBookmarkId = bookmarkId;
+
+    BookmarkStorage* storage = GetBookmarkStorage();
+    if (storage) {
+        auto allBookmarks = storage->GetAllBookmarks();
+        for (const auto& bm : allBookmarks) {
+            if (bm.id == bookmarkId) {
+                NSString* url = [NSString stringWithUTF8String:bm.url.c_str()];
+                NSString* title = [NSString stringWithUTF8String:bm.title.c_str()];
+                NSString* folder = [NSString stringWithUTF8String:bm.folder.c_str()];
+                [self setupFieldsWithUrl:url title:title folder:folder];
+                break;
+            }
+        }
+    }
+
+    if (!_panel) {
+        _panel = [[NSPanel alloc] initWithContentRect:self.view.bounds
+                                            styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+                                              backing:NSBackingStoreBuffered
+                                                defer:YES];
+        _panel.contentView = self.view;
+    }
+    _panel.title = @"Edit Bookmark";
+
+    [window beginSheet:_panel completionHandler:nil];
+    [_panel makeFirstResponder:_titleField];
+}
+
+- (void)setupFieldsWithUrl:(NSString*)url title:(NSString*)title folder:(NSString*)folder {
+    _urlField.stringValue = url ?: @"";
+    _titleField.stringValue = title ?: @"";
+    _descriptionField.string = @"";
+
+    [self populateFolderPicker];
+    if (folder && folder.length > 0) {
+        [_folderPicker selectItemWithTitle:folder];
+    } else {
+        [_folderPicker selectItemAtIndex:0];
+    }
+}
+
+- (void)close {
+    if (_popover) {
+        [_popover close];
+    }
+    if (_panel && _panel.sheetParent) {
+        [_panel.sheetParent endSheet:_panel];
+    }
+}
+
+#pragma mark - Actions
 
 - (void)cancelClicked:(id)sender {
     (void)sender;
-    [_popover close];
+    [self close];
 }
 
-- (void)addClicked:(id)sender {
+- (void)actionClicked:(id)sender {
     (void)sender;
 
     NSString* url = _urlField.stringValue;
@@ -218,25 +323,29 @@
         title = url;
     }
 
+    NSString* folder = @"";
+    NSInteger selectedIndex = [_folderPicker indexOfSelectedItem];
+    if (selectedIndex > 0) {
+        NSMenuItem* selectedItem = [_folderPicker selectedItem];
+        if (!selectedItem.isSeparatorItem) {
+            folder = selectedItem.title;
+        }
+    }
+
     BookmarkStorage* bookmarks = GetBookmarkStorage();
     if (bookmarks) {
-        NSString* folder = @"";
-        NSInteger selectedIndex = [_folderPicker indexOfSelectedItem];
-        if (selectedIndex > 0) {
-            NSMenuItem* selectedItem = [_folderPicker selectedItem];
-            if (!selectedItem.isSeparatorItem) {
-                folder = selectedItem.title;
-            }
+        if (_mode == BookmarkPopoverModeAdd) {
+            (void)bookmarks->AddBookmark([url UTF8String], [title UTF8String], [folder UTF8String]);
+        } else {
+            bookmarks->UpdateBookmark(_editBookmarkId, [title UTF8String], [folder UTF8String]);
         }
-
-        (void)bookmarks->AddBookmark([url UTF8String], [title UTF8String], [folder UTF8String]);
 
         if (_sidebarView) {
             [_sidebarView reloadBookmarks];
         }
     }
 
-    [_popover close];
+    [self close];
 }
 
 @end

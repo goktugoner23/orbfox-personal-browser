@@ -7,6 +7,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Middle-Click Support** - Mouse button 3 opens items in background tabs
+  - Middle-click on bookmarks in sidebar opens in background tab
+  - Middle-click on history items opens in background tab
+  - Middle-click on tabs duplicates tab to background
+  - Middle-click on links in web pages opens in background tab
+- **Reusable Browser Actions** - Centralized action methods on MainWindowController
+  - `openUrlInCurrentTab:` - Navigate current tab to URL
+  - `openUrlInNewTab:` - Open URL in new foreground tab
+  - `openUrlInBackgroundTab:` - Open URL in new background tab (no switch)
+  - `copyUrlToClipboard:` - Copy URL to system clipboard
+  - All context menus and middle-click handlers use these centralized methods
+
+### Changed
+- **Edit Bookmark Dialog** - Now uses reusable `AddBookmarkPopoverController`
+  - Same polished UI as add bookmark dialog
+  - Proper button positioning (Cancel left, Save right)
+  - Supports both popover and sheet modes
+
+### Fixed
+- **Background Tab View Flash** - Browser view no longer shows new page when opening in background
+  - CEF creates browser views visible by default
+  - Now immediately hides browser view if tab is not active
+- **Middle-Click on Links** - Fixed middle-click on web page links opening in current tab
+  - `OnBeforePopup` now checks `target_disposition` for `CEF_WOD_NEW_BACKGROUND_TAB`
+  - Properly routes to background tab creation instead of foreground
 - **Bookmarks Page** (`orbfox://bookmarks`) - Native bookmarks page as default homepage
   - Grid layout with bookmark cards showing favicons and titles
   - Folder sections with collapsible organization

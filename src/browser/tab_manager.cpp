@@ -120,6 +120,27 @@ Tab* TabManager::CreateTab(const std::string& url) {
     return ptr;
 }
 
+Tab* TabManager::CreateTabInBackground(const std::string& url) {
+    Workspace* workspace = GetActiveWorkspace();
+    if (!workspace) {
+        return nullptr;
+    }
+
+    auto tab = std::make_unique<Tab>(next_tab_id_++);
+    tab->url = url;
+    Tab* ptr = tab.get();
+
+    workspace->tabs.push_back(std::move(tab));
+    // Don't change active_tab_index - keep current tab active
+
+    if (callbacks_.on_tab_created) {
+        callbacks_.on_tab_created(ptr);
+    }
+    // Don't call on_tab_activated - the new tab stays in background
+
+    return ptr;
+}
+
 void TabManager::CloseTab(int tab_id) {
     Workspace* workspace = GetActiveWorkspace();
     if (!workspace) {

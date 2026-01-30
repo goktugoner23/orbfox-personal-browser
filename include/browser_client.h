@@ -47,6 +47,7 @@ public:
     using CopyToClipboardCallback = std::function<void(const std::string& text)>;
     using InspectElementCallback = std::function<void(int x, int y)>;
     using FocusUrlBarCallback = std::function<void()>;
+    using BookmarkActionCallback = std::function<void(const std::string& action, const std::string& param)>;
 
     // Download dialog callback: filename, size, callback to continue with path (empty = cancel)
     using DownloadDialogCallback = std::function<void(
@@ -82,6 +83,7 @@ public:
     void SetCopyToClipboardCallback(CopyToClipboardCallback callback) { on_copy_to_clipboard_ = std::move(callback); }
     void SetInspectElementCallback(InspectElementCallback callback) { on_inspect_element_ = std::move(callback); }
     void SetFocusUrlBarCallback(FocusUrlBarCallback callback) { on_focus_url_bar_ = std::move(callback); }
+    void SetBookmarkActionCallback(BookmarkActionCallback callback) { on_bookmark_action_ = std::move(callback); }
 
     // Update cached tracking protection setting (call from UI thread when settings change)
     void SetTrackingProtectionEnabled(bool enabled) { tracking_protection_enabled_ = enabled; }
@@ -225,6 +227,7 @@ private:
     CopyToClipboardCallback on_copy_to_clipboard_;
     InspectElementCallback on_inspect_element_;
     FocusUrlBarCallback on_focus_url_bar_;
+    BookmarkActionCallback on_bookmark_action_;
 
     // Download callbacks (keyed by download ID)
     std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> download_callbacks_;
