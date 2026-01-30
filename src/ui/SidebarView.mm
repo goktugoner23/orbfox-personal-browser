@@ -389,7 +389,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     _newTabButton = [DSButton buttonWithTitle:@"New Tab" variant:DSButtonVariantGhost];
     _newTabButton.alignment = NSTextAlignmentCenter;
     _newTabButton.frame = NSMakeRect(tabInset, padding, width - tabInset * 2, 34);
-    _newTabButton.autoresizingMask = NSViewMaxYMargin | NSViewWidthSizable;
+    _newTabButton.autoresizingMask = NSViewMaxYMargin;
     _newTabButton.target = self;
     _newTabButton.action = @selector(newTabClicked:);
     [_tabsPanelContainer addSubview:_newTabButton];
@@ -421,6 +421,12 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     NSRect containerFrame = _tabContainer.frame;
     containerFrame.size.width = contentWidth;
     _tabContainer.frame = containerFrame;
+
+    // Update New Tab button width (maintain margins like tabs)
+    CGFloat tabInset = [DSSpacing xs];
+    NSRect buttonFrame = _newTabButton.frame;
+    buttonFrame.size.width = contentWidth - tabInset * 2;
+    _newTabButton.frame = buttonFrame;
 
     // Update bookmarks container width
     NSRect bookmarksFrame = _bookmarksContainer.frame;
