@@ -1,9 +1,11 @@
 #include "orbfox_scheme_handler.h"
+#include "bookmark_storage.h"
 #include "download_manager.h"
 #include "history_storage.h"
 #include "session_storage.h"
 #include "settings_storage.h"
 #include "utils/filesystem_utils.h"
+#include "utils/json_utils.h"
 #include "version.h"
 
 #include "include/cef_parser.h"
@@ -296,6 +298,33 @@ const char* kSettingsPageHtml = R"HTML(
         }
 
         .btn-secondary {
+            background: #3a3a3c;
+            color: #e5e5e5;
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .btn-secondary:hover {
+            background: #48484a;
+        }
+
+        .btn-secondary.active {
+            background: #007aff;
+            color: white;
+        }
+
+        .url-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .quick-options {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-secondary {
             background: #2e2e33;
             color: #e5e5e5;
             border: 1px solid #404045;
@@ -386,7 +415,13 @@ const char* kSettingsPageHtml = R"HTML(
                             <p>The page that opens when you click the home button</p>
                         </div>
                         <div class="setting-control">
-                            <input type="url" id="homepage_url" placeholder="https://www.google.com">
+                            <div class="url-input-group">
+                                <input type="url" id="homepage_url" placeholder="orbfox://bookmarks">
+                                <div class="quick-options">
+                                    <button class="btn btn-secondary" data-target="homepage_url" data-url="orbfox://bookmarks">Bookmarks</button>
+                                    <button class="btn btn-secondary" data-target="homepage_url" data-url="about:blank">Blank</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="setting-row">
@@ -395,7 +430,13 @@ const char* kSettingsPageHtml = R"HTML(
                             <p>The page that opens when you create a new tab</p>
                         </div>
                         <div class="setting-control">
-                            <input type="url" id="new_tab_url" placeholder="https://www.google.com">
+                            <div class="url-input-group">
+                                <input type="url" id="new_tab_url" placeholder="orbfox://bookmarks">
+                                <div class="quick-options">
+                                    <button class="btn btn-secondary" data-target="new_tab_url" data-url="orbfox://bookmarks">Bookmarks</button>
+                                    <button class="btn btn-secondary" data-target="new_tab_url" data-url="about:blank">Blank</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="setting-row">
@@ -523,6 +564,7 @@ const char* kSettingsPageHtml = R"HTML(
         function applySettingsToUI() {
             document.getElementById('homepage_url').value = settings.homepage_url || '';
             document.getElementById('new_tab_url').value = settings.new_tab_url || '';
+            updateQuickOptionButtons();
             document.getElementById('tracking_protection').checked = settings.tracking_protection !== false;
             document.getElementById('download_path').value = settings.download_path || '';
             document.getElementById('ask_before_download').checked = settings.ask_before_download !== false;
@@ -585,7 +627,35 @@ const char* kSettingsPageHtml = R"HTML(
         document.getElementById('new_tab_url').addEventListener('input', (e) => {
             settings.new_tab_url = e.target.value;
             saveSettings();
+            updateQuickOptionButtons();
         });
+
+        // Quick option buttons for URL fields
+        function updateQuickOptionButtons() {
+            document.querySelectorAll('.quick-options button').forEach(btn => {
+                const target = btn.getAttribute('data-target');
+                const url = btn.getAttribute('data-url');
+                const input = document.getElementById(target);
+                btn.classList.toggle('active', input && input.value === url);
+            });
+        }
+
+        document.querySelectorAll('.quick-options button').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const target = btn.getAttribute('data-target');
+                const url = btn.getAttribute('data-url');
+                const input = document.getElementById(target);
+                if (input) {
+                    input.value = url;
+                    settings[target] = url;
+                    saveSettings();
+                    updateQuickOptionButtons();
+                }
+            });
+        });
+
+        document.getElementById('homepage_url').addEventListener('input', () => updateQuickOptionButtons());
 
         document.querySelectorAll('input[name="restore_session"]').forEach(radio => {
             radio.addEventListener('change', (e) => {
@@ -623,6 +693,273 @@ const char* kSettingsPageHtml = R"HTML(
 
         // Initialize
         loadSettings();
+    </script>
+</body>
+</html>
+)HTML";
+
+// Bookmarks page HTML - clean new tab page showing bookmarks
+const char* kBookmarksPageHtml = R"HTML(
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>New Tab</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #1c1c1e;
+            color: #e5e5e5;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            min-height: 100vh;
+            padding: 48px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 32px;
+            color: #ffffff;
+        }
+
+        .bookmarks-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 16px;
+        }
+
+        .bookmark-card {
+            background: #2c2c2e;
+            border-radius: 12px;
+            padding: 16px;
+            text-decoration: none;
+            color: #e5e5e5;
+            transition: all 0.15s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 12px;
+        }
+
+        .bookmark-card:hover {
+            background: #3a3a3c;
+            transform: translateY(-2px);
+        }
+
+        .bookmark-icon {
+            width: 48px;
+            height: 48px;
+            background: #48484a;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 600;
+            color: #007aff;
+        }
+
+        .bookmark-icon img {
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+        }
+
+        .bookmark-title {
+            font-size: 13px;
+            font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            width: 100%;
+        }
+
+        .bookmark-url {
+            font-size: 11px;
+            color: #8e8e93;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            width: 100%;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 64px 24px;
+            color: #8e8e93;
+        }
+
+        .empty-state h2 {
+            font-size: 20px;
+            font-weight: 500;
+            margin-bottom: 12px;
+            color: #e5e5e5;
+        }
+
+        .empty-state p {
+            font-size: 14px;
+        }
+
+        .folder-section {
+            margin-bottom: 32px;
+        }
+
+        .folder-header {
+            font-size: 16px;
+            font-weight: 600;
+            color: #8e8e93;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Bookmarks</h1>
+        <div id="bookmarks-container">
+            <div class="empty-state">
+                <h2>No bookmarks yet</h2>
+                <p>Press ⌘+D to bookmark the current page</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadBookmarks() {
+            try {
+                const response = await fetch('orbfox://bookmarks/api/list');
+                const data = await response.json();
+                renderBookmarks(data.bookmarks || []);
+            } catch (e) {
+                console.error('Failed to load bookmarks:', e);
+            }
+        }
+
+        function getFaviconUrl(url) {
+            try {
+                const urlObj = new URL(url);
+                return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=64`;
+            } catch {
+                return null;
+            }
+        }
+
+        function getInitial(title, url) {
+            if (title && title.length > 0) {
+                return title[0].toUpperCase();
+            }
+            try {
+                const urlObj = new URL(url);
+                return urlObj.hostname[0].toUpperCase();
+            } catch {
+                return '?';
+            }
+        }
+
+        function getDomain(url) {
+            try {
+                const urlObj = new URL(url);
+                return urlObj.hostname.replace('www.', '');
+            } catch {
+                return url;
+            }
+        }
+
+        function renderBookmarks(bookmarks) {
+            const container = document.getElementById('bookmarks-container');
+
+            if (bookmarks.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h2>No bookmarks yet</h2>
+                        <p>Press ⌘+D to bookmark the current page</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Group by folder
+            const folders = {};
+            const rootBookmarks = [];
+
+            bookmarks.forEach(bm => {
+                if (bm.folder && bm.folder.length > 0) {
+                    if (!folders[bm.folder]) {
+                        folders[bm.folder] = [];
+                    }
+                    folders[bm.folder].push(bm);
+                } else {
+                    rootBookmarks.push(bm);
+                }
+            });
+
+            let html = '';
+
+            // Render root bookmarks first
+            if (rootBookmarks.length > 0) {
+                html += '<div class="bookmarks-grid">';
+                rootBookmarks.forEach(bm => {
+                    html += renderBookmarkCard(bm);
+                });
+                html += '</div>';
+            }
+
+            // Render folders
+            Object.keys(folders).sort().forEach(folder => {
+                html += `
+                    <div class="folder-section">
+                        <div class="folder-header">${escapeHtml(folder)}</div>
+                        <div class="bookmarks-grid">
+                            ${folders[folder].map(bm => renderBookmarkCard(bm)).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function renderBookmarkCard(bm) {
+            const faviconUrl = getFaviconUrl(bm.url);
+            const initial = getInitial(bm.title, bm.url);
+            const domain = getDomain(bm.url);
+            const title = bm.title || domain;
+
+            return `
+                <a href="${escapeHtml(bm.url)}" class="bookmark-card">
+                    <div class="bookmark-icon">
+                        ${faviconUrl
+                            ? `<img src="${faviconUrl}" onerror="this.parentElement.innerHTML='${initial}'">`
+                            : initial
+                        }
+                    </div>
+                    <div class="bookmark-title">${escapeHtml(title)}</div>
+                    <div class="bookmark-url">${escapeHtml(domain)}</div>
+                </a>
+            `;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        loadBookmarks();
     </script>
 </body>
 </html>
@@ -731,6 +1068,10 @@ bool OrbfoxResourceHandler::Open(CefRefPtr<CefRequest> request,
         data_ = success ? R"({"success": true})" : R"({"success": false})";
         mime_type_ = "application/json";
         status_code_ = 200;
+    } else if (path == "bookmarks" || path == "bookmarks/") {
+        HandleBookmarksPage();
+    } else if (path == "bookmarks/api/list") {
+        HandleBookmarksApiList();
     } else {
         HandleNotFound(path);
     }
@@ -797,6 +1138,36 @@ void OrbfoxResourceHandler::HandleSettingsApiSet(const std::string& post_data) {
     } else {
         data_ = R"({"success": false, "error": "Invalid JSON"})";
     }
+    mime_type_ = "application/json";
+    status_code_ = 200;
+}
+
+void OrbfoxResourceHandler::HandleBookmarksPage() {
+    data_ = kBookmarksPageHtml;
+    mime_type_ = "text/html";
+    status_code_ = 200;
+}
+
+void OrbfoxResourceHandler::HandleBookmarksApiList() {
+    BookmarkStorage* storage = GetBookmarkStorage();
+    std::ostringstream ss;
+    ss << R"({"bookmarks": [)";
+
+    if (storage) {
+        auto bookmarks = storage->GetAllBookmarks();
+        bool first = true;
+        for (const auto& bm : bookmarks) {
+            if (!first) ss << ",";
+            first = false;
+            ss << R"({"id":)" << bm.id
+               << R"(,"url":")" << orbfox::utils::EscapeJsonString(bm.url) << R"(")"
+               << R"(,"title":")" << orbfox::utils::EscapeJsonString(bm.title) << R"(")"
+               << R"(,"folder":")" << orbfox::utils::EscapeJsonString(bm.folder) << R"("})";
+        }
+    }
+
+    ss << "]}";
+    data_ = ss.str();
     mime_type_ = "application/json";
     status_code_ = 200;
 }

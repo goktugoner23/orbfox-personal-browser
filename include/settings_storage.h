@@ -5,8 +5,8 @@
 
 struct Settings {
     // General
-    std::string homepage_url = "https://www.google.com";
-    std::string new_tab_url = "https://www.google.com";
+    std::string homepage_url = "orbfox://bookmarks";
+    std::string new_tab_url = "orbfox://bookmarks";
     bool restore_session = true;
 
     // Privacy

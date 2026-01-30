@@ -47,6 +47,8 @@ private:
     void HandleSettingsPage();
     void HandleSettingsApiGet();
     void HandleSettingsApiSet(const std::string& post_data);
+    void HandleBookmarksPage();
+    void HandleBookmarksApiList();
     void HandleNotFound(const std::string& path);
 
     IMPLEMENT_REFCOUNTING(OrbfoxResourceHandler);

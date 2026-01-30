@@ -323,10 +323,13 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         if (strongSelf && strongSelf.tabManager) {
             strongSelf.tabManager->UpdateTabUrl(tabId, url);
 
+            // Copy URL to avoid dangling reference - the original string is destroyed
+            // before dispatch_async block executes
+            std::string urlCopy = url;
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (strongSelf.tabManager->GetActiveTab() &&
                     strongSelf.tabManager->GetActiveTab()->id == tabId) {
-                    [strongSelf.toolbarView setURL:[NSString stringWithUTF8String:url.c_str()]];
+                    [strongSelf.toolbarView setURL:[NSString stringWithUTF8String:urlCopy.c_str()]];
                 }
             });
         }
@@ -448,8 +451,10 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     client->SetPopupRequestCallback([weakSelf](const std::string& url) {
         MainWindowController* strongSelf = weakSelf;
         if (strongSelf) {
+            // Copy URL to avoid dangling reference
+            std::string urlCopy = url;
             dispatch_async(dispatch_get_main_queue(), ^{
-                [strongSelf createNewTab:[NSString stringWithUTF8String:url.c_str()]];
+                [strongSelf createNewTab:[NSString stringWithUTF8String:urlCopy.c_str()]];
             });
         }
     });

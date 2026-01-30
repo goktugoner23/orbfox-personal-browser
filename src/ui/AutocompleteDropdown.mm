@@ -279,7 +279,9 @@ extern NSImage* GetCachedFavicon(NSString* urlString);
         }
     }
 
-    _selectedIndex = _suggestions.count > 0 ? 0 : -1;
+    // Start with no selection - user must press arrow keys to select
+    // This allows Enter to use the typed text instead of first suggestion
+    _selectedIndex = -1;
     [self rebuildRows];
 }
 

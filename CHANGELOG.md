@@ -6,7 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Bookmarks Page** (`orbfox://bookmarks`) - Native bookmarks page as default homepage
+  - Grid layout with bookmark cards showing favicons and titles
+  - Folder sections with collapsible organization
+  - Dark theme matching OrbFox design system
+  - Opens by default for new tabs and homepage
+- **Homepage Quick Options** - Settings page now has quick buttons for homepage selection
+  - "Bookmarks" button sets homepage/new tab to `orbfox://bookmarks`
+  - "Blank" button sets to `about:blank`
+  - Visual indicator shows currently selected option
+
 ### Fixed
+- **New Tab Crash** - Fixed crash when opening new tabs
+  - Dangling reference bug in address change callback
+  - URL string now properly copied before async dispatch to main thread
+  - Same fix applied to popup request callback
+- **Autocomplete Selection** - URL bar now uses typed text on Enter, not auto-selected suggestion
+  - No suggestion is selected by default when autocomplete appears
+  - User must explicitly use arrow keys to select a suggestion
+  - Enter key navigates to typed URL unless user selected a suggestion
 - **Content Fullscreen Mode** - YouTube and HTML5 fullscreen now hides browser UI
   - Sidebar, toolbar, and address bar automatically hide when content goes fullscreen
   - Browser view expands to fill entire screen for true fullscreen experience
