@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Content Fullscreen Mode** - YouTube and HTML5 fullscreen now hides browser UI
+  - Sidebar, toolbar, and address bar automatically hide when content goes fullscreen
+  - Browser view expands to fill entire screen for true fullscreen experience
+  - UI elements restore when exiting fullscreen (via Escape or macOS controls)
+- **Screenshot in Fullscreen** - Cmd+Shift+4 no longer exits fullscreen mode
+  - Modifier-only key presses (Cmd, Shift, Ctrl, Option) now filtered in fullscreen
+  - Prevents accidental fullscreen exit when taking screenshots
+
 ### Security
 - **XSS Prevention in Error Pages** - HTML-escape untrusted content in 404 and error pages
   - Added `EscapeHtml()` utility function to escape `<`, `>`, `&`, `"`, `'`

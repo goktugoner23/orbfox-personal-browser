@@ -86,6 +86,10 @@ public:
     // Update cached tracking protection setting (call from UI thread when settings change)
     void SetTrackingProtectionEnabled(bool enabled) { tracking_protection_enabled_ = enabled; }
 
+    // Track content fullscreen state (to filter keyboard events properly)
+    void SetContentFullscreen(bool fullscreen) { content_fullscreen_ = fullscreen; }
+    bool IsContentFullscreen() const { return content_fullscreen_; }
+
     // Get blocked request count for this browser
     int GetBlockedCount() const { return blocked_count_; }
 
@@ -228,6 +232,7 @@ private:
     // Tracking/ad blocking
     std::atomic<int> blocked_count_{0};
     std::atomic<bool> tracking_protection_enabled_{true};  // Cached from SettingsStorage for thread-safe IO thread access
+    std::atomic<bool> content_fullscreen_{false};  // Track content fullscreen state
     static const std::set<std::string>& GetBlockedDomains();
 
     // Context menu command IDs

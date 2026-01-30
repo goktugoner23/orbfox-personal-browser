@@ -75,11 +75,18 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 @implementation MainWindowController {
     CefRefPtr<DevToolsClient> _devToolsClient;
     id _eventMonitor;
+    id _flagsChangedMonitor;
 
     // Loading indicator debouncing state (per-tab)
     NSMutableDictionary<NSNumber*, NSNumber*>* _tabRealNavigationFlags;  // tabId -> BOOL (is real navigation)
     NSMutableDictionary<NSNumber*, NSDate*>* _tabLoadingStartTimes;      // tabId -> start time
     NSMutableDictionary<NSNumber*, NSNumber*>* _tabLoadingGeneration;    // tabId -> generation counter (for cancellation)
+
+    // Content fullscreen state (HTML5 Fullscreen API)
+    BOOL _isContentFullscreen;
+    NSRect _savedBrowserContainerFrame;
+    NSRect _savedSidebarFrame;
+    NSRect _savedToolbarFrame;
 }
 
 - (instancetype)initWithTabManager:(TabManager*)tabManager {
@@ -722,14 +729,101 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 
 - (void)setFullscreen:(BOOL)fullscreen {
     NSWindow* window = self.window;
-    BOOL isCurrentlyFullscreen = (window.styleMask & NSWindowStyleMaskFullScreen) != 0;
+    NSView* contentView = window.contentView;
 
-    if (fullscreen && !isCurrentlyFullscreen) {
-        // Enter fullscreen
-        [window toggleFullScreen:nil];
-    } else if (!fullscreen && isCurrentlyFullscreen) {
-        // Exit fullscreen
-        [window toggleFullScreen:nil];
+    // Get the active tab's browser client to track fullscreen state
+    Tab* activeTab = _tabManager->GetActiveTab();
+    CefRefPtr<BrowserClient> browserClient = activeTab ? activeTab->client : nullptr;
+
+    if (fullscreen && !_isContentFullscreen) {
+        // Entering content fullscreen
+        _isContentFullscreen = YES;
+
+        // Track fullscreen state in browser client (for keyboard event filtering)
+        if (browserClient) {
+            browserClient->SetContentFullscreen(true);
+        }
+
+        // Save current frames
+        _savedBrowserContainerFrame = _browserContainer.frame;
+        _savedSidebarFrame = _sidebarView.frame;
+        _savedToolbarFrame = _toolbarView.frame;
+
+        // Close DevTools if open
+        if (_devToolsOpen) {
+            [self closeDevTools];
+        }
+
+        // Hide find bar if visible
+        if (_findBar && !_findBar.hidden) {
+            [self hideFindBar];
+        }
+
+        // Hide UI elements
+        _sidebarView.hidden = YES;
+        _toolbarView.hidden = YES;
+        _resizeHandle.hidden = YES;
+
+        // Disable autoresizing temporarily for manual layout
+        _browserContainer.autoresizingMask = NSViewNotSizable;
+
+        // Expand browser container to fill entire window
+        _browserContainer.frame = contentView.bounds;
+
+        // Also resize the actual browser view inside the container
+        for (NSView* subview in _browserContainer.subviews) {
+            if ([subview isKindOfClass:[NSView class]]) {
+                subview.frame = _browserContainer.bounds;
+            }
+        }
+
+        // Re-enable autoresizing to fill window
+        _browserContainer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+        // Enter macOS fullscreen if not already
+        BOOL isCurrentlyFullscreen = (window.styleMask & NSWindowStyleMaskFullScreen) != 0;
+        if (!isCurrentlyFullscreen) {
+            [window toggleFullScreen:nil];
+        }
+
+    } else if (!fullscreen && _isContentFullscreen) {
+        // Exiting content fullscreen
+        _isContentFullscreen = NO;
+
+        // Track fullscreen state in browser client
+        if (browserClient) {
+            browserClient->SetContentFullscreen(false);
+        }
+
+        // Exit macOS fullscreen if currently in it
+        BOOL isCurrentlyFullscreen = (window.styleMask & NSWindowStyleMaskFullScreen) != 0;
+        if (isCurrentlyFullscreen) {
+            [window toggleFullScreen:nil];
+        }
+
+        // Show UI elements
+        _sidebarView.hidden = NO;
+        _toolbarView.hidden = NO;
+        _resizeHandle.hidden = NO;
+
+        // Restore browser container to normal layout
+        CGFloat titleBarHeight = kTitleBarHeight;
+        CGFloat sidebarWidth = _currentSidebarWidth;
+        CGFloat browserX = sidebarWidth;
+        CGFloat browserY = kToolbarHeight;
+        CGFloat browserWidth = contentView.bounds.size.width - sidebarWidth;
+        CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
+
+        _browserContainer.autoresizingMask = NSViewNotSizable;
+        _browserContainer.frame = NSMakeRect(browserX, browserY, browserWidth, browserHeight);
+        _browserContainer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+        // Resize browser views to fit container
+        for (NSView* subview in _browserContainer.subviews) {
+            if ([subview isKindOfClass:[NSView class]]) {
+                subview.frame = _browserContainer.bounds;
+            }
+        }
     }
 }
 
@@ -1625,6 +1719,10 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         [NSEvent removeMonitor:_eventMonitor];
         _eventMonitor = nil;
     }
+    if (_flagsChangedMonitor) {
+        [NSEvent removeMonitor:_flagsChangedMonitor];
+        _flagsChangedMonitor = nil;
+    }
 }
 
 #pragma mark - NSWindowDelegate
@@ -1663,6 +1761,46 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 
         // Update DevTools window position
         [self updateDevToolsWindowPosition];
+    }
+}
+
+- (void)windowDidExitFullScreen:(NSNotification*)notification {
+    (void)notification;
+    // If we were in content fullscreen mode and user exited via macOS controls,
+    // restore the UI elements
+    if (_isContentFullscreen) {
+        _isContentFullscreen = NO;
+
+        // Reset browser client's fullscreen state
+        Tab* activeTab = _tabManager->GetActiveTab();
+        if (activeTab && activeTab->client) {
+            activeTab->client->SetContentFullscreen(false);
+        }
+
+        // Show UI elements
+        _sidebarView.hidden = NO;
+        _toolbarView.hidden = NO;
+        _resizeHandle.hidden = NO;
+
+        // Restore browser container to normal layout
+        NSView* contentView = self.window.contentView;
+        CGFloat titleBarHeight = kTitleBarHeight;
+        CGFloat sidebarWidth = _currentSidebarWidth;
+        CGFloat browserX = sidebarWidth;
+        CGFloat browserY = kToolbarHeight;
+        CGFloat browserWidth = contentView.bounds.size.width - sidebarWidth;
+        CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
+
+        _browserContainer.autoresizingMask = NSViewNotSizable;
+        _browserContainer.frame = NSMakeRect(browserX, browserY, browserWidth, browserHeight);
+        _browserContainer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+        // Resize browser views to fit container
+        for (NSView* subview in _browserContainer.subviews) {
+            if ([subview isKindOfClass:[NSView class]]) {
+                subview.frame = _browserContainer.bounds;
+            }
+        }
     }
 }
 

@@ -539,6 +539,24 @@ bool BrowserClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
                                    CefEventHandle os_event,
                                    bool* is_keyboard_shortcut) {
     CEF_REQUIRE_UI_THREAD();
+
+    // When in content fullscreen, prevent modifier-only key presses from reaching the page
+    // This prevents accidental fullscreen exit when pressing Cmd+Shift for screenshots
+    if (content_fullscreen_ && event.type == KEYEVENT_RAWKEYDOWN) {
+        // Check if this is a modifier-only key press (Shift, Cmd, Ctrl, Alt)
+        // macOS key codes: Shift=56/60, Control=59/62, Option=58/61, Command=55/54
+        int keyCode = event.native_key_code;
+        bool isModifierOnly = (keyCode == 56 || keyCode == 60 ||  // Shift
+                               keyCode == 59 || keyCode == 62 ||  // Control
+                               keyCode == 58 || keyCode == 61 ||  // Option
+                               keyCode == 55 || keyCode == 54);   // Command
+
+        if (isModifierOnly) {
+            // Consume modifier-only events in fullscreen to prevent unintended exits
+            return true;
+        }
+    }
+
     // Handle keyboard shortcuts before the page sees them
     if (event.type == KEYEVENT_RAWKEYDOWN) {
         bool is_cmd = (event.modifiers & EVENTFLAG_COMMAND_DOWN) != 0;

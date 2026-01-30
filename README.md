@@ -83,6 +83,7 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
   - Persistent download history
 - **Favicons** displayed in tab list
 - **Loading indicators** with animated progress bar (debounced like Chrome/Safari)
+- **Content fullscreen** - YouTube/HTML5 fullscreen hides browser UI for true fullscreen
 - **Responsive sidebar** - panels resize with sidebar width
 - Window position/size persistence
 - Keyboard shortcuts (Cmd+T, Cmd+W, Cmd+L, Cmd+1-9, Cmd+Opt+Left/Right for workspace switching, etc.)
