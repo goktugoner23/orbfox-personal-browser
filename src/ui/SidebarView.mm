@@ -107,9 +107,7 @@ static void CacheFavicon(NSString* urlString, NSImage* favicon) {
     NSString* domain = GetDomainFromURL(urlString);
     if (!domain) return;
 
-    // Check if already cached (avoid redundant disk writes)
-    if (sFaviconCache[domain]) return;
-
+    // Always update the cache - allows correcting stale/wrong favicons
     sFaviconCache[domain] = favicon;
 
     // Save to disk asynchronously
