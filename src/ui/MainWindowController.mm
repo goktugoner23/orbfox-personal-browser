@@ -806,6 +806,9 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         _toolbarView.hidden = NO;
         _resizeHandle.hidden = NO;
 
+        // Refresh sidebar panel visibility (ensures internal panels are shown)
+        [_sidebarView showPanel:_sidebarView.activePanel];
+
         // Restore browser container to normal layout
         CGFloat titleBarHeight = kTitleBarHeight;
         CGFloat sidebarWidth = _currentSidebarWidth;
@@ -1781,6 +1784,9 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         _sidebarView.hidden = NO;
         _toolbarView.hidden = NO;
         _resizeHandle.hidden = NO;
+
+        // Refresh sidebar panel visibility (ensures internal panels are shown)
+        [_sidebarView showPanel:_sidebarView.activePanel];
 
         // Restore browser container to normal layout
         NSView* contentView = self.window.contentView;

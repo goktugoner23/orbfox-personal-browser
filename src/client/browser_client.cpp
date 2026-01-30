@@ -540,53 +540,89 @@ bool BrowserClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
                                    bool* is_keyboard_shortcut) {
     CEF_REQUIRE_UI_THREAD();
 
-    // When in content fullscreen, prevent modifier-only key presses from reaching the page
-    // This prevents accidental fullscreen exit when pressing Cmd+Shift for screenshots
-    if (content_fullscreen_ && event.type == KEYEVENT_RAWKEYDOWN) {
-        // Check if this is a modifier-only key press (Shift, Cmd, Ctrl, Alt)
-        // macOS key codes: Shift=56/60, Control=59/62, Option=58/61, Command=55/54
-        int keyCode = event.native_key_code;
-        bool isModifierOnly = (keyCode == 56 || keyCode == 60 ||  // Shift
-                               keyCode == 59 || keyCode == 62 ||  // Control
-                               keyCode == 58 || keyCode == 61 ||  // Option
-                               keyCode == 55 || keyCode == 54);   // Command
-
-        if (isModifierOnly) {
-            // Consume modifier-only events in fullscreen to prevent unintended exits
-            return true;
-        }
-    }
-
-    // Handle keyboard shortcuts before the page sees them
     if (event.type == KEYEVENT_RAWKEYDOWN) {
+        int vk = event.windows_key_code;
+        int nk = event.native_key_code;
+
+        // Handle Escape key in fullscreen - tell the webpage to exit fullscreen via JavaScript
+        // This triggers document.exitFullscreen() which fires OnFullscreenModeChange(false)
+        // ensuring both browser UI and webpage (e.g., YouTube) exit fullscreen together
+        if (vk == 27 && content_fullscreen_) {  // VK_ESCAPE = 27
+            CefRefPtr<CefFrame> frame = browser->GetMainFrame();
+            if (frame) {
+                frame->ExecuteJavaScript(
+                    "if (document.fullscreenElement) { document.exitFullscreen(); }",
+                    frame->GetURL(), 0);
+            }
+            return true;  // Consume the event, JS will handle the exit
+        }
+
+        // When in content fullscreen, prevent modifier-only key presses from reaching the page
+        // This prevents accidental fullscreen exit when pressing Cmd+Shift for screenshots
+        if (content_fullscreen_) {
+            // Check if this is a modifier-only key press using windows_key_code (cross-platform)
+            // VK_SHIFT=16, VK_CONTROL=17, VK_MENU(Alt)=18, VK_LWIN/RWIN=91/92, VK_SNAPSHOT(PrintScreen)=44
+            bool isModifierOrScreenshot = (vk == 16 ||   // VK_SHIFT
+                                           vk == 17 ||   // VK_CONTROL
+                                           vk == 18 ||   // VK_MENU (Alt)
+                                           vk == 91 ||   // VK_LWIN (Windows/Cmd key)
+                                           vk == 92 ||   // VK_RWIN (Windows/Cmd key)
+                                           vk == 44);    // VK_SNAPSHOT (Print Screen)
+
+            // Also check macOS-specific native key codes for modifier keys
+            // macOS: Shift=56/60, Control=59/62, Option=58/61, Command=55/54
+            bool isMacModifier = (nk == 56 || nk == 60 ||  // Shift
+                                  nk == 59 || nk == 62 ||  // Control
+                                  nk == 58 || nk == 61 ||  // Option
+                                  nk == 55 || nk == 54);   // Command
+
+            if (isModifierOrScreenshot || isMacModifier) {
+                // Consume modifier-only events in fullscreen to prevent unintended exits
+                return true;
+            }
+        }
+
+        // Handle keyboard shortcuts before the page sees them
         bool is_cmd = (event.modifiers & EVENTFLAG_COMMAND_DOWN) != 0;
         bool is_ctrl = (event.modifiers & EVENTFLAG_CONTROL_DOWN) != 0;
+        bool is_shift = (event.modifiers & EVENTFLAG_SHIFT_DOWN) != 0;
         bool is_modifier = is_cmd || is_ctrl;
 
         if (is_modifier) {
-            switch (event.windows_key_code) {
+            switch (vk) {
                 case 'R':  // Cmd+R: Reload
-                    browser->Reload();
-                    return true;
+                    if (!is_shift) {  // Don't trigger on Cmd+Shift+R
+                        browser->Reload();
+                        return true;
+                    }
+                    break;
 
                 case 'L':  // Cmd+L: Focus URL bar
-                    if (on_focus_url_bar_) {
-                        on_focus_url_bar_();
+                    if (!is_shift) {
+                        if (on_focus_url_bar_) {
+                            on_focus_url_bar_();
+                        }
+                        *is_keyboard_shortcut = true;
+                        return true;
                     }
-                    *is_keyboard_shortcut = true;
-                    return true;
+                    break;
 
-                case '[':  // Cmd+[: Back (macOS)
-                    if (browser->CanGoBack()) {
-                        browser->GoBack();
+                // Cmd+[: Back (macOS) - use native_key_code to avoid conflict with VK_LWIN
+                // macOS native key code for '[' is 33
+                default:
+                    if (nk == 33 && !is_shift) {  // '[' key on macOS
+                        if (browser->CanGoBack()) {
+                            browser->GoBack();
+                        }
+                        return true;
                     }
-                    return true;
-
-                case ']':  // Cmd+]: Forward (macOS)
-                    if (browser->CanGoForward()) {
-                        browser->GoForward();
+                    if (nk == 30 && !is_shift) {  // ']' key on macOS
+                        if (browser->CanGoForward()) {
+                            browser->GoForward();
+                        }
+                        return true;
                     }
-                    return true;
+                    break;
             }
         }
     }

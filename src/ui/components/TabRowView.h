@@ -4,8 +4,11 @@
 
 @class SidebarView;
 
+// Pasteboard type for tab dragging
+extern NSPasteboardType const TabRowPasteboardType;
+
 // Individual tab row in the sidebar
-@interface TabRowView : NSView
+@interface TabRowView : NSView <NSDraggingSource>
 
 @property (nonatomic, assign) int tabId;
 @property (nonatomic, copy) NSString* title;

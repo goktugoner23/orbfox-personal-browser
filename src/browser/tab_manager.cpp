@@ -383,3 +383,94 @@ bool TabManager::MoveTabToWorkspace(int tab_id, int target_workspace_id) {
 
     return true;
 }
+
+bool TabManager::ReorderTab(int tab_id, int new_index) {
+    // Find the workspace containing the tab
+    Workspace* workspace = nullptr;
+    int current_index = -1;
+
+    for (auto& ws : workspaces_) {
+        for (size_t i = 0; i < ws->tabs.size(); ++i) {
+            if (ws->tabs[i]->id == tab_id) {
+                workspace = ws.get();
+                current_index = static_cast<int>(i);
+                break;
+            }
+        }
+        if (workspace) break;
+    }
+
+    if (!workspace || current_index < 0) {
+        return false;  // Tab not found
+    }
+
+    // Validate new index
+    int max_index = static_cast<int>(workspace->tabs.size()) - 1;
+    if (new_index < 0) new_index = 0;
+    if (new_index > max_index) new_index = max_index;
+
+    if (current_index == new_index) {
+        return true;  // Already in position
+    }
+
+    // Move the tab
+    auto tab = std::move(workspace->tabs[current_index]);
+    workspace->tabs.erase(workspace->tabs.begin() + current_index);
+    workspace->tabs.insert(workspace->tabs.begin() + new_index, std::move(tab));
+
+    // Update active tab index if needed
+    if (workspace->active_tab_index == current_index) {
+        workspace->active_tab_index = new_index;
+    } else if (current_index < workspace->active_tab_index && new_index >= workspace->active_tab_index) {
+        workspace->active_tab_index--;
+    } else if (current_index > workspace->active_tab_index && new_index <= workspace->active_tab_index) {
+        workspace->active_tab_index++;
+    }
+
+    // Notify callbacks
+    if (callbacks_.on_workspace_changed) {
+        callbacks_.on_workspace_changed(workspace);
+    }
+
+    return true;
+}
+
+bool TabManager::ReorderWorkspace(int workspace_id, int new_index) {
+    // Find current index
+    int current_index = -1;
+    for (size_t i = 0; i < workspaces_.size(); ++i) {
+        if (workspaces_[i]->id == workspace_id) {
+            current_index = static_cast<int>(i);
+            break;
+        }
+    }
+
+    if (current_index < 0) {
+        return false;  // Workspace not found
+    }
+
+    // Validate new index
+    int max_index = static_cast<int>(workspaces_.size()) - 1;
+    if (new_index < 0) new_index = 0;
+    if (new_index > max_index) new_index = max_index;
+
+    if (current_index == new_index) {
+        return true;  // Already in position
+    }
+
+    // Move the workspace
+    auto workspace = std::move(workspaces_[current_index]);
+    workspaces_.erase(workspaces_.begin() + current_index);
+    workspaces_.insert(workspaces_.begin() + new_index, std::move(workspace));
+
+    // Update active workspace index if needed
+    if (active_workspace_index_ == current_index) {
+        active_workspace_index_ = new_index;
+    } else if (current_index < active_workspace_index_ && new_index >= active_workspace_index_) {
+        active_workspace_index_--;
+    } else if (current_index > active_workspace_index_ && new_index <= active_workspace_index_) {
+        active_workspace_index_++;
+    }
+
+    return true;
+}

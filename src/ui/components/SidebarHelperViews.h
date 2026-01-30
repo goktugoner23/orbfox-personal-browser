@@ -27,3 +27,43 @@
 
 @interface FlippedView : NSView
 @end
+
+// ============================================================================
+// TAB DROP CONTAINER VIEW
+// FlippedView that accepts tab drops for reordering
+// ============================================================================
+
+@class SidebarView;
+
+@interface TabDropContainerView : FlippedView
+
+@property (nonatomic, weak) SidebarView* sidebarView;
+@property (nonatomic, assign) int dropTargetIndex;  // -1 if not dropping
+
+@end
+
+// ============================================================================
+// DRAGGABLE WORKSPACE TAB VIEW
+// NSView that can be dragged to reorder workspaces
+// ============================================================================
+
+extern NSPasteboardType const WorkspaceTabPasteboardType;
+
+@interface DraggableWorkspaceTabView : NSView <NSDraggingSource>
+
+@property (nonatomic, assign) int workspaceId;
+@property (nonatomic, weak) SidebarView* sidebarView;
+
+@end
+
+// ============================================================================
+// WORKSPACE DROP CONTAINER VIEW
+// Container for workspace tabs that accepts drops for reordering
+// ============================================================================
+
+@interface WorkspaceDropContainerView : NSView
+
+@property (nonatomic, weak) SidebarView* sidebarView;
+@property (nonatomic, assign) int dropTargetIndex;
+
+@end

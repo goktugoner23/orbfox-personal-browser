@@ -202,9 +202,9 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     NSView* _tabsPanelContainer;
     NSView* _workspaceSelector;
     NSScrollView* _workspaceScrollView;  // Scrollable workspace tabs
-    NSView* _workspaceTabsContainer;
+    WorkspaceDropContainerView* _workspaceTabsContainer;
     NSScrollView* _tabScrollView;
-    FlippedView* _tabContainer;
+    TabDropContainerView* _tabContainer;
     DSButton* _newTabButton;
     DSIconButton* _addWorkspaceBtn;
     NSMutableArray<NSView*>* _workspaceTabs;  // Array of workspace tab containers
@@ -375,8 +375,9 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     _workspaceScrollView.horizontalScrollElasticity = NSScrollElasticityAllowed;
     [_workspaceSelector addSubview:_workspaceScrollView];
 
-    // Container for workspace tab buttons
-    _workspaceTabsContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, scrollWidth, kWorkspaceHeight)];
+    // Container for workspace tab buttons (with drop support for reordering)
+    _workspaceTabsContainer = [[WorkspaceDropContainerView alloc] initWithFrame:NSMakeRect(0, 0, scrollWidth, kWorkspaceHeight)];
+    _workspaceTabsContainer.sidebarView = self;
     _workspaceScrollView.documentView = _workspaceTabsContainer;
 
     // Ensure scroll position starts at origin
@@ -407,7 +408,8 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     _tabScrollView.autoresizingMask = NSViewHeightSizable | NSViewWidthSizable;
     [_tabsPanelContainer addSubview:_tabScrollView];
 
-    _tabContainer = [[FlippedView alloc] initWithFrame:NSMakeRect(0, 0, width, tabAreaHeight)];
+    _tabContainer = [[TabDropContainerView alloc] initWithFrame:NSMakeRect(0, 0, width, tabAreaHeight)];
+    _tabContainer.sidebarView = self;
     _tabScrollView.documentView = _tabContainer;
 }
 
@@ -779,8 +781,10 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         BOOL isActive = (activeWorkspace && workspace->id == activeWorkspace->id);
         int workspaceId = workspace->id;
 
-        // Create container view for the workspace tab
-        NSView* tabContainer = [[NSView alloc] init];
+        // Create draggable container view for the workspace tab
+        DraggableWorkspaceTabView* tabContainer = [[DraggableWorkspaceTabView alloc] init];
+        tabContainer.workspaceId = workspaceId;
+        tabContainer.sidebarView = self;
         tabContainer.wantsLayer = YES;
         tabContainer.layer.cornerRadius = [DSLayout cornerRadiusMedium];
         tabContainer.layer.backgroundColor = isActive ? [DSColors surfaceActive].CGColor : [NSColor clearColor].CGColor;

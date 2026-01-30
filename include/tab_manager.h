@@ -63,6 +63,12 @@ public:
     // Move tab between workspaces
     bool MoveTabToWorkspace(int tab_id, int target_workspace_id);
 
+    // Reorder tab within workspace (drag & drop)
+    bool ReorderTab(int tab_id, int new_index);
+
+    // Reorder workspace (drag & drop)
+    bool ReorderWorkspace(int workspace_id, int new_index);
+
     // Workspace naming
     bool WorkspaceNameExists(const std::string& name) const;
     std::string GenerateUniqueWorkspaceName() const;

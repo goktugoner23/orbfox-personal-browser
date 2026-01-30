@@ -4,7 +4,12 @@
 #import "DesignSystem.h"
 #import "DSButton.h"
 
+// Pasteboard type for tab dragging
+NSPasteboardType const TabRowPasteboardType = @"com.orbfox.tabrow";
+
 @implementation TabRowView {
+    NSPoint _dragStartPoint;
+    BOOL _isDragging;
     NSTrackingArea* _trackingArea;
     BOOL _isHovered;
     DSIconButton* _closeButton;
@@ -105,8 +110,55 @@
 }
 
 - (void)mouseDown:(NSEvent*)event {
+    _dragStartPoint = [self convertPoint:event.locationInWindow fromView:nil];
+    _isDragging = NO;
+}
+
+- (void)mouseUp:(NSEvent*)event {
     (void)event;
-    [_sidebarView.windowController activateTab:_tabId];
+    if (!_isDragging) {
+        // Only activate tab if we didn't drag
+        [_sidebarView.windowController activateTab:_tabId];
+    }
+    _isDragging = NO;
+}
+
+- (void)mouseDragged:(NSEvent*)event {
+    NSPoint currentPoint = [self convertPoint:event.locationInWindow fromView:nil];
+    CGFloat dx = currentPoint.x - _dragStartPoint.x;
+    CGFloat dy = currentPoint.y - _dragStartPoint.y;
+    CGFloat distance = sqrt(dx * dx + dy * dy);
+
+    // Start drag if moved more than 5 pixels
+    if (!_isDragging && distance > 5) {
+        _isDragging = YES;
+        [self startDragWithEvent:event];
+    }
+}
+
+- (void)startDragWithEvent:(NSEvent*)event {
+    // Create dragging item with tab ID
+    NSPasteboardItem* pbItem = [[NSPasteboardItem alloc] init];
+    [pbItem setString:[NSString stringWithFormat:@"%d", _tabId] forType:TabRowPasteboardType];
+
+    // Create a snapshot of this view for the drag image
+    NSImage* dragImage = [[NSImage alloc] initWithSize:self.bounds.size];
+    [dragImage lockFocus];
+    [self drawRect:self.bounds];
+    [dragImage unlockFocus];
+
+    NSDraggingItem* dragItem = [[NSDraggingItem alloc] initWithPasteboardWriter:pbItem];
+    [dragItem setDraggingFrame:self.bounds contents:dragImage];
+
+    [self beginDraggingSessionWithItems:@[dragItem] event:event source:self];
+}
+
+#pragma mark - NSDraggingSource
+
+- (NSDragOperation)draggingSession:(NSDraggingSession*)session sourceOperationMaskForDraggingContext:(NSDraggingContext)context {
+    (void)session;
+    (void)context;
+    return NSDragOperationMove;
 }
 
 - (void)rightMouseDown:(NSEvent*)event {

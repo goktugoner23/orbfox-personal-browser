@@ -10,10 +10,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Content Fullscreen Mode** - YouTube and HTML5 fullscreen now hides browser UI
   - Sidebar, toolbar, and address bar automatically hide when content goes fullscreen
   - Browser view expands to fill entire screen for true fullscreen experience
-  - UI elements restore when exiting fullscreen (via Escape or macOS controls)
-- **Screenshot in Fullscreen** - Cmd+Shift+4 no longer exits fullscreen mode
-  - Modifier-only key presses (Cmd, Shift, Ctrl, Option) now filtered in fullscreen
-  - Prevents accidental fullscreen exit when taking screenshots
+  - Press Escape to exit fullscreen - properly exits both browser and webpage fullscreen
+  - UI elements restore when exiting fullscreen (via Escape or macOS window controls)
+- **Screenshot in Fullscreen** - Screenshot shortcuts no longer exit fullscreen mode
+  - Modifier-only key presses (Cmd, Shift, Ctrl, Option, Windows key) now filtered in fullscreen
+  - Print Screen key also filtered on Windows
+  - Prevents accidental fullscreen exit when taking screenshots (Cmd+Shift+4 on Mac, Print Screen on Windows)
+- **Back/Forward Navigation** - Fixed Cmd+Shift accidentally triggering back navigation
+  - Now uses native macOS key codes to correctly identify bracket keys
+  - Back/Forward shortcuts require Cmd without Shift modifier
+
+### Added
+- **Tab Drag & Drop Reordering** - Drag tabs to reorder them within a workspace
+  - Visual drop indicator shows insertion point
+  - Updates tab order in session storage
+- **Workspace Drag & Drop Reordering** - Drag workspace tabs to reorder them
+  - Horizontal drag between workspace tabs
+  - Visual drop indicator shows insertion point
 
 ### Security
 - **XSS Prevention in Error Pages** - HTML-escape untrusted content in 404 and error pages
