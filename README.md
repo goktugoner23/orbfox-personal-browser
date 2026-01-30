@@ -82,7 +82,7 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
   - Detects deleted files, allows re-download
   - Persistent download history
 - **Favicons** displayed in tab list
-- **Loading indicators** with animated progress bar
+- **Loading indicators** with animated progress bar (debounced like Chrome/Safari)
 - **Responsive sidebar** - panels resize with sidebar width
 - Window position/size persistence
 - Keyboard shortcuts (Cmd+T, Cmd+W, Cmd+L, Cmd+1-9, Cmd+Opt+Left/Right for workspace switching, etc.)

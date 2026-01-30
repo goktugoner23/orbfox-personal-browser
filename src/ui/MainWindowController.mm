@@ -68,9 +68,18 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
 
 @end
 
+// Loading indicator timing constants (industry standard values)
+static const NSTimeInterval kLoadingIndicatorDelay = 0.4;      // 400ms delay before showing
+static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum display time
+
 @implementation MainWindowController {
     CefRefPtr<DevToolsClient> _devToolsClient;
     id _eventMonitor;
+
+    // Loading indicator debouncing state (per-tab)
+    NSMutableDictionary<NSNumber*, NSNumber*>* _tabRealNavigationFlags;  // tabId -> BOOL (is real navigation)
+    NSMutableDictionary<NSNumber*, NSDate*>* _tabLoadingStartTimes;      // tabId -> start time
+    NSMutableDictionary<NSNumber*, NSNumber*>* _tabLoadingGeneration;    // tabId -> generation counter (for cancellation)
 }
 
 - (instancetype)initWithTabManager:(TabManager*)tabManager {
@@ -90,6 +99,11 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
     if (self) {
         _tabManager = tabManager;
         _currentSidebarWidth = kSidebarDefaultWidth;
+
+        // Initialize loading indicator debouncing state
+        _tabRealNavigationFlags = [NSMutableDictionary new];
+        _tabLoadingStartTimes = [NSMutableDictionary new];
+        _tabLoadingGeneration = [NSMutableDictionary new];
 
         window.delegate = self;
         window.minSize = NSMakeSize(800, 600);
@@ -311,12 +325,21 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
         }
     });
 
+    // Track real navigations (OnLoadStart) to distinguish from JavaScript-triggered loading states
+    client->SetNavigationStartCallback([weakSelf, tabId]() {
+        MainWindowController* strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSNumber* tabKey = @(tabId);
+            strongSelf->_tabRealNavigationFlags[tabKey] = @YES;
+        });
+    });
+
     client->SetLoadingStateCallback([weakSelf, tabId](bool isLoading, bool canGoBack, bool canGoForward) {
         MainWindowController* strongSelf = weakSelf;
         if (strongSelf && strongSelf.tabManager) {
-            strongSelf.tabManager->UpdateTabLoadingState(tabId, isLoading);
-
-            // Record history when page finishes loading
+            // Record history when page finishes loading (do this immediately, not debounced)
             BOOL historyAdded = NO;
             if (!isLoading) {
                 Tab* tab = strongSelf.tabManager->GetTabById(tabId);
@@ -330,10 +353,80 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
             }
 
             dispatch_async(dispatch_get_main_queue(), ^{
+                NSNumber* tabKey = @(tabId);
+                BOOL isRealNavigation = [strongSelf->_tabRealNavigationFlags[tabKey] boolValue];
+
+                if (isLoading) {
+                    // Increment generation to invalidate any pending delayed show blocks
+                    NSInteger currentGen = [strongSelf->_tabLoadingGeneration[tabKey] integerValue] + 1;
+                    strongSelf->_tabLoadingGeneration[tabKey] = @(currentGen);
+
+                    // Only show loading indicator for real navigations, with delay
+                    if (isRealNavigation) {
+                        NSInteger capturedGen = currentGen;
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kLoadingIndicatorDelay * NSEC_PER_SEC)),
+                                       dispatch_get_main_queue(), ^{
+                            // Check if this block is still valid (generation hasn't changed)
+                            NSInteger nowGen = [strongSelf->_tabLoadingGeneration[tabKey] integerValue];
+                            if (capturedGen != nowGen) return;  // Cancelled
+
+                            // Show loading indicator after delay
+                            strongSelf.tabManager->UpdateTabLoadingState(tabId, true);
+                            strongSelf->_tabLoadingStartTimes[tabKey] = [NSDate date];
+
+                            if (strongSelf.tabManager->GetActiveTab() &&
+                                strongSelf.tabManager->GetActiveTab()->id == tabId) {
+                                [strongSelf.toolbarView setLoading:YES];
+                            }
+                        });
+                    }
+                } else {
+                    // Loading finished - increment generation to cancel pending show block
+                    NSInteger currentGen = [strongSelf->_tabLoadingGeneration[tabKey] integerValue] + 1;
+                    strongSelf->_tabLoadingGeneration[tabKey] = @(currentGen);
+
+                    // Check if we need to enforce minimum display time
+                    NSDate* startTime = strongSelf->_tabLoadingStartTimes[tabKey];
+                    if (startTime) {
+                        NSTimeInterval elapsed = -[startTime timeIntervalSinceNow];
+                        NSTimeInterval remaining = kLoadingIndicatorMinDuration - elapsed;
+
+                        if (remaining > 0) {
+                            // Keep spinner visible for minimum duration
+                            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(remaining * NSEC_PER_SEC)),
+                                           dispatch_get_main_queue(), ^{
+                                strongSelf.tabManager->UpdateTabLoadingState(tabId, false);
+                                if (strongSelf.tabManager->GetActiveTab() &&
+                                    strongSelf.tabManager->GetActiveTab()->id == tabId) {
+                                    [strongSelf.toolbarView setLoading:NO];
+                                }
+                            });
+                        } else {
+                            // Minimum duration already elapsed, hide immediately
+                            strongSelf.tabManager->UpdateTabLoadingState(tabId, false);
+                            if (strongSelf.tabManager->GetActiveTab() &&
+                                strongSelf.tabManager->GetActiveTab()->id == tabId) {
+                                [strongSelf.toolbarView setLoading:NO];
+                            }
+                        }
+                        strongSelf->_tabLoadingStartTimes[tabKey] = nil;
+                    } else {
+                        // Loading indicator was never shown (fast load), just update state
+                        strongSelf.tabManager->UpdateTabLoadingState(tabId, false);
+                        if (strongSelf.tabManager->GetActiveTab() &&
+                            strongSelf.tabManager->GetActiveTab()->id == tabId) {
+                            [strongSelf.toolbarView setLoading:NO];
+                        }
+                    }
+
+                    // Reset navigation flag
+                    strongSelf->_tabRealNavigationFlags[tabKey] = @NO;
+                }
+
+                // Always update navigation buttons immediately
                 if (strongSelf.tabManager->GetActiveTab() &&
                     strongSelf.tabManager->GetActiveTab()->id == tabId) {
                     [strongSelf.toolbarView setCanGoBack:canGoBack canGoForward:canGoForward];
-                    [strongSelf.toolbarView setLoading:isLoading];
                 }
 
                 // Refresh history panel if visible and history was just added

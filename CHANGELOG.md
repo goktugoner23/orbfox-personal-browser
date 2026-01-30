@@ -29,6 +29,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Prevents issues with special characters in error messages
 
 ### Fixed
+- **Loading Indicator Flickering** - Fixed "double load" appearance on JavaScript-heavy sites
+  - Added debounced loading indicator following browser industry standards
+  - 400ms delay before showing spinner (matches Safari/Chrome/Firefox behavior)
+  - 200ms minimum display time once shown to prevent jarring flicker
+  - Only shows for real navigations (OnLoadStart), ignores JavaScript-triggered loading states
+  - Google, YouTube, and similar dynamic sites no longer trigger false loading indicators
 - **Session Restore Infinite Loop** - Fixed hang on startup when restoring session
   - `DeleteWorkspace()` wouldn't delete the last workspace, causing infinite loop
   - Now creates restored workspaces first, then deletes default workspace

@@ -134,6 +134,19 @@ void BrowserClient::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
     }
 }
 
+void BrowserClient::OnLoadStart(CefRefPtr<CefBrowser> browser,
+                                 CefRefPtr<CefFrame> frame,
+                                 TransitionType transition_type) {
+    CEF_REQUIRE_UI_THREAD();
+    (void)browser;
+    (void)transition_type;
+
+    // Signal real navigation start for main frame only
+    if (frame->IsMain() && on_navigation_start_) {
+        on_navigation_start_();
+    }
+}
+
 void BrowserClient::OnLoadError(CefRefPtr<CefBrowser> browser,
                                  CefRefPtr<CefFrame> frame,
                                  ErrorCode errorCode,
@@ -235,6 +248,7 @@ bool BrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
                                     bool user_gesture,
                                     bool is_redirect) {
     CEF_REQUIRE_UI_THREAD();
+
     // Reset blocked count on main frame navigation
     if (frame->IsMain()) {
         blocked_count_ = 0;

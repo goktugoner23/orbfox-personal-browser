@@ -36,6 +36,7 @@ public:
     using TitleChangeCallback = std::function<void(const std::string&)>;
     using AddressChangeCallback = std::function<void(const std::string&)>;
     using LoadingStateCallback = std::function<void(bool isLoading, bool canGoBack, bool canGoForward)>;
+    using NavigationStartCallback = std::function<void()>;  // Called on real navigation start
     using CloseCallback = std::function<void()>;
     using PopupRequestCallback = std::function<void(const std::string& url)>;
     using FaviconChangeCallback = std::function<void(const std::string& url, const std::vector<unsigned char>& png_data)>;
@@ -69,6 +70,7 @@ public:
     void SetTitleChangeCallback(TitleChangeCallback callback) { on_title_change_ = std::move(callback); }
     void SetAddressChangeCallback(AddressChangeCallback callback) { on_address_change_ = std::move(callback); }
     void SetLoadingStateCallback(LoadingStateCallback callback) { on_loading_state_change_ = std::move(callback); }
+    void SetNavigationStartCallback(NavigationStartCallback callback) { on_navigation_start_ = std::move(callback); }
     void SetCloseCallback(CloseCallback callback) { on_close_ = std::move(callback); }
     void SetPopupRequestCallback(PopupRequestCallback callback) { on_popup_request_ = std::move(callback); }
     void SetFaviconChangeCallback(FaviconChangeCallback callback) { on_favicon_change_ = std::move(callback); }
@@ -120,6 +122,9 @@ public:
                               bool isLoading,
                               bool canGoBack,
                               bool canGoForward) override;
+    void OnLoadStart(CefRefPtr<CefBrowser> browser,
+                     CefRefPtr<CefFrame> frame,
+                     TransitionType transition_type) override;
     void OnLoadError(CefRefPtr<CefBrowser> browser,
                      CefRefPtr<CefFrame> frame,
                      ErrorCode errorCode,
@@ -204,6 +209,7 @@ private:
     TitleChangeCallback on_title_change_;
     AddressChangeCallback on_address_change_;
     LoadingStateCallback on_loading_state_change_;
+    NavigationStartCallback on_navigation_start_;
     CloseCallback on_close_;
     PopupRequestCallback on_popup_request_;
     FaviconChangeCallback on_favicon_change_;
