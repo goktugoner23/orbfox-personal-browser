@@ -18,6 +18,11 @@
 #include <set>
 #include <atomic>
 
+// Global context menu suppression for gesture detection
+// Call these from the gesture container to temporarily disable context menus
+void SuppressContextMenu(bool suppress);
+bool IsContextMenuSuppressed();
+
 // BrowserClient: Per-browser CEF callbacks
 // Handles all browser-level events (lifecycle, loading, display, etc.)
 class BrowserClient : public CefClient,

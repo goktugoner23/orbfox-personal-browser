@@ -43,6 +43,16 @@ public:
     // Clear the saved session
     static void Clear();
 
+    // Crash detection - uses a lock file to detect unclean shutdowns
+    // Call MarkRunning() on startup, MarkCleanShutdown() on graceful exit
+    static void MarkRunning();
+    static void MarkCleanShutdown();
+    [[nodiscard]] static bool DidCrashLastSession();
+
+    // Auto-save session periodically (call from timer)
+    void AutoSave(const SavedSession& session);
+
 private:
     static std::string GetSessionPath();
+    static std::string GetCrashLockPath();
 };

@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Bookmark Import** - Import bookmarks from other browsers via Bookmarks menu
+  - Supports Chrome, Safari, Firefox, and Microsoft Edge
+  - Auto-detects installed browsers and available profiles
+  - Creates a folder named after the source browser for imported bookmarks
+  - Skips duplicate URLs to avoid bloating bookmark list
+  - Shows result dialog with import count and skipped duplicates
+- **Crash Recovery** - Automatic session restore after unexpected shutdown
+  - Uses lock file (`running.lock`) to detect unclean shutdowns
+  - If crash detected on startup, session is automatically restored
+  - Lock file created on startup, removed on clean shutdown
+  - Works in conjunction with "Restore session on startup" setting
 - **Image Context Menu** - Right-click on images for quick actions
   - "Save Image As..." - triggers download of the image
   - "Copy Image Address" - copies image URL to clipboard
@@ -51,9 +62,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - User can expand folders, state persists during session
 
 ### Fixed
-- **Gesture Container Context Menu** - Fixed right-click showing no menu when not dragging
-  - Mouse gestures intercepted right-click events but didn't forward to CEF when no gesture detected
-  - Now properly forwards right-click to browser view to show context menu
+- **Mouse Gesture Context Menu Integration** - Fixed context menu appearing during gesture drag
+  - CEF's internal context menu handling was bypassing Cocoa event interception
+  - Added global context menu suppression flag during gesture tracking
+  - Context menu now correctly suppressed while tracking gesture
+  - Right-click without drag properly shows context menu
+  - Gestures (left/right/L-shape) work reliably without menu interference
 - **Bookmark Drag & Drop Crash** - Fixed crash when dragging bookmarks out of folders
   - Null pointer crash in performDragOperation when moving to root level
 - **Folder Positioning in Bookmark List** - Folders now correctly interleave with bookmarks

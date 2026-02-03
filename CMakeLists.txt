@@ -107,6 +107,7 @@ set(HEADERS
     include/browser_app.h
     include/browser_client.h
     include/orbfox_scheme_handler.h
+    include/bookmark_importer.h
 )
 
 # UI headers (for IDE indexing)
@@ -158,6 +159,7 @@ if(APPLE)
         src/ui/components/TabRowView.mm
         src/ui/components/BookmarkDropContainerView.mm
         src/ui/components/AddBookmarkPopoverController.mm
+        src/data/bookmark_importer.mm
     )
 endif()
 

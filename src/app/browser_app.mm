@@ -111,6 +111,12 @@ void BrowserApp::OnContextInitialized() {
     // Initialize session storage
     g_session_storage = std::make_unique<SessionStorage>();
 
+    // Check if we crashed last session
+    bool didCrash = SessionStorage::DidCrashLastSession();
+
+    // Mark browser as running (for crash detection on next startup)
+    SessionStorage::MarkRunning();
+
     // Create tab manager (creates default "WS 1" workspace)
     g_tab_manager = std::make_unique<TabManager>();
 
@@ -131,9 +137,11 @@ void BrowserApp::OnContextInitialized() {
     [window makeKeyAndOrderFront:nil];
 
     // Try to restore session, otherwise create default tab
+    // Always restore on crash, otherwise check settings
     bool sessionRestored = false;
     const Settings& settings = SettingsStorage::GetInstance().Get();
-    if (settings.restore_session && g_session_storage->HasSavedSession()) {
+    bool shouldRestore = (didCrash || settings.restore_session) && g_session_storage->HasSavedSession();
+    if (shouldRestore) {
         SavedSession session = g_session_storage->Load();
         if (!session.workspaces.empty()) {
             // Remember the default workspace ID to delete it after creating restored ones
@@ -276,5 +284,7 @@ void BrowserApp::OnContextInitialized() {
                                                   usingBlock:^(NSNotification* note) {
         (void)note;
         SaveSession();
+        // Mark clean shutdown so we know we didn't crash
+        SessionStorage::MarkCleanShutdown();
     }];
 }

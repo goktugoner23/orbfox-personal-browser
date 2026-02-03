@@ -47,6 +47,17 @@ private:
     DISALLOW_COPY_AND_ASSIGN(FaviconDownloadCallback);
 };
 
+// Global context menu suppression for gesture detection
+static std::atomic<bool> g_context_menu_suppressed{false};
+
+void SuppressContextMenu(bool suppress) {
+    g_context_menu_suppressed.store(suppress);
+}
+
+bool IsContextMenuSuppressed() {
+    return g_context_menu_suppressed.load();
+}
+
 BrowserClient::BrowserClient() = default;
 
 // CefLifeSpanHandler methods
@@ -501,6 +512,11 @@ void BrowserClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
 
     // Clear default menu
     model->Clear();
+
+    // If context menu is suppressed (gesture tracking in progress), don't show menu
+    if (IsContextMenuSuppressed()) {
+        return;
+    }
 
     // Check if we're on an internal orbfox:// page
     std::string page_url = frame->GetURL().ToString();

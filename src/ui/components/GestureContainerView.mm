@@ -1,4 +1,5 @@
 #import "GestureContainerView.h"
+#include "browser_client.h"
 
 @implementation GestureContainerView {
     BOOL _isTrackingGesture;
@@ -36,6 +37,9 @@
     _hasMovedDown = NO;
     _maxDownwardDistance = 0;
     _didDrag = NO;
+
+    // Suppress CEF context menu during gesture tracking
+    SuppressContextMenu(true);
 
     // Don't call super - we're handling this
 }
@@ -76,6 +80,9 @@
 
     _isTrackingGesture = NO;
 
+    // Re-enable context menu
+    SuppressContextMenu(false);
+
     NSPoint endPoint = [self convertPoint:event.locationInWindow fromView:nil];
     CGFloat dx = endPoint.x - _gestureStartPoint.x;
     CGFloat dy = endPoint.y - _gestureStartPoint.y;  // Positive = up, negative = down
@@ -109,17 +116,29 @@
         // Find the actual browser view (should be a subview of this container)
         for (NSView* subview in self.subviews) {
             if (!subview.hidden) {
-                // Synthesize a right-click event at the original location
-                NSEvent* clickEvent = [NSEvent mouseEventWithType:NSEventTypeRightMouseDown
-                                                         location:event.locationInWindow
-                                                    modifierFlags:event.modifierFlags
-                                                        timestamp:event.timestamp
-                                                     windowNumber:event.windowNumber
-                                                          context:nil
-                                                      eventNumber:event.eventNumber
-                                                       clickCount:1
-                                                         pressure:event.pressure];
-                [subview rightMouseDown:clickEvent];
+                // Forward both down and up events - CEF needs both to show context menu
+                NSEvent* downEvent = [NSEvent mouseEventWithType:NSEventTypeRightMouseDown
+                                                        location:event.locationInWindow
+                                                   modifierFlags:event.modifierFlags
+                                                       timestamp:event.timestamp
+                                                    windowNumber:event.windowNumber
+                                                         context:nil
+                                                     eventNumber:event.eventNumber
+                                                      clickCount:1
+                                                        pressure:event.pressure];
+                [subview rightMouseDown:downEvent];
+
+                // Also send the mouse up event
+                NSEvent* upEvent = [NSEvent mouseEventWithType:NSEventTypeRightMouseUp
+                                                      location:event.locationInWindow
+                                                 modifierFlags:event.modifierFlags
+                                                     timestamp:event.timestamp
+                                                  windowNumber:event.windowNumber
+                                                       context:nil
+                                                   eventNumber:event.eventNumber
+                                                    clickCount:1
+                                                      pressure:event.pressure];
+                [subview rightMouseUp:upEvent];
                 break;
             }
         }
@@ -127,16 +146,45 @@
     // If drag occurred but no gesture recognized, do nothing (user was just exploring)
 }
 
-// Forward mouse events to subviews (the CEF browser views)
+// Intercept right-clicks for gesture detection
 - (NSView*)hitTest:(NSPoint)point {
-    // For left clicks and other events, let subviews handle them normally
-    // Right-click events are handled by our rightMouse* methods
+    // First check if the point is even in our bounds
+    NSPoint localPoint = [self convertPoint:point fromView:self.superview];
+    if (!NSPointInRect(localPoint, self.bounds)) {
+        return nil;
+    }
+
+    if (!_gesturesEnabled) {
+        return [super hitTest:point];
+    }
+
+    // Check if the current event is a right-click
+    NSEvent* currentEvent = [NSApp currentEvent];
+    if (currentEvent &&
+        (currentEvent.type == NSEventTypeRightMouseDown ||
+         currentEvent.type == NSEventTypeRightMouseDragged ||
+         currentEvent.type == NSEventTypeRightMouseUp)) {
+        // Return self to intercept right-click events for gesture detection
+        return self;
+    }
+
+    // For all other events, let subviews handle them normally
     return [super hitTest:point];
 }
 
 // Allow subviews to receive mouse events
 - (BOOL)acceptsFirstMouse:(NSEvent*)event {
     return YES;
+}
+
+// Prevent automatic context menu during gesture tracking
+- (NSMenu*)menuForEvent:(NSEvent*)event {
+    // We handle context menus manually after gesture detection
+    // Return nil to prevent automatic context menu
+    if (_gesturesEnabled) {
+        return nil;
+    }
+    return [super menuForEvent:event];
 }
 
 @end

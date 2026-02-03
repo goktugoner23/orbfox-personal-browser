@@ -2,6 +2,7 @@
 
 #include "browser_app.h"
 #include "bookmark_storage.h"
+#include "bookmark_importer.h"
 #include "history_storage.h"
 
 #include "include/cef_app.h"
@@ -115,6 +116,36 @@
     [bookmarksMenu addItemWithTitle:@"Bookmark This Page" action:@selector(bookmarkThisPage:) keyEquivalent:@"d"];
     NSMenuItem* newFolderItem = [bookmarksMenu addItemWithTitle:@"New Folder..." action:@selector(newBookmarkFolder:) keyEquivalent:@"N"];
     newFolderItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+
+    // Import Bookmarks submenu
+    NSMenuItem* importItem = [[NSMenuItem alloc] initWithTitle:@"Import Bookmarks" action:nil keyEquivalent:@""];
+    NSMenu* importMenu = [[NSMenu alloc] init];
+    auto detectedBrowsers = BookmarkImporter::DetectBrowsers();
+    if (detectedBrowsers.empty()) {
+        NSMenuItem* noBrowsers = [[NSMenuItem alloc] initWithTitle:@"No Browsers Detected" action:nil keyEquivalent:@""];
+        noBrowsers.enabled = NO;
+        [importMenu addItem:noBrowsers];
+    } else {
+        for (const auto& browser : detectedBrowsers) {
+            NSString* title = [NSString stringWithFormat:@"%s (%s)",
+                browser.name.c_str(), browser.profile_name.c_str()];
+            NSMenuItem* browserItem = [[NSMenuItem alloc] initWithTitle:title
+                                                                 action:@selector(importFromBrowser:)
+                                                          keyEquivalent:@""];
+            browserItem.target = self;
+            // Store browser info for the action
+            NSDictionary* info = @{
+                @"type": @(static_cast<int>(browser.type)),
+                @"path": [NSString stringWithUTF8String:browser.profile_path.c_str()],
+                @"name": [NSString stringWithUTF8String:browser.name.c_str()]
+            };
+            browserItem.representedObject = info;
+            [importMenu addItem:browserItem];
+        }
+    }
+    importItem.submenu = importMenu;
+    [bookmarksMenu addItem:importItem];
+
     [bookmarksMenu addItem:[NSMenuItem separatorItem]];
     [bookmarksMenu addItemWithTitle:@"Show Bookmarks" action:@selector(showBookmarksPanel:) keyEquivalent:@"b"];
     [bookmarksMenu addItem:[NSMenuItem separatorItem]];
@@ -201,6 +232,39 @@
     }
 }
 
+- (void)importFromBrowser:(id)sender {
+    NSMenuItem* item = (NSMenuItem*)sender;
+    NSDictionary* info = item.representedObject;
+    if (!info) return;
+
+    BrowserType type = static_cast<BrowserType>([info[@"type"] intValue]);
+    NSString* path = info[@"path"];
+    NSString* name = info[@"name"];
+
+    DetectedBrowser browser;
+    browser.type = type;
+    browser.profile_path = [path UTF8String];
+    browser.name = [name UTF8String];
+
+    // Import into a folder named after the browser
+    ImportResult result = BookmarkImporter::Import(browser, browser.name);
+
+    // Show result alert
+    NSAlert* alert = [[NSAlert alloc] init];
+    if (result.success) {
+        alert.messageText = @"Import Complete";
+        alert.informativeText = [NSString stringWithFormat:@"Imported %d bookmarks.\nSkipped %d duplicates.",
+            result.imported_count, result.skipped_count];
+        alert.alertStyle = NSAlertStyleInformational;
+    } else {
+        alert.messageText = @"Import Failed";
+        alert.informativeText = [NSString stringWithUTF8String:result.error_message.c_str()];
+        alert.alertStyle = NSAlertStyleWarning;
+    }
+    [alert addButtonWithTitle:@"OK"];
+    [alert runModal];
+}
+
 - (void)showDownloadsPanel:(id)sender {
     (void)sender;
     NSWindow* window = [NSApp keyWindow];
@@ -244,9 +308,9 @@
 }
 
 - (void)populateBookmarksMenu:(NSMenu*)menu {
-    // Remove dynamic items (keep first 5: Bookmark Page, New Folder, separator, Show Bookmarks, separator)
-    while (menu.numberOfItems > 5) {
-        [menu removeItemAtIndex:5];
+    // Remove dynamic items (keep first 6: Bookmark Page, New Folder, Import Bookmarks, separator, Show Bookmarks, separator)
+    while (menu.numberOfItems > 6) {
+        [menu removeItemAtIndex:6];
     }
 
     BookmarkStorage* bookmarks = GetBookmarkStorage();

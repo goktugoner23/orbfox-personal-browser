@@ -133,3 +133,32 @@ bool SessionStorage::HasSavedSession() {
 void SessionStorage::Clear() {
     std::remove(GetSessionPath().c_str());
 }
+
+std::string SessionStorage::GetCrashLockPath() {
+    return orbfox::utils::GetAppSupportPath() + "/running.lock";
+}
+
+void SessionStorage::MarkRunning() {
+    // Create a lock file to indicate the browser is running
+    std::ofstream file(GetCrashLockPath());
+    if (file.is_open()) {
+        file << "OrbFox is running";
+        file.close();
+    }
+}
+
+void SessionStorage::MarkCleanShutdown() {
+    // Remove the lock file on clean shutdown
+    std::remove(GetCrashLockPath().c_str());
+}
+
+bool SessionStorage::DidCrashLastSession() {
+    // If lock file exists, we crashed last time
+    std::ifstream file(GetCrashLockPath());
+    return file.good();
+}
+
+void SessionStorage::AutoSave(const SavedSession& session) {
+    // Same as Save(), but called periodically for crash recovery
+    Save(session);
+}

@@ -59,6 +59,8 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
   - Resizable via drag divider
   - "Inspect Element" from context menu
 - **Session persistence** - restore workspaces and tabs on restart (Vivaldi-style)
+- **Crash recovery** - automatic session restore after unexpected shutdown
+- **Bookmark import** - import bookmarks from Chrome, Safari, Firefox, Edge
 - **Bookmarks panel** - full bookmark management
   - Add bookmarks via popover with URL, nickname, description
   - Folder organization with collapsible collections

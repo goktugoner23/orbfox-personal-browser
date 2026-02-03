@@ -10,8 +10,8 @@
 TEST(SettingsTest, DefaultValues) {
     Settings settings;
 
-    EXPECT_EQ(settings.homepage_url, "https://www.google.com");
-    EXPECT_EQ(settings.new_tab_url, "https://www.google.com");
+    EXPECT_EQ(settings.homepage_url, "orbfox://bookmarks");
+    EXPECT_EQ(settings.new_tab_url, "orbfox://bookmarks");
     EXPECT_TRUE(settings.restore_session);
     EXPECT_TRUE(settings.tracking_protection);
     EXPECT_EQ(settings.download_path, "");
@@ -48,7 +48,7 @@ TEST_F(SettingsStorageTest, Get_ReturnsCurrentSettings) {
     const Settings& settings = SettingsStorage::GetInstance().Get();
 
     // Should return default values
-    EXPECT_EQ(settings.homepage_url, "https://www.google.com");
+    EXPECT_EQ(settings.homepage_url, "orbfox://bookmarks");
     EXPECT_TRUE(settings.restore_session);
 }
 
@@ -225,7 +225,7 @@ TEST_F(SettingsStorageTest, ToJson_ContainsAllFields) {
 TEST_F(SettingsStorageTest, ToJson_DefaultValues) {
     std::string json = SettingsStorage::GetInstance().ToJson();
 
-    EXPECT_TRUE(json.find("\"https://www.google.com\"") != std::string::npos);
+    EXPECT_TRUE(json.find("\"orbfox://bookmarks\"") != std::string::npos);
     EXPECT_TRUE(json.find("\"restore_session\": true") != std::string::npos);
     EXPECT_TRUE(json.find("\"tracking_protection\": true") != std::string::npos);
     EXPECT_TRUE(json.find("\"ask_before_download\": true") != std::string::npos);
@@ -350,7 +350,7 @@ TEST_F(SettingsStorageTest, FromJson_EmptyString_RetainsDefaults) {
 
     const Settings& settings = SettingsStorage::GetInstance().Get();
     // Should retain default values
-    EXPECT_EQ(settings.homepage_url, "https://www.google.com");
+    EXPECT_EQ(settings.homepage_url, "orbfox://bookmarks");
     EXPECT_TRUE(settings.restore_session);
 }
 
@@ -362,7 +362,7 @@ TEST_F(SettingsStorageTest, FromJson_InvalidJson_RetainsDefaults) {
 
     const Settings& settings = SettingsStorage::GetInstance().Get();
     // Should retain default values
-    EXPECT_EQ(settings.homepage_url, "https://www.google.com");
+    EXPECT_EQ(settings.homepage_url, "orbfox://bookmarks");
 }
 
 // ============================================================================
