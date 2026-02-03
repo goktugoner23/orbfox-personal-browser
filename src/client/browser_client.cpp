@@ -517,6 +517,7 @@ void BrowserClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
         model->AddItem(MENU_ID_OPEN_LINK_BACKGROUND, "Open Link in Background Tab");
         model->AddSeparator();
         model->AddItem(MENU_ID_COPY_LINK_ADDRESS, "Copy Link Address");
+        model->AddItem(MENU_ID_ADD_LINK_BOOKMARK, "Add Link to Bookmarks");
         model->AddSeparator();
     }
 
@@ -540,6 +541,10 @@ void BrowserClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
     if (!browser->CanGoForward()) {
         model->SetEnabled(MENU_ID_FORWARD, false);
     }
+
+    // Add bookmark option for the current page
+    model->AddSeparator();
+    model->AddItem(MENU_ID_BOOKMARK_PAGE, "Bookmark This Page");
 
     // Always add Inspect at the bottom
     model->AddSeparator();
@@ -595,6 +600,23 @@ bool BrowserClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
         case MENU_ID_INSPECT_ELEMENT: {
             if (on_inspect_element_) {
                 on_inspect_element_(params->GetXCoord(), params->GetYCoord());
+            }
+            return true;
+        }
+        case MENU_ID_ADD_LINK_BOOKMARK: {
+            CefString link_url = params->GetLinkUrl();
+            if (!link_url.empty() && on_bookmark_action_) {
+                // Use link text as title, fallback to URL
+                CefString link_text = params->GetUnfilteredLinkUrl();
+                std::string url = link_url.ToString();
+                std::string title = url;  // Default title is URL
+                on_bookmark_action_("add_link", url + "\t" + title);
+            }
+            return true;
+        }
+        case MENU_ID_BOOKMARK_PAGE: {
+            if (on_bookmark_action_) {
+                on_bookmark_action_("add", "");
             }
             return true;
         }

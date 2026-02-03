@@ -62,6 +62,8 @@ public:
         MENU_ID_COPY_LINK_ADDRESS = 50002,
         MENU_ID_COPY_TEXT = 50003,
         MENU_ID_INSPECT_ELEMENT = 50004,
+        MENU_ID_ADD_LINK_BOOKMARK = 50005,
+        MENU_ID_BOOKMARK_PAGE = 50006,
     };
 
     BrowserClient();

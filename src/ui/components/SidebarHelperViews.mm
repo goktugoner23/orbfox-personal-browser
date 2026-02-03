@@ -2,6 +2,7 @@
 #import "TabRowView.h"
 #import "SidebarView.h"
 #import "MainWindowController.h"
+#import "BookmarkDropContainerView.h"
 #include "tab_manager.h"
 
 // ============================================================================
@@ -412,6 +413,93 @@ NSPasteboardType const WorkspaceTabPasteboardType = @"com.orbfox.workspacetab";
     // Bring to front
     [_dropIndicator removeFromSuperview];
     [self addSubview:_dropIndicator];
+}
+
+@end
+
+// ============================================================================
+// DRAGGABLE FOLDER HEADER VIEW
+// ============================================================================
+
+@implementation DraggableFolderHeaderView {
+    NSPoint _dragStartPoint;
+    BOOL _isDragging;
+}
+
+- (BOOL)isFlipped { return YES; }
+
+- (instancetype)initWithFrame:(NSRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        _isDragging = NO;
+    }
+    return self;
+}
+
+- (void)mouseDown:(NSEvent*)event {
+    _dragStartPoint = [self convertPoint:event.locationInWindow fromView:nil];
+    _isDragging = NO;
+}
+
+- (void)mouseUp:(NSEvent*)event {
+    (void)event;
+    if (!_isDragging) {
+        // Forward click to first responder (chevron button)
+        for (NSView* subview in self.subviews) {
+            if ([subview isKindOfClass:[NSButton class]]) {
+                NSButton* btn = (NSButton*)subview;
+                if (btn.action) {
+                    [btn performClick:nil];
+                    break;
+                }
+            }
+        }
+    }
+    _isDragging = NO;
+}
+
+- (void)mouseDragged:(NSEvent*)event {
+    NSPoint currentPoint = [self convertPoint:event.locationInWindow fromView:nil];
+    CGFloat dx = currentPoint.x - _dragStartPoint.x;
+    CGFloat dy = currentPoint.y - _dragStartPoint.y;
+    CGFloat distance = sqrt(dx * dx + dy * dy);
+
+    if (!_isDragging && distance > 5) {
+        _isDragging = YES;
+        [self startDragWithEvent:event];
+    }
+}
+
+- (void)startDragWithEvent:(NSEvent*)event {
+    if (!_folderName) return;
+
+    // Create pasteboard item with folder data
+    NSPasteboardItem* pbItem = [[NSPasteboardItem alloc] init];
+    NSDictionary* dragData = @{@"name": _folderName};
+    NSData* data = [NSPropertyListSerialization dataWithPropertyList:dragData
+                                                              format:NSPropertyListBinaryFormat_v1_0
+                                                             options:0
+                                                               error:nil];
+    [pbItem setData:data forType:kBookmarkFolderPasteboardType];
+
+    // Create snapshot for drag image
+    NSImage* dragImage = [[NSImage alloc] initWithSize:self.bounds.size];
+    [dragImage lockFocus];
+    [[NSColor colorWithWhite:0.3 alpha:0.8] setFill];
+    NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:8 yRadius:8];
+    [path fill];
+    [dragImage unlockFocus];
+
+    NSDraggingItem* dragItem = [[NSDraggingItem alloc] initWithPasteboardWriter:pbItem];
+    [dragItem setDraggingFrame:self.bounds contents:dragImage];
+
+    [self beginDraggingSessionWithItems:@[dragItem] event:event source:self];
+}
+
+- (NSDragOperation)draggingSession:(NSDraggingSession*)session sourceOperationMaskForDraggingContext:(NSDraggingContext)context {
+    (void)session;
+    (void)context;
+    return NSDragOperationMove;
 }
 
 @end

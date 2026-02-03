@@ -67,3 +67,15 @@ extern NSPasteboardType const WorkspaceTabPasteboardType;
 @property (nonatomic, assign) int dropTargetIndex;
 
 @end
+
+// ============================================================================
+// DRAGGABLE FOLDER HEADER VIEW
+// NSView that can be dragged to reorder bookmark folders
+// ============================================================================
+
+@interface DraggableFolderHeaderView : NSView <NSDraggingSource>
+
+@property (nonatomic, copy) NSString* folderName;
+@property (nonatomic, weak) SidebarView* sidebarView;
+
+@end

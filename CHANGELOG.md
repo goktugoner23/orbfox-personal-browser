@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Context Menu Bookmark Options** - Right-click to add bookmarks
+  - "Add Link to Bookmarks" appears when right-clicking links
+  - "Bookmark This Page" available on all context menus
+  - Opens bookmark popover for editing before saving
+- **Bookmark Folder Drag & Drop** - Reorder folders by dragging
+  - Drag folder headers to reorder within bookmark list
+  - Folders and bookmarks share unified position system at root level
+  - Visual drop indicator shows insertion point
 - **Middle-Click Support** - Mouse button 3 opens items in background tabs
   - Middle-click on bookmarks in sidebar opens in background tab
   - Middle-click on history items opens in background tab
@@ -20,12 +28,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - All context menus and middle-click handlers use these centralized methods
 
 ### Changed
-- **Edit Bookmark Dialog** - Now uses reusable `AddBookmarkPopoverController`
-  - Same polished UI as add bookmark dialog
-  - Proper button positioning (Cancel left, Save right)
-  - Supports both popover and sheet modes
+- **Edit Bookmark Dialog** - Now includes all bookmark fields
+  - Address (URL), Nickname, Description, and Folder fields
+  - Matches the Add Bookmark popover layout
+  - Same polished UI with proper button positioning (Cancel left, Save right)
 
 ### Fixed
+- **Bookmark Drag & Drop Crash** - Fixed crash when dragging bookmarks out of folders
+  - Null pointer crash in performDragOperation when moving to root level
+- **Folder Positioning in Bookmark List** - Folders now correctly interleave with bookmarks
+  - Folders were using loop index instead of database position for sorting
+  - Now uses actual `GetFolderPosition()` for correct ordering
+  - Folders can be moved to any position including bottom of list
+- **Drop Indicator Position** - Indicator now shows at correct visual position
+  - Tracks last visible view including indented folder contents
+  - Shows at actual bottom when dragging past all items
 - **Background Tab View Flash** - Browser view no longer shows new page when opening in background
   - CEF creates browser views visible by default
   - Now immediately hides browser view if tab is not active

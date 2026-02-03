@@ -4,8 +4,9 @@
 
 @class SidebarView;
 
-// Pasteboard type for bookmark drag & drop
+// Pasteboard types for bookmark drag & drop
 extern NSString* const kBookmarkPasteboardType;
+extern NSString* const kBookmarkFolderPasteboardType;
 
 // ============================================================================
 // BOOKMARK DROP CONTAINER

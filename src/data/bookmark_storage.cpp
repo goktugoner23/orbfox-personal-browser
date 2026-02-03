@@ -439,6 +439,54 @@ void BookmarkStorage::RenameFolder(const std::string& old_name, const std::strin
     }
 }
 
+void BookmarkStorage::MoveFolder(const std::string& name, int new_position) {
+    if (!db_ || name.empty()) return;
+
+    // Get current position
+    int current_position = -1;
+    const char* get_pos_sql = "SELECT position FROM bookmark_folders WHERE name = ?";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, get_pos_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            current_position = sqlite3_column_int(stmt, 0);
+        }
+        sqlite3_finalize(stmt);
+    }
+
+    if (current_position < 0) return;  // Folder not found
+
+    // Shift other folders
+    if (new_position < current_position) {
+        // Moving up: shift folders in range [new_position, current_position) down
+        const char* shift_sql = "UPDATE bookmark_folders SET position = position + 1 WHERE position >= ? AND position < ?";
+        if (sqlite3_prepare_v2(db_, shift_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int(stmt, 1, new_position);
+            sqlite3_bind_int(stmt, 2, current_position);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    } else if (new_position > current_position) {
+        // Moving down: shift folders in range (current_position, new_position] up
+        const char* shift_sql = "UPDATE bookmark_folders SET position = position - 1 WHERE position > ? AND position <= ?";
+        if (sqlite3_prepare_v2(db_, shift_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int(stmt, 1, current_position);
+            sqlite3_bind_int(stmt, 2, new_position);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    // Update this folder's position
+    const char* update_sql = "UPDATE bookmark_folders SET position = ? WHERE name = ?";
+    if (sqlite3_prepare_v2(db_, update_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, new_position);
+        sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+}
+
 int BookmarkStorage::GetNextFolderNumber() {
     if (!db_) return 1;
 
@@ -476,4 +524,142 @@ int BookmarkStorage::GetNextFolderNumber() {
     }
 
     return max_num + 1;
+}
+
+int BookmarkStorage::GetFolderPosition(const std::string& name) {
+    if (!db_ || name.empty()) return -1;
+
+    const char* sql = "SELECT position FROM bookmark_folders WHERE name = ?";
+    sqlite3_stmt* stmt = nullptr;
+    int position = -1;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            position = sqlite3_column_int(stmt, 0);
+        }
+        sqlite3_finalize(stmt);
+    }
+    return position;
+}
+
+void BookmarkStorage::MoveBookmarkAtRoot(int64_t id, int new_position) {
+    if (!db_) return;
+
+    // Get current position of this bookmark (must be at root level - empty folder)
+    int current_position = -1;
+    const char* get_pos_sql = "SELECT position FROM bookmarks WHERE id = ? AND folder = ''";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, get_pos_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int64(stmt, 1, id);
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            current_position = sqlite3_column_int(stmt, 0);
+        }
+        sqlite3_finalize(stmt);
+    }
+
+    if (current_position < 0) return;  // Bookmark not found at root
+
+    // Shift other root bookmarks
+    if (new_position < current_position) {
+        const char* shift_sql = "UPDATE bookmarks SET position = position + 1 WHERE folder = '' AND position >= ? AND position < ?";
+        if (sqlite3_prepare_v2(db_, shift_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int(stmt, 1, new_position);
+            sqlite3_bind_int(stmt, 2, current_position);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    } else if (new_position > current_position) {
+        const char* shift_sql = "UPDATE bookmarks SET position = position - 1 WHERE folder = '' AND position > ? AND position <= ?";
+        if (sqlite3_prepare_v2(db_, shift_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int(stmt, 1, current_position);
+            sqlite3_bind_int(stmt, 2, new_position);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    // Also shift folders in the same range
+    if (new_position < current_position) {
+        const char* shift_sql = "UPDATE bookmark_folders SET position = position + 1 WHERE position >= ? AND position < ?";
+        if (sqlite3_prepare_v2(db_, shift_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int(stmt, 1, new_position);
+            sqlite3_bind_int(stmt, 2, current_position);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    } else if (new_position > current_position) {
+        const char* shift_sql = "UPDATE bookmark_folders SET position = position - 1 WHERE position > ? AND position <= ?";
+        if (sqlite3_prepare_v2(db_, shift_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int(stmt, 1, current_position);
+            sqlite3_bind_int(stmt, 2, new_position);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    // Update this bookmark's position
+    const char* update_sql = "UPDATE bookmarks SET position = ? WHERE id = ?";
+    if (sqlite3_prepare_v2(db_, update_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, new_position);
+        sqlite3_bind_int64(stmt, 2, id);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+}
+
+void BookmarkStorage::MoveFolderAtRoot(const std::string& name, int new_position) {
+    if (!db_ || name.empty()) return;
+
+    // Get current position
+    int current_position = GetFolderPosition(name);
+    if (current_position < 0) return;
+
+    sqlite3_stmt* stmt = nullptr;
+
+    // Shift other folders
+    if (new_position < current_position) {
+        const char* shift_sql = "UPDATE bookmark_folders SET position = position + 1 WHERE position >= ? AND position < ?";
+        if (sqlite3_prepare_v2(db_, shift_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int(stmt, 1, new_position);
+            sqlite3_bind_int(stmt, 2, current_position);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    } else if (new_position > current_position) {
+        const char* shift_sql = "UPDATE bookmark_folders SET position = position - 1 WHERE position > ? AND position <= ?";
+        if (sqlite3_prepare_v2(db_, shift_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int(stmt, 1, current_position);
+            sqlite3_bind_int(stmt, 2, new_position);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    // Also shift root bookmarks in the same range
+    if (new_position < current_position) {
+        const char* shift_sql = "UPDATE bookmarks SET position = position + 1 WHERE folder = '' AND position >= ? AND position < ?";
+        if (sqlite3_prepare_v2(db_, shift_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int(stmt, 1, new_position);
+            sqlite3_bind_int(stmt, 2, current_position);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    } else if (new_position > current_position) {
+        const char* shift_sql = "UPDATE bookmarks SET position = position - 1 WHERE folder = '' AND position > ? AND position <= ?";
+        if (sqlite3_prepare_v2(db_, shift_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+            sqlite3_bind_int(stmt, 1, current_position);
+            sqlite3_bind_int(stmt, 2, new_position);
+            sqlite3_step(stmt);
+            sqlite3_finalize(stmt);
+        }
+    }
+
+    // Update this folder's position
+    const char* update_sql = "UPDATE bookmark_folders SET position = ? WHERE name = ?";
+    if (sqlite3_prepare_v2(db_, update_sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, new_position);
+        sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
 }

@@ -505,7 +505,7 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         });
     });
 
-    // Handle bookmark actions from orbfox://bookmarks page
+    // Handle bookmark actions from orbfox://bookmarks page and context menu
     client->SetBookmarkActionCallback([weakSelf](const std::string& action, const std::string& param) {
         std::string actionCopy = action;
         std::string paramCopy = param;
@@ -514,8 +514,22 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
             if (!strongSelf) return;
 
             if (actionCopy == "add") {
-                // Show add bookmark dialog
-                [strongSelf bookmarkThisPage];
+                // Show add bookmark dialog for current page (from context menu)
+                Tab* activeTab = strongSelf->_tabManager->GetActiveTab();
+                if (activeTab) {
+                    NSString* url = [NSString stringWithUTF8String:activeTab->url.c_str()];
+                    NSString* title = [NSString stringWithUTF8String:activeTab->title.c_str()];
+                    [strongSelf.sidebarView showAddBookmarkSheetWithUrl:url title:title];
+                }
+            } else if (actionCopy == "add_link") {
+                // Show add bookmark dialog for a specific link (from context menu)
+                // param format: "url\ttitle"
+                size_t tabPos = paramCopy.find('\t');
+                std::string url = (tabPos != std::string::npos) ? paramCopy.substr(0, tabPos) : paramCopy;
+                std::string title = (tabPos != std::string::npos) ? paramCopy.substr(tabPos + 1) : url;
+                NSString* nsUrl = [NSString stringWithUTF8String:url.c_str()];
+                NSString* nsTitle = [NSString stringWithUTF8String:title.c_str()];
+                [strongSelf.sidebarView showAddBookmarkSheetWithUrl:nsUrl title:nsTitle];
             } else if (actionCopy == "edit") {
                 // Edit bookmark - show edit dialog with bookmark ID
                 int64_t bookmarkId = std::stoll(paramCopy);

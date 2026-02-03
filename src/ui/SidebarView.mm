@@ -1596,6 +1596,17 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     [_addBookmarkPopover showRelativeToView:anchorView withUrl:url title:title];
 }
 
+- (void)showAddBookmarkSheetWithUrl:(NSString*)url title:(NSString*)title {
+    // Create the add bookmark popover if needed
+    if (!_addBookmarkPopover) {
+        _addBookmarkPopover = [[AddBookmarkPopoverController alloc] init];
+        _addBookmarkPopover.sidebarView = self;
+    }
+
+    // Show as sheet in the main window (for context menu invocations)
+    [_addBookmarkPopover showAsSheetInWindow:self.window withUrl:url title:title];
+}
+
 - (void)newFolderClicked:(id)sender {
     (void)sender;
     NSLog(@"newFolderClicked: method called");
@@ -1702,34 +1713,76 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         return;
     }
 
-    // 1. Display root bookmarks first (folder == "")
+    // Build unified list of root-level items (folders + root bookmarks) sorted by position
+    // Each item is either a folder (NSString) or a bookmark (wrapped in NSValue)
+    NSMutableArray* rootItems = [NSMutableArray array];
+
+    // Add root bookmarks
     for (const auto& entry : allEntries) {
         if (!entry.folder.empty()) continue;
-        DSRow* row = [self createBookmarkRowForEntry:entry atY:y width:contentWidth indent:0];
-        [_bookmarksContainer addSubview:row];
-        y += rowHeight;
+        // Store bookmark data with position for sorting
+        NSDictionary* item = @{
+            @"type": @"bookmark",
+            @"position": @(entry.position),
+            @"id": @(entry.id),
+            @"url": [NSString stringWithUTF8String:entry.url.c_str()],
+            @"title": [NSString stringWithUTF8String:entry.title.c_str()],
+            @"folder": @""
+        };
+        [rootItems addObject:item];
     }
 
-    // 2. Display folders with their bookmarks
-    for (const auto& folderName : folders) {
-        NSString* folder = [NSString stringWithUTF8String:folderName.c_str()];
-        BOOL isCollapsed = [_collapsedFolders containsObject:folder];
+    // Add folders with their actual positions from the database
+    for (size_t i = 0; i < folders.size(); i++) {
+        NSString* folderName = [NSString stringWithUTF8String:folders[i].c_str()];
+        int folderPosition = bookmarks->GetFolderPosition(folders[i]);
+        NSDictionary* item = @{
+            @"type": @"folder",
+            @"position": @(folderPosition),
+            @"name": folderName
+        };
+        [rootItems addObject:item];
+    }
 
-        // Create folder header
-        NSView* folderHeader = [self createFolderHeader:folder
-                                                    atY:y
-                                                  width:contentWidth
-                                            isCollapsed:isCollapsed];
-        [_bookmarksContainer addSubview:folderHeader];
-        y += folderHeaderHeight;
+    // Sort by position
+    [rootItems sortUsingComparator:^NSComparisonResult(NSDictionary* a, NSDictionary* b) {
+        return [a[@"position"] compare:b[@"position"]];
+    }];
 
-        // Add bookmarks under this folder (if not collapsed)
-        if (!isCollapsed) {
-            std::vector<Bookmark> folderBookmarks = bookmarks->GetBookmarksInFolder(folderName);
-            for (const auto& entry : folderBookmarks) {
-                DSRow* row = [self createBookmarkRowForEntry:entry atY:y width:contentWidth indent:indentWidth];
-                [_bookmarksContainer addSubview:row];
-                y += rowHeight;
+    // Render items in sorted order
+    for (NSDictionary* item in rootItems) {
+        if ([item[@"type"] isEqualToString:@"bookmark"]) {
+            // Create bookmark row
+            Bookmark entry;
+            entry.id = [item[@"id"] longLongValue];
+            entry.url = [item[@"url"] UTF8String];
+            entry.title = [item[@"title"] UTF8String];
+            entry.folder = "";
+            entry.position = [item[@"position"] intValue];
+
+            DSRow* row = [self createBookmarkRowForEntry:entry atY:y width:contentWidth indent:0];
+            [_bookmarksContainer addSubview:row];
+            y += rowHeight;
+        } else {
+            // Create folder header
+            NSString* folderName = item[@"name"];
+            BOOL isCollapsed = [_collapsedFolders containsObject:folderName];
+
+            NSView* folderHeader = [self createFolderHeader:folderName
+                                                        atY:y
+                                                      width:contentWidth
+                                                isCollapsed:isCollapsed];
+            [_bookmarksContainer addSubview:folderHeader];
+            y += folderHeaderHeight;
+
+            // Add bookmarks under this folder (if not collapsed)
+            if (!isCollapsed) {
+                std::vector<Bookmark> folderBookmarks = bookmarks->GetBookmarksInFolder([folderName UTF8String]);
+                for (const auto& entry : folderBookmarks) {
+                    DSRow* row = [self createBookmarkRowForEntry:entry atY:y width:contentWidth indent:indentWidth];
+                    [_bookmarksContainer addSubview:row];
+                    y += rowHeight;
+                }
             }
         }
     }
@@ -2196,7 +2249,9 @@ static NSColor* NSColorFromHex(const std::string& hex) {
                         width:(CGFloat)width
                   isCollapsed:(BOOL)isCollapsed {
     CGFloat headerHeight = 36;
-    NSView* header = [[NSView alloc] initWithFrame:NSMakeRect(0, y, width, headerHeight)];
+    DraggableFolderHeaderView* header = [[DraggableFolderHeaderView alloc] initWithFrame:NSMakeRect(0, y, width, headerHeight)];
+    header.folderName = folderName;
+    header.sidebarView = self;
     header.wantsLayer = YES;
     header.layer.cornerRadius = [DSLayout cornerRadiusMedium];
     header.autoresizingMask = NSViewWidthSizable;

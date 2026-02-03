@@ -5,70 +5,123 @@
 
 @implementation BookmarkEditPopoverController {
     NSPopover* _popover;
-    NSTextField* _nameField;
+    NSTextField* _urlField;
+    NSTextField* _nicknameField;
+    NSTextView* _descriptionField;
     NSPopUpButton* _folderPicker;
     int64_t _bookmarkId;
     NSString* _originalUrl;
 }
 
 - (void)loadView {
-    // Create popover content view
-    CGFloat width = 280;
-    CGFloat height = 150;
+    // Create popover content view - match AddBookmarkPopoverController layout
+    CGFloat width = 340;
+    CGFloat height = 290;
 
     NSView* contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
     contentView.wantsLayer = YES;
 
-    CGFloat y = height - 28;
     CGFloat padding = [DSSpacing md];
-    CGFloat labelWidth = 45;
-    CGFloat fieldX = padding + labelWidth + 4;
-    CGFloat fieldWidth = width - fieldX - padding;
+    CGFloat labelHeight = 16;
+    CGFloat fieldHeight = 28;
+    CGFloat y = height - padding;
 
-    // Name label
-    NSTextField* nameLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, labelWidth, 20)];
-    nameLabel.stringValue = @"Name";
-    nameLabel.font = [DSTypography fontWithStyle:DSFontStyleCaptionMedium];
-    nameLabel.textColor = [DSColors textSecondary];
-    nameLabel.bezeled = NO;
-    nameLabel.drawsBackground = NO;
-    nameLabel.editable = NO;
-    [contentView addSubview:nameLabel];
+    // URL label
+    y -= labelHeight;
+    NSTextField* urlLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 60, labelHeight)];
+    urlLabel.stringValue = @"Address";
+    urlLabel.font = [DSTypography fontWithStyle:DSFontStyleCaption];
+    urlLabel.textColor = [DSColors textSecondary];
+    urlLabel.bezeled = NO;
+    urlLabel.drawsBackground = NO;
+    urlLabel.editable = NO;
+    [contentView addSubview:urlLabel];
 
-    // Name text field
-    _nameField = [[NSTextField alloc] initWithFrame:NSMakeRect(fieldX, y - 2, fieldWidth, 24)];
-    _nameField.font = [DSTypography fontWithStyle:DSFontStyleBody];
-    _nameField.bezelStyle = NSTextFieldRoundedBezel;
-    [contentView addSubview:_nameField];
+    // URL field
+    y -= fieldHeight + 4;
+    _urlField = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, width - padding * 2, fieldHeight)];
+    _urlField.font = [DSTypography fontWithStyle:DSFontStyleBody];
+    _urlField.bezelStyle = NSTextFieldRoundedBezel;
+    _urlField.placeholderString = @"https://";
+    [contentView addSubview:_urlField];
 
-    y -= 36;
+    // Nickname label
+    y -= labelHeight + [DSSpacing sm];
+    NSTextField* nicknameLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 80, labelHeight)];
+    nicknameLabel.stringValue = @"Nickname";
+    nicknameLabel.font = [DSTypography fontWithStyle:DSFontStyleCaption];
+    nicknameLabel.textColor = [DSColors textSecondary];
+    nicknameLabel.bezeled = NO;
+    nicknameLabel.drawsBackground = NO;
+    nicknameLabel.editable = NO;
+    [contentView addSubview:nicknameLabel];
 
-    // Folder label
-    NSTextField* folderLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, labelWidth, 20)];
+    // Nickname field
+    y -= fieldHeight + 4;
+    _nicknameField = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, width - padding * 2, fieldHeight)];
+    _nicknameField.font = [DSTypography fontWithStyle:DSFontStyleBody];
+    _nicknameField.bezelStyle = NSTextFieldRoundedBezel;
+    _nicknameField.placeholderString = @"Bookmark name";
+    [contentView addSubview:_nicknameField];
+
+    // Description label
+    y -= labelHeight + [DSSpacing sm];
+    NSTextField* descLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 80, labelHeight)];
+    descLabel.stringValue = @"Description";
+    descLabel.font = [DSTypography fontWithStyle:DSFontStyleCaption];
+    descLabel.textColor = [DSColors textSecondary];
+    descLabel.bezeled = NO;
+    descLabel.drawsBackground = NO;
+    descLabel.editable = NO;
+    [contentView addSubview:descLabel];
+
+    // Description text view (multiline)
+    y -= 60 + 4;
+    NSScrollView* descScrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(padding, y, width - padding * 2, 60)];
+    descScrollView.hasVerticalScroller = YES;
+    descScrollView.hasHorizontalScroller = NO;
+    descScrollView.borderType = NSBezelBorder;
+
+    _descriptionField = [[NSTextView alloc] initWithFrame:NSMakeRect(0, 0, width - padding * 2 - 4, 56)];
+    _descriptionField.font = [DSTypography fontWithStyle:DSFontStyleBody];
+    _descriptionField.textColor = [DSColors textPrimary];
+    _descriptionField.backgroundColor = [DSColors surface];
+    _descriptionField.minSize = NSMakeSize(0, 56);
+    _descriptionField.maxSize = NSMakeSize(FLT_MAX, FLT_MAX);
+    _descriptionField.verticallyResizable = YES;
+    _descriptionField.horizontallyResizable = NO;
+    _descriptionField.textContainer.widthTracksTextView = YES;
+    descScrollView.documentView = _descriptionField;
+    [contentView addSubview:descScrollView];
+
+    // Folder label and picker
+    y -= fieldHeight + [DSSpacing md];
+    NSTextField* folderLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y + 4, 50, labelHeight)];
     folderLabel.stringValue = @"Folder";
-    folderLabel.font = [DSTypography fontWithStyle:DSFontStyleCaptionMedium];
+    folderLabel.font = [DSTypography fontWithStyle:DSFontStyleCaption];
     folderLabel.textColor = [DSColors textSecondary];
     folderLabel.bezeled = NO;
     folderLabel.drawsBackground = NO;
     folderLabel.editable = NO;
     [contentView addSubview:folderLabel];
 
-    // Folder picker
-    _folderPicker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fieldX, y - 3, fieldWidth, 26) pullsDown:NO];
+    _folderPicker = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(padding + 55, y, width - padding * 2 - 55, 26) pullsDown:NO];
     [self populateFolderPicker];
     [contentView addSubview:_folderPicker];
 
-    y -= 48;
+    // Buttons - Remove on left, Done on right
+    y -= 44;
+    CGFloat buttonWidth = 80;
+    CGFloat buttonHeight = 28;
 
-    // Buttons
-    NSButton* removeBtn = [[NSButton alloc] initWithFrame:NSMakeRect(padding, y, 70, 28)];
+    NSButton* removeBtn = [[NSButton alloc] initWithFrame:NSMakeRect(padding, y, buttonWidth, buttonHeight)];
     removeBtn.title = @"Remove";
     removeBtn.bezelStyle = NSBezelStyleRounded;
     removeBtn.target = self;
     removeBtn.action = @selector(removeClicked:);
     [contentView addSubview:removeBtn];
 
-    NSButton* doneBtn = [[NSButton alloc] initWithFrame:NSMakeRect(width - padding - 60, y, 60, 28)];
+    NSButton* doneBtn = [[NSButton alloc] initWithFrame:NSMakeRect(width - padding - buttonWidth, y, buttonWidth, buttonHeight)];
     doneBtn.title = @"Done";
     doneBtn.bezelStyle = NSBezelStyleRounded;
     doneBtn.keyEquivalent = @"\r";
@@ -107,7 +160,9 @@
         [self loadView];
     }
 
-    _nameField.stringValue = title ?: @"";
+    _urlField.stringValue = url ?: @"";
+    _nicknameField.stringValue = title ?: @"";
+    _descriptionField.string = @"";
 
     [self populateFolderPicker];
     if (folder && folder.length > 0) {
@@ -126,8 +181,8 @@
                           ofView:view
                    preferredEdge:NSRectEdgeMinY];
 
-    // Focus the name field
-    [_popover.contentViewController.view.window makeFirstResponder:_nameField];
+    // Focus the nickname field
+    [_popover.contentViewController.view.window makeFirstResponder:_nicknameField];
 }
 
 - (void)close {
@@ -139,7 +194,7 @@
 
     BookmarkStorage* bookmarks = GetBookmarkStorage();
     if (bookmarks && _bookmarkId > 0) {
-        NSString* newTitle = _nameField.stringValue;
+        NSString* newTitle = _nicknameField.stringValue;
         NSString* newFolder = @"";
 
         NSInteger selectedIndex = [_folderPicker indexOfSelectedItem];
@@ -156,6 +211,7 @@
         MainWindowController* wc = self.windowController;
         if (wc) {
             [wc reloadBookmarksPanel];
+            [wc updateBookmarkState];
         }
     }
 

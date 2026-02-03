@@ -1,10 +1,12 @@
 #import "BookmarkDropContainerView.h"
 #import "SidebarView.h"
+#import "SidebarHelperViews.h"
 #import "Components.h"
 #include "bookmark_storage.h"
 
-// Pasteboard type for bookmark drag & drop
+// Pasteboard types for bookmark drag & drop
 NSString* const kBookmarkPasteboardType = @"com.orbfox.bookmark";
+NSString* const kBookmarkFolderPasteboardType = @"com.orbfox.bookmark.folder";
 
 @implementation BookmarkDropContainerView
 
@@ -13,7 +15,7 @@ NSString* const kBookmarkPasteboardType = @"com.orbfox.bookmark";
 - (instancetype)initWithFrame:(NSRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
-        [self registerForDraggedTypes:@[kBookmarkPasteboardType]];
+        [self registerForDraggedTypes:@[kBookmarkPasteboardType, kBookmarkFolderPasteboardType]];
 
         // Create drop indicator (2px accent-colored line)
         _dropIndicator = [[NSView alloc] initWithFrame:NSZeroRect];
@@ -29,12 +31,17 @@ NSString* const kBookmarkPasteboardType = @"com.orbfox.bookmark";
 }
 
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
-    (void)sender;
-    return NSDragOperationMove;
+    NSPasteboard* pboard = [sender draggingPasteboard];
+    if ([pboard dataForType:kBookmarkPasteboardType] || [pboard dataForType:kBookmarkFolderPasteboardType]) {
+        return NSDragOperationMove;
+    }
+    return NSDragOperationNone;
 }
 
 - (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
     NSPoint location = [self convertPoint:[sender draggingLocation] fromView:nil];
+    NSPasteboard* pboard = [sender draggingPasteboard];
+    BOOL isDraggingFolder = [pboard dataForType:kBookmarkFolderPasteboardType] != nil;
 
     // Reset highlight
     if (_highlightedFolderHeader) {
@@ -46,9 +53,11 @@ NSString* const kBookmarkPasteboardType = @"com.orbfox.bookmark";
     _dropPosition = 0;
 
     CGFloat indicatorY = 0;
-    NSString* currentFolder = nil;  // Tracks current folder context
-    int positionInFolder = 0;       // Position counter within current folder
+    int rootPosition = 0;           // Unified position counter at root level
     BOOL foundDropPoint = NO;
+
+    // Threshold for indent detection (items inside folders are indented)
+    CGFloat indentThreshold = 15.0;
 
     // Sort subviews by Y position for proper iteration
     NSArray* sortedSubviews = [self.subviews sortedArrayUsingComparator:^NSComparisonResult(NSView* a, NSView* b) {
@@ -57,79 +66,175 @@ NSString* const kBookmarkPasteboardType = @"com.orbfox.bookmark";
         return [@(a.frame.origin.y) compare:@(b.frame.origin.y)];
     }];
 
-    NSView* lastView = nil;
+    NSView* lastRootView = nil;
+    NSView* lastVisibleView = nil;  // Track last visible view for indicator positioning
+    NSString* lastFolderName = nil;
+    int positionInLastFolder = 0;
+
     for (NSView* subview in sortedSubviews) {
         if (subview == _dropIndicator) continue;
 
         NSRect frame = subview.frame;
 
-        // Check if this is a folder header (not a DSRow and height < 40)
-        BOOL isFolderHeader = (![subview isKindOfClass:[DSRow class]] && frame.size.height < 40);
+        // Check if this item is indented (inside a folder)
+        BOOL isIndented = (frame.origin.x > indentThreshold);
+
+        // Check if this is a folder header
+        BOOL isFolderHeader = ([subview isKindOfClass:[DraggableFolderHeaderView class]] ||
+                               (![subview isKindOfClass:[DSRow class]] && frame.size.height < 40 && frame.size.height > 0));
 
         if (isFolderHeader) {
             // Get folder name from header
             NSString* folderName = nil;
-            for (NSView* headerSubview in subview.subviews) {
-                if ([headerSubview isKindOfClass:[NSTextField class]]) {
-                    NSTextField* label = (NSTextField*)headerSubview;
-                    if (label.frame.origin.x > 30) {  // Folder name label (not chevron area)
-                        folderName = label.stringValue;
-                        break;
+            if ([subview isKindOfClass:[DraggableFolderHeaderView class]]) {
+                folderName = ((DraggableFolderHeaderView*)subview).folderName;
+            } else {
+                for (NSView* headerSubview in subview.subviews) {
+                    if ([headerSubview isKindOfClass:[NSTextField class]]) {
+                        NSTextField* label = (NSTextField*)headerSubview;
+                        if (label.frame.origin.x > 30) {
+                            folderName = label.stringValue;
+                            break;
+                        }
                     }
                 }
             }
 
-            // Check if dropping ON this folder header
-            if (location.y >= frame.origin.y && location.y < frame.origin.y + frame.size.height) {
-                // Highlight the folder header
-                subview.wantsLayer = YES;
-                subview.layer.backgroundColor = [DSColors surfaceHover].CGColor;
-                _highlightedFolderHeader = subview;
-                _dropOnFolderHeader = YES;
-                _dropTargetFolder = folderName;
-                _dropPosition = 0;  // First position in folder
-                _dropIndicator.hidden = YES;
-                foundDropPoint = YES;
-                break;
-            }
-
-            // If mouse is before this folder header, drop at end of previous section
+            // Check if mouse is before this folder (drop at root before it)
             if (location.y < frame.origin.y && !foundDropPoint) {
-                _dropTargetFolder = currentFolder;
-                _dropPosition = positionInFolder;
+                _dropTargetFolder = nil;  // Root level
+                _dropPosition = rootPosition;
                 indicatorY = frame.origin.y - 1;
                 foundDropPoint = YES;
                 break;
             }
 
-            // Update current folder context
-            currentFolder = folderName;
-            positionInFolder = 0;
+            // Check if mouse is ON this folder header
+            if (location.y >= frame.origin.y && location.y < frame.origin.y + frame.size.height) {
+                if (!isDraggingFolder) {
+                    // For bookmarks: check if in the middle 60% of the header = drop INTO folder
+                    CGFloat headerTop = frame.origin.y;
+                    CGFloat headerBottom = frame.origin.y + frame.size.height;
+                    CGFloat dropZoneTop = headerTop + frame.size.height * 0.2;
+                    CGFloat dropZoneBottom = headerBottom - frame.size.height * 0.2;
+
+                    if (location.y >= dropZoneTop && location.y < dropZoneBottom) {
+                        // Drop INTO folder
+                        subview.wantsLayer = YES;
+                        subview.layer.backgroundColor = [DSColors surfaceHover].CGColor;
+                        _highlightedFolderHeader = subview;
+                        _dropOnFolderHeader = YES;
+                        _dropTargetFolder = folderName;
+                        _dropPosition = 0;
+                        _dropIndicator.hidden = YES;
+                        foundDropPoint = YES;
+                        break;
+                    } else if (location.y < dropZoneTop) {
+                        // Top edge - drop before folder at root
+                        _dropTargetFolder = nil;
+                        _dropPosition = rootPosition;
+                        indicatorY = frame.origin.y - 1;
+                        foundDropPoint = YES;
+                        break;
+                    }
+                    // Bottom edge - continue to next item
+                } else {
+                    // For folders: use midpoint for before/after
+                    CGFloat midY = frame.origin.y + frame.size.height / 2;
+                    if (location.y < midY) {
+                        _dropTargetFolder = nil;
+                        _dropPosition = rootPosition;
+                        indicatorY = frame.origin.y - 1;
+                        foundDropPoint = YES;
+                        break;
+                    }
+                    // Bottom half - will be handled by next item or end-of-list
+                }
+            }
+
+            // Update tracking
+            lastFolderName = folderName;
+            positionInLastFolder = 0;
+            lastRootView = subview;
+            lastVisibleView = subview;
+            rootPosition++;
 
         } else if ([subview isKindOfClass:[DSRow class]]) {
             // This is a bookmark row
             CGFloat midY = frame.origin.y + frame.size.height / 2;
 
-            if (location.y < midY && !foundDropPoint) {
-                // Drop before this bookmark
-                _dropTargetFolder = currentFolder;
-                _dropPosition = positionInFolder;
-                indicatorY = frame.origin.y - 1;
-                foundDropPoint = YES;
-                break;
+            if (isIndented) {
+                // Bookmark inside a folder
+                if (location.y < frame.origin.y && !foundDropPoint) {
+                    // Before this indented item - could be after folder header or between folder items
+                    if (!isDraggingFolder) {
+                        _dropTargetFolder = lastFolderName;
+                        _dropPosition = positionInLastFolder;
+                        indicatorY = frame.origin.y - 1;
+                        foundDropPoint = YES;
+                        break;
+                    }
+                }
+
+                if (location.y >= frame.origin.y && location.y < frame.origin.y + frame.size.height && !foundDropPoint) {
+                    if (!isDraggingFolder) {
+                        if (location.y < midY) {
+                            _dropTargetFolder = lastFolderName;
+                            _dropPosition = positionInLastFolder;
+                            indicatorY = frame.origin.y - 1;
+                        } else {
+                            _dropTargetFolder = lastFolderName;
+                            _dropPosition = positionInLastFolder + 1;
+                            indicatorY = frame.origin.y + frame.size.height + 1;
+                        }
+                        foundDropPoint = YES;
+                        break;
+                    }
+                }
+                lastVisibleView = subview;
+                positionInLastFolder++;
+            } else {
+                // Root-level bookmark
+                if (location.y < frame.origin.y && !foundDropPoint) {
+                    _dropTargetFolder = nil;
+                    _dropPosition = rootPosition;
+                    indicatorY = frame.origin.y - 1;
+                    foundDropPoint = YES;
+                    break;
+                }
+
+                if (location.y >= frame.origin.y && location.y < frame.origin.y + frame.size.height && !foundDropPoint) {
+                    if (location.y < midY) {
+                        _dropTargetFolder = nil;
+                        _dropPosition = rootPosition;
+                        indicatorY = frame.origin.y - 1;
+                    } else {
+                        _dropTargetFolder = nil;
+                        _dropPosition = rootPosition + 1;
+                        indicatorY = frame.origin.y + frame.size.height + 1;
+                    }
+                    foundDropPoint = YES;
+                    break;
+                }
+
+                lastRootView = subview;
+                lastVisibleView = subview;
+                lastFolderName = nil;  // Reset - we're back at root
+                rootPosition++;
             }
-
-            positionInFolder++;
         }
-
-        lastView = subview;
     }
 
     // If past all items, drop at end
-    if (!foundDropPoint && lastView) {
-        _dropTargetFolder = currentFolder;
-        _dropPosition = positionInFolder;
-        indicatorY = lastView.frame.origin.y + lastView.frame.size.height + 1;
+    if (!foundDropPoint) {
+        _dropTargetFolder = nil;  // Always root level at the end
+        _dropPosition = rootPosition;
+        // Use lastVisibleView for indicator to show at actual visual bottom
+        if (lastVisibleView) {
+            indicatorY = lastVisibleView.frame.origin.y + lastVisibleView.frame.size.height + 1;
+        } else if (lastRootView) {
+            indicatorY = lastRootView.frame.origin.y + lastRootView.frame.size.height + 1;
+        }
     }
 
     // Show drop indicator (unless dropping ON a folder)
@@ -168,6 +273,39 @@ NSString* const kBookmarkPasteboardType = @"com.orbfox.bookmark";
     }
 
     NSPasteboard* pboard = [sender draggingPasteboard];
+    BookmarkStorage* bookmarks = GetBookmarkStorage();
+    if (!bookmarks) return NO;
+
+    // Check if this is a folder drag
+    NSData* folderData = [pboard dataForType:kBookmarkFolderPasteboardType];
+    if (folderData) {
+        NSDictionary* dragData = [NSPropertyListSerialization propertyListWithData:folderData
+                                                                           options:NSPropertyListImmutable
+                                                                            format:nil
+                                                                             error:nil];
+        if (!dragData) return NO;
+
+        NSString* folderName = dragData[@"name"];
+        if (!folderName) return NO;
+
+        // Get current folder position for adjustment
+        int sourcePosition = bookmarks->GetFolderPosition([folderName UTF8String]);
+
+        int finalPosition = _dropPosition;
+        if (sourcePosition >= 0 && sourcePosition < finalPosition) {
+            finalPosition--;  // Account for removal
+        }
+
+        // Use MoveFolderAtRoot for unified ordering
+        bookmarks->MoveFolderAtRoot([folderName UTF8String], finalPosition);
+
+        if (_sidebarView) {
+            [_sidebarView reloadBookmarks];
+        }
+        return YES;
+    }
+
+    // Handle bookmark drag
     NSData* data = [pboard dataForType:kBookmarkPasteboardType];
     if (!data) return NO;
 
@@ -179,34 +317,22 @@ NSString* const kBookmarkPasteboardType = @"com.orbfox.bookmark";
 
     int64_t bookmarkId = [dragData[@"id"] longLongValue];
     NSString* sourceFolder = dragData[@"folder"];
-    (void)sourceFolder;  // Currently unused, but available for future use
 
-    BookmarkStorage* bookmarks = GetBookmarkStorage();
-    if (!bookmarks) return NO;
+    // Determine target folder (nil means root level)
+    NSString* targetFolder = _dropTargetFolder;
+    BOOL movingToRoot = (targetFolder == nil || targetFolder.length == 0);
+    BOOL movingFromRoot = (sourceFolder == nil || sourceFolder.length == 0);
 
-    // Determine target folder
-    NSString* targetFolder = _dropTargetFolder ?: @"";
-
-    // Adjust position if moving within same folder (need to account for removed item)
     int finalPosition = _dropPosition;
-    if ([sourceFolder isEqualToString:targetFolder] || (sourceFolder.length == 0 && targetFolder.length == 0)) {
-        // Moving within same folder - check if source is before drop position
-        std::vector<Bookmark> folderBookmarks;
-        if (targetFolder.length > 0) {
-            folderBookmarks = bookmarks->GetBookmarksInFolder([targetFolder UTF8String]);
-        } else {
-            std::vector<Bookmark> all = bookmarks->GetAllBookmarks();
-            for (const auto& bm : all) {
-                if (bm.folder.empty()) {
-                    folderBookmarks.push_back(bm);
-                }
-            }
-        }
 
+    if (movingToRoot && movingFromRoot) {
+        // Moving within root level - use unified positioning
+        // Get source bookmark's current position
+        std::vector<Bookmark> all = bookmarks->GetAllBookmarks();
         int sourcePosition = -1;
-        for (size_t i = 0; i < folderBookmarks.size(); i++) {
-            if (folderBookmarks[i].id == bookmarkId) {
-                sourcePosition = (int)i;
+        for (const auto& bm : all) {
+            if (bm.id == bookmarkId && bm.folder.empty()) {
+                sourcePosition = bm.position;
                 break;
             }
         }
@@ -214,10 +340,31 @@ NSString* const kBookmarkPasteboardType = @"com.orbfox.bookmark";
         if (sourcePosition >= 0 && sourcePosition < finalPosition) {
             finalPosition--;  // Account for removal
         }
-    }
 
-    // Move the bookmark
-    bookmarks->MoveBookmark(bookmarkId, [targetFolder UTF8String], finalPosition);
+        bookmarks->MoveBookmarkAtRoot(bookmarkId, finalPosition);
+    } else if (!movingToRoot) {
+        // Moving into a folder - use folder's internal positioning
+        if ([sourceFolder isEqualToString:targetFolder]) {
+            // Moving within same folder
+            std::vector<Bookmark> folderBookmarks = bookmarks->GetBookmarksInFolder([targetFolder UTF8String]);
+            int sourcePosition = -1;
+            for (size_t i = 0; i < folderBookmarks.size(); i++) {
+                if (folderBookmarks[i].id == bookmarkId) {
+                    sourcePosition = (int)i;
+                    break;
+                }
+            }
+            if (sourcePosition >= 0 && sourcePosition < finalPosition) {
+                finalPosition--;
+            }
+        }
+        bookmarks->MoveBookmark(bookmarkId, [targetFolder UTF8String], finalPosition);
+    } else {
+        // Moving from folder to root
+        bookmarks->MoveBookmark(bookmarkId, "", finalPosition);
+        // Adjust positions at root level
+        bookmarks->MoveBookmarkAtRoot(bookmarkId, finalPosition);
+    }
 
     // Reload bookmarks in sidebar
     if (_sidebarView) {

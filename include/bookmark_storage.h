@@ -53,6 +53,7 @@ public:
     [[nodiscard]] bool FolderExists(const std::string& name);
     void DeleteFolder(const std::string& name);  // Also deletes bookmarks in folder
     void RenameFolder(const std::string& old_name, const std::string& new_name);
+    void MoveFolder(const std::string& name, int new_position);  // Reorder folder
     [[nodiscard]] int GetNextFolderNumber();  // For "Collection 1", "Collection 2", etc.
 
     // Update bookmark
@@ -64,6 +65,15 @@ public:
 
     // Reorder bookmarks
     void MoveBookmark(int64_t id, const std::string& new_folder, int new_position);
+
+    // Move bookmark at root level (unified ordering with folders)
+    void MoveBookmarkAtRoot(int64_t id, int new_position);
+
+    // Move folder at root level (unified ordering with root bookmarks)
+    void MoveFolderAtRoot(const std::string& name, int new_position);
+
+    // Get folder position
+    int GetFolderPosition(const std::string& name);
 
     // Clear all bookmarks (for testing)
     void ClearAllBookmarks();
