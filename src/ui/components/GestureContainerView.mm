@@ -10,6 +10,9 @@
     // For L-shape detection: track if we've moved down significantly
     BOOL _hasMovedDown;
     CGFloat _maxDownwardDistance;
+
+    // Flag to prevent infinite recursion when forwarding events
+    BOOL _isForwardingEvent;
 }
 
 - (instancetype)initWithFrame:(NSRect)frameRect {
@@ -21,11 +24,18 @@
         _hasMovedDown = NO;
         _maxDownwardDistance = 0;
         _didDrag = NO;
+        _isForwardingEvent = NO;
     }
     return self;
 }
 
 - (void)rightMouseDown:(NSEvent*)event {
+    // Don't intercept our own forwarded events (prevents infinite recursion)
+    if (_isForwardingEvent) {
+        [super rightMouseDown:event];
+        return;
+    }
+
     if (!_gesturesEnabled) {
         [super rightMouseDown:event];
         return;
@@ -73,6 +83,12 @@
 }
 
 - (void)rightMouseUp:(NSEvent*)event {
+    // Don't intercept our own forwarded events (prevents infinite recursion)
+    if (_isForwardingEvent) {
+        [super rightMouseUp:event];
+        return;
+    }
+
     if (!_isTrackingGesture) {
         [super rightMouseUp:event];
         return;
@@ -113,35 +129,34 @@
         }
     } else if (!_didDrag) {
         // No drag occurred - this was just a right-click, forward to browser view
-        // Find the actual browser view (should be a subview of this container)
-        for (NSView* subview in self.subviews) {
-            if (!subview.hidden) {
-                // Forward both down and up events - CEF needs both to show context menu
-                NSEvent* downEvent = [NSEvent mouseEventWithType:NSEventTypeRightMouseDown
-                                                        location:event.locationInWindow
-                                                   modifierFlags:event.modifierFlags
-                                                       timestamp:event.timestamp
-                                                    windowNumber:event.windowNumber
-                                                         context:nil
-                                                     eventNumber:event.eventNumber
-                                                      clickCount:1
-                                                        pressure:event.pressure];
-                [subview rightMouseDown:downEvent];
+        // Set flag to prevent hitTest from intercepting forwarded events
+        _isForwardingEvent = YES;
 
-                // Also send the mouse up event
-                NSEvent* upEvent = [NSEvent mouseEventWithType:NSEventTypeRightMouseUp
-                                                      location:event.locationInWindow
-                                                 modifierFlags:event.modifierFlags
-                                                     timestamp:event.timestamp
-                                                  windowNumber:event.windowNumber
-                                                       context:nil
-                                                   eventNumber:event.eventNumber
-                                                    clickCount:1
-                                                      pressure:event.pressure];
-                [subview rightMouseUp:upEvent];
-                break;
-            }
-        }
+        // Send events through window's event dispatch so CEF processes them correctly
+        // CEF's context menu is triggered by its internal event handling, not direct method calls
+        NSEvent* downEvent = [NSEvent mouseEventWithType:NSEventTypeRightMouseDown
+                                                location:event.locationInWindow
+                                           modifierFlags:event.modifierFlags
+                                               timestamp:event.timestamp
+                                            windowNumber:event.windowNumber
+                                                 context:nil
+                                             eventNumber:event.eventNumber
+                                              clickCount:1
+                                                pressure:event.pressure];
+        [self.window sendEvent:downEvent];
+
+        NSEvent* upEvent = [NSEvent mouseEventWithType:NSEventTypeRightMouseUp
+                                              location:event.locationInWindow
+                                         modifierFlags:event.modifierFlags
+                                             timestamp:event.timestamp
+                                          windowNumber:event.windowNumber
+                                               context:nil
+                                           eventNumber:event.eventNumber
+                                            clickCount:1
+                                              pressure:event.pressure];
+        [self.window sendEvent:upEvent];
+
+        _isForwardingEvent = NO;
     }
     // If drag occurred but no gesture recognized, do nothing (user was just exploring)
 }
@@ -155,6 +170,11 @@
     }
 
     if (!_gesturesEnabled) {
+        return [super hitTest:point];
+    }
+
+    // Don't intercept when we're forwarding events to avoid infinite recursion
+    if (_isForwardingEvent) {
         return [super hitTest:point];
     }
 

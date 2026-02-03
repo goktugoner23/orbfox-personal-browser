@@ -62,12 +62,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - User can expand folders, state persists during session
 
 ### Fixed
-- **Mouse Gesture Context Menu Integration** - Fixed context menu appearing during gesture drag
+- **Mouse Gesture Context Menu Integration** - Fixed context menu and gesture interaction
   - CEF's internal context menu handling was bypassing Cocoa event interception
   - Added global context menu suppression flag during gesture tracking
   - Context menu now correctly suppressed while tracking gesture
-  - Right-click without drag properly shows context menu
   - Gestures (left/right/L-shape) work reliably without menu interference
+- **Mouse Gesture Right-Click Crash** - Fixed infinite recursion crash on right-click
+  - Stack overflow caused by event forwarding loop in GestureContainerView
+  - Added `_isForwardingEvent` flag to prevent responder chain recursion
+  - Right-click events now properly forwarded through window's event dispatch
+  - Context menu correctly appears when right-clicking without gesture
 - **Bookmark Drag & Drop Crash** - Fixed crash when dragging bookmarks out of folders
   - Null pointer crash in performDragOperation when moving to root level
 - **Folder Positioning in Bookmark List** - Folders now correctly interleave with bookmarks
