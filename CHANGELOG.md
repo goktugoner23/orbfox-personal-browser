@@ -47,9 +47,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Matches toolbar behavior which already hides reload button for internal pages
 - **Bookmark Folders Collapsed by Default** - Folders start collapsed on app launch
   - All folders are collapsed when first loading bookmarks panel
+  - New folders also start collapsed (inverted tracking logic)
   - User can expand folders, state persists during session
 
 ### Fixed
+- **Gesture Container Context Menu** - Fixed right-click showing no menu when not dragging
+  - Mouse gestures intercepted right-click events but didn't forward to CEF when no gesture detected
+  - Now properly forwards right-click to browser view to show context menu
 - **Bookmark Drag & Drop Crash** - Fixed crash when dragging bookmarks out of folders
   - Null pointer crash in performDragOperation when moving to root level
 - **Folder Positioning in Bookmark List** - Folders now correctly interleave with bookmarks
