@@ -132,7 +132,11 @@ std::string SettingsStorage::ToJson() const {
     ss << "  \"restore_session\": " << (settings_.restore_session ? "true" : "false") << ",\n";
     ss << "  \"tracking_protection\": " << (settings_.tracking_protection ? "true" : "false") << ",\n";
     ss << "  \"download_path\": \"" << orbfox::utils::EscapeJsonString(settings_.download_path) << "\",\n";
-    ss << "  \"ask_before_download\": " << (settings_.ask_before_download ? "true" : "false") << "\n";
+    ss << "  \"ask_before_download\": " << (settings_.ask_before_download ? "true" : "false") << ",\n";
+    ss << "  \"gestures_enabled\": " << (settings_.gestures_enabled ? "true" : "false") << ",\n";
+    ss << "  \"gesture_back_enabled\": " << (settings_.gesture_back_enabled ? "true" : "false") << ",\n";
+    ss << "  \"gesture_forward_enabled\": " << (settings_.gesture_forward_enabled ? "true" : "false") << ",\n";
+    ss << "  \"gesture_close_tab_enabled\": " << (settings_.gesture_close_tab_enabled ? "true" : "false") << "\n";
     ss << "}\n";
     return ss.str();
 }
@@ -151,5 +155,12 @@ bool SettingsStorage::FromJson(const std::string& json) {
     // else: keep existing value (reject invalid path from file)
 
     settings_.ask_before_download = orbfox::utils::GetJsonBool(json, "ask_before_download", settings_.ask_before_download);
+
+    // Gesture settings
+    settings_.gestures_enabled = orbfox::utils::GetJsonBool(json, "gestures_enabled", settings_.gestures_enabled);
+    settings_.gesture_back_enabled = orbfox::utils::GetJsonBool(json, "gesture_back_enabled", settings_.gesture_back_enabled);
+    settings_.gesture_forward_enabled = orbfox::utils::GetJsonBool(json, "gesture_forward_enabled", settings_.gesture_forward_enabled);
+    settings_.gesture_close_tab_enabled = orbfox::utils::GetJsonBool(json, "gesture_close_tab_enabled", settings_.gesture_close_tab_enabled);
+
     return true;
 }

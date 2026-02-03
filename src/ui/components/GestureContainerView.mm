@@ -1,5 +1,6 @@
 #import "GestureContainerView.h"
 #include "browser_client.h"
+#include "settings_storage.h"
 
 @implementation GestureContainerView {
     BOOL _isTrackingGesture;
@@ -36,7 +37,9 @@
         return;
     }
 
-    if (!_gesturesEnabled) {
+    // Check both property and settings storage
+    Settings settings = SettingsStorage::GetInstance().Get();
+    if (!_gesturesEnabled || !settings.gestures_enabled) {
         [super rightMouseDown:event];
         return;
     }
@@ -108,17 +111,20 @@
 
     GestureType recognizedGesture = GestureTypeNone;
 
+    // Get current gesture settings
+    Settings gestureSettings = SettingsStorage::GetInstance().Get();
+
     // Check for L-shape gesture: down then right
     // We need: moved down significantly at some point, AND ended up to the right
-    if (_hasMovedDown && dx >= _minimumGestureDistance) {
+    if (_hasMovedDown && dx >= _minimumGestureDistance && gestureSettings.gesture_close_tab_enabled) {
         // L-shape: went down, then right
         recognizedGesture = GestureTypeLShape;
     }
     // Check for horizontal gestures (must be primarily horizontal)
     else if (horizontalDistance >= _minimumGestureDistance && horizontalDistance > verticalDistance * 1.5) {
-        if (dx < 0) {
+        if (dx < 0 && gestureSettings.gesture_back_enabled) {
             recognizedGesture = GestureTypeLeft;  // Dragged left → Back
-        } else {
+        } else if (dx > 0 && gestureSettings.gesture_forward_enabled) {
             recognizedGesture = GestureTypeRight;  // Dragged right → Forward
         }
     }
@@ -169,7 +175,9 @@
         return nil;
     }
 
-    if (!_gesturesEnabled) {
+    // Check both property and settings storage
+    Settings settings = SettingsStorage::GetInstance().Get();
+    if (!_gesturesEnabled || !settings.gestures_enabled) {
         return [super hitTest:point];
     }
 

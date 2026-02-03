@@ -28,6 +28,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - L-shape (down then right) → Close current tab
   - Minimum 50pt drag distance to trigger gesture
   - Falls back to context menu if no gesture detected
+- **Gesture Settings** - Configure mouse gestures in `orbfox://settings`
+  - Master toggle to enable/disable all gestures
+  - Individual toggles for back, forward, and close tab gestures
+  - Settings persist across sessions
 - **Context Menu Bookmark Options** - Right-click to add bookmarks
   - "Add Link to Bookmarks" appears when right-clicking links
   - "Bookmark This Page" available on all context menus

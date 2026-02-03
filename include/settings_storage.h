@@ -15,6 +15,12 @@ struct Settings {
     // Downloads
     std::string download_path = "";  // Empty = ~/Downloads
     bool ask_before_download = true;
+
+    // Gestures
+    bool gestures_enabled = true;
+    bool gesture_back_enabled = true;      // Left drag = go back
+    bool gesture_forward_enabled = true;   // Right drag = go forward
+    bool gesture_close_tab_enabled = true; // L-shape = close tab
 };
 
 class SettingsStorage {

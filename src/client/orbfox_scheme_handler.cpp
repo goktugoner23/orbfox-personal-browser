@@ -402,6 +402,7 @@ const char* kSettingsPageHtml = R"HTML(
             <a href="#general" class="active" data-section="general">General</a>
             <a href="#privacy" data-section="privacy">Privacy</a>
             <a href="#downloads" data-section="downloads">Downloads</a>
+            <a href="#gestures" data-section="gestures">Gestures</a>
             <a href="#about" data-section="about">About</a>
         </nav>
         <main class="content">
@@ -518,6 +519,61 @@ const char* kSettingsPageHtml = R"HTML(
                 </div>
             </section>
 
+            <!-- Gestures Section -->
+            <section id="gestures" class="section">
+                <h2>Mouse Gestures</h2>
+                <div class="setting-group">
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <h3>Enable Mouse Gestures</h3>
+                            <p>Use right-click drag gestures for quick navigation</p>
+                        </div>
+                        <div class="setting-control">
+                            <label class="toggle">
+                                <input type="checkbox" id="gestures_enabled" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="setting-row gesture-option">
+                        <div class="setting-label">
+                            <h3>Swipe Left to Go Back</h3>
+                            <p>Right-click and drag left to go back</p>
+                        </div>
+                        <div class="setting-control">
+                            <label class="toggle">
+                                <input type="checkbox" id="gesture_back_enabled" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="setting-row gesture-option">
+                        <div class="setting-label">
+                            <h3>Swipe Right to Go Forward</h3>
+                            <p>Right-click and drag right to go forward</p>
+                        </div>
+                        <div class="setting-control">
+                            <label class="toggle">
+                                <input type="checkbox" id="gesture_forward_enabled" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="setting-row gesture-option">
+                        <div class="setting-label">
+                            <h3>L-Shape to Close Tab</h3>
+                            <p>Right-click, drag down then right to close tab</p>
+                        </div>
+                        <div class="setting-control">
+                            <label class="toggle">
+                                <input type="checkbox" id="gesture_close_tab_enabled" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- About Section -->
             <section id="about" class="section">
                 <h2>About OrbFox</h2>
@@ -573,6 +629,22 @@ const char* kSettingsPageHtml = R"HTML(
             const radios = document.querySelectorAll('input[name="restore_session"]');
             radios.forEach(radio => {
                 radio.checked = (radio.value === 'true') === (settings.restore_session !== false);
+            });
+
+            // Gesture settings
+            document.getElementById('gestures_enabled').checked = settings.gestures_enabled !== false;
+            document.getElementById('gesture_back_enabled').checked = settings.gesture_back_enabled !== false;
+            document.getElementById('gesture_forward_enabled').checked = settings.gesture_forward_enabled !== false;
+            document.getElementById('gesture_close_tab_enabled').checked = settings.gesture_close_tab_enabled !== false;
+            updateGestureOptionsState();
+        }
+
+        // Enable/disable individual gesture options based on master toggle
+        function updateGestureOptionsState() {
+            const enabled = document.getElementById('gestures_enabled').checked;
+            document.querySelectorAll('.gesture-option').forEach(row => {
+                row.style.opacity = enabled ? '1' : '0.5';
+                row.style.pointerEvents = enabled ? 'auto' : 'none';
             });
         }
 
@@ -676,6 +748,28 @@ const char* kSettingsPageHtml = R"HTML(
 
         document.getElementById('ask_before_download').addEventListener('change', (e) => {
             settings.ask_before_download = e.target.checked;
+            saveSettings();
+        });
+
+        // Gesture settings
+        document.getElementById('gestures_enabled').addEventListener('change', (e) => {
+            settings.gestures_enabled = e.target.checked;
+            updateGestureOptionsState();
+            saveSettings();
+        });
+
+        document.getElementById('gesture_back_enabled').addEventListener('change', (e) => {
+            settings.gesture_back_enabled = e.target.checked;
+            saveSettings();
+        });
+
+        document.getElementById('gesture_forward_enabled').addEventListener('change', (e) => {
+            settings.gesture_forward_enabled = e.target.checked;
+            saveSettings();
+        });
+
+        document.getElementById('gesture_close_tab_enabled').addEventListener('change', (e) => {
+            settings.gesture_close_tab_enabled = e.target.checked;
             saveSettings();
         });
 
