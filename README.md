@@ -48,6 +48,11 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 - **Middle-click support** - mouse button 3 opens items in background tabs
   - Middle-click bookmarks, history, or web page links to open without switching
   - Middle-click tabs to duplicate in background
+- **Mouse gestures** - Vivaldi-style right-click drag gestures
+  - Drag left → Go back
+  - Drag right → Go forward
+  - L-shape (down then right) → Close current tab
+- **Image context menu** - right-click images to save, copy address, or open in new tab
 - **DevTools Panel** (Cmd+Opt+I) - Integrated Chrome DevTools
   - Slides in from right as embedded panel
   - Native header bar with close button

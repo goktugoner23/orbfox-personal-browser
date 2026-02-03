@@ -219,6 +219,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     NSScrollView* _bookmarksScrollView;
     BookmarkDropContainerView* _bookmarksContainer;
     NSMutableSet<NSString*>* _collapsedFolders;
+    BOOL _foldersInitialized;  // Track if we've set initial collapsed state
     int64_t _selectedBookmarkId;
     AddBookmarkPopoverController* _addBookmarkPopover;
     DSIconButton* _addBookmarkButton;
@@ -250,6 +251,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         _tabRows = [NSMutableArray array];
         _workspaceTabs = [NSMutableArray array];
         _collapsedFolders = [NSMutableSet set];
+        _foldersInitialized = NO;
         [self setupViews];
     }
     return self;
@@ -1691,6 +1693,15 @@ static NSColor* NSColorFromHex(const std::string& hex) {
 
     std::vector<Bookmark> allEntries = bookmarks->GetAllBookmarks();
     std::vector<std::string> folders = bookmarks->GetFolders();
+
+    // On first load, collapse all folders by default
+    if (!_foldersInitialized && !folders.empty()) {
+        for (const auto& folder : folders) {
+            [_collapsedFolders addObject:[NSString stringWithUTF8String:folder.c_str()]];
+        }
+        _foldersInitialized = YES;
+    }
+
     CGFloat contentWidth = _bookmarksContainer.bounds.size.width;
     CGFloat y = 0;
     CGFloat rowHeight = 44;

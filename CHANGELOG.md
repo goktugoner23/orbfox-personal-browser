@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Image Context Menu** - Right-click on images for quick actions
+  - "Save Image As..." - triggers download of the image
+  - "Copy Image Address" - copies image URL to clipboard
+  - "Open Image in New Tab" - opens image in new foreground tab
+- **Mouse Gestures** - Vivaldi-style right-click drag gestures
+  - Drag left → Go back
+  - Drag right → Go forward
+  - L-shape (down then right) → Close current tab
+  - Minimum 50pt drag distance to trigger gesture
+  - Falls back to context menu if no gesture detected
 - **Context Menu Bookmark Options** - Right-click to add bookmarks
   - "Add Link to Bookmarks" appears when right-clicking links
   - "Bookmark This Page" available on all context menus
@@ -32,6 +42,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Address (URL), Nickname, Description, and Folder fields
   - Matches the Add Bookmark popover layout
   - Same polished UI with proper button positioning (Cancel left, Save right)
+- **Internal Page Context Menu** - Reload/Stop hidden for orbfox:// pages
+  - Context menu no longer shows Reload, Stop, or Bookmark options on internal pages
+  - Matches toolbar behavior which already hides reload button for internal pages
+- **Bookmark Folders Collapsed by Default** - Folders start collapsed on app launch
+  - All folders are collapsed when first loading bookmarks panel
+  - User can expand folders, state persists during session
 
 ### Fixed
 - **Bookmark Drag & Drop Crash** - Fixed crash when dragging bookmarks out of folders
