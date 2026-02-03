@@ -122,6 +122,7 @@ set(UI_HEADERS
     src/ui/components/DSButton.h
     src/ui/components/DSTextField.h
     src/ui/components/DSRow.h
+    src/ui/components/GestureContainerView.h
     src/ui/components/ResizeHandleView.h
     src/ui/components/DevToolsDividerView.h
     src/ui/components/DevToolsClient.h
@@ -148,6 +149,7 @@ if(APPLE)
         src/ui/components/DSButton.mm
         src/ui/components/DSTextField.mm
         src/ui/components/DSRow.mm
+        src/ui/components/GestureContainerView.mm
         src/ui/components/ResizeHandleView.mm
         src/ui/components/DevToolsDividerView.mm
         src/ui/components/SidebarHelperViews.mm
@@ -217,6 +219,7 @@ if(APPLE)
         src/ui/components/DSButton.mm
         src/ui/components/DSTextField.mm
         src/ui/components/DSRow.mm
+        src/ui/components/GestureContainerView.mm
         src/ui/components/ResizeHandleView.mm
         src/ui/components/DevToolsDividerView.mm
         src/ui/components/SidebarHelperViews.mm

@@ -5,13 +5,14 @@
 #include "tab_manager.h"
 #include "browser_client.h"
 #include "include/cef_download_handler.h"
+#import "GestureContainerView.h"
 
 @class SidebarView;
 @class ToolbarView;
 @class FindBarView;
 
 // Main window controller for the browser
-@interface MainWindowController : NSWindowController <NSWindowDelegate>
+@interface MainWindowController : NSWindowController <NSWindowDelegate, GestureContainerDelegate>
 
 @property (nonatomic, readonly) TabManager* tabManager;
 @property (nonatomic, readonly) SidebarView* sidebarView;

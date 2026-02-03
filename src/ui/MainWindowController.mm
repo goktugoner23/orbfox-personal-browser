@@ -3,6 +3,7 @@
 #import "ToolbarView.h"
 #import "FindBarView.h"
 #import "Components.h"
+#import "GestureContainerView.h"
 #import <QuartzCore/QuartzCore.h>
 
 #include "include/cef_app.h"
@@ -159,16 +160,18 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     _toolbarView.autoresizingMask = NSViewWidthSizable;
     [contentView addSubview:_toolbarView];
 
-    // Browser container
+    // Browser container (with gesture support)
     CGFloat browserX = _currentSidebarWidth;
     CGFloat browserY = kToolbarHeight;
     CGFloat browserWidth = bounds.size.width - _currentSidebarWidth;
     CGFloat browserHeight = contentHeight - kToolbarHeight;
 
-    _browserContainer = [[NSView alloc] initWithFrame:NSMakeRect(browserX, browserY, browserWidth, browserHeight)];
-    _browserContainer.wantsLayer = YES;
-    _browserContainer.layer.backgroundColor = [NSColor blackColor].CGColor;
-    _browserContainer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    GestureContainerView* gestureContainer = [[GestureContainerView alloc] initWithFrame:NSMakeRect(browserX, browserY, browserWidth, browserHeight)];
+    gestureContainer.wantsLayer = YES;
+    gestureContainer.layer.backgroundColor = [NSColor blackColor].CGColor;
+    gestureContainer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    gestureContainer.gestureDelegate = self;
+    _browserContainer = gestureContainer;
     [contentView addSubview:_browserContainer];
 }
 
@@ -791,6 +794,27 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     Tab* tab = _tabManager->GetActiveTab();
     if (tab && tab->browser) {
         tab->browser->StopLoad();
+    }
+}
+
+#pragma mark - GestureContainerDelegate
+
+- (void)gestureRecognized:(GestureType)gesture {
+    switch (gesture) {
+        case GestureTypeLeft:
+            // Drag left → Go back
+            [self goBack];
+            break;
+        case GestureTypeRight:
+            // Drag right → Go forward
+            [self goForward];
+            break;
+        case GestureTypeLShape:
+            // L-shape (down then right) → Close tab
+            [self closeCurrentTab];
+            break;
+        case GestureTypeNone:
+            break;
     }
 }
 

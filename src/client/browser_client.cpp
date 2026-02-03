@@ -498,10 +498,13 @@ void BrowserClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
                                          CefRefPtr<CefContextMenuParams> params,
                                          CefRefPtr<CefMenuModel> model) {
     CEF_REQUIRE_UI_THREAD();
-    (void)frame;
 
     // Clear default menu
     model->Clear();
+
+    // Check if we're on an internal orbfox:// page
+    std::string page_url = frame->GetURL().ToString();
+    bool is_internal_page = (page_url.rfind("orbfox://", 0) == 0);
 
     // Check if right-clicking on a link
     CefString link_url = params->GetLinkUrl();
@@ -542,9 +545,13 @@ void BrowserClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
     // Add navigation items
     model->AddItem(MENU_ID_BACK, "Back");
     model->AddItem(MENU_ID_FORWARD, "Forward");
-    model->AddSeparator();
-    model->AddItem(MENU_ID_RELOAD, "Reload");
-    model->AddItem(MENU_ID_STOP, "Stop");
+
+    // Hide reload/stop for internal pages
+    if (!is_internal_page) {
+        model->AddSeparator();
+        model->AddItem(MENU_ID_RELOAD, "Reload");
+        model->AddItem(MENU_ID_STOP, "Stop");
+    }
 
     // Disable items based on state
     if (!browser->CanGoBack()) {
@@ -554,9 +561,11 @@ void BrowserClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
         model->SetEnabled(MENU_ID_FORWARD, false);
     }
 
-    // Add bookmark option for the current page
-    model->AddSeparator();
-    model->AddItem(MENU_ID_BOOKMARK_PAGE, "Bookmark This Page");
+    // Add bookmark option for the current page (not for internal pages)
+    if (!is_internal_page) {
+        model->AddSeparator();
+        model->AddItem(MENU_ID_BOOKMARK_PAGE, "Bookmark This Page");
+    }
 
     // Always add Inspect at the bottom
     model->AddSeparator();
