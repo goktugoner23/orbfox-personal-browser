@@ -4,6 +4,7 @@
     BOOL _isTrackingGesture;
     NSPoint _gestureStartPoint;
     NSPoint _gestureCurrentPoint;
+    BOOL _didDrag;  // Track if mouse actually moved during gesture
 
     // For L-shape detection: track if we've moved down significantly
     BOOL _hasMovedDown;
@@ -18,6 +19,7 @@
         _isTrackingGesture = NO;
         _hasMovedDown = NO;
         _maxDownwardDistance = 0;
+        _didDrag = NO;
     }
     return self;
 }
@@ -33,6 +35,7 @@
     _gestureCurrentPoint = _gestureStartPoint;
     _hasMovedDown = NO;
     _maxDownwardDistance = 0;
+    _didDrag = NO;
 
     // Don't call super - we're handling this
 }
@@ -44,6 +47,13 @@
     }
 
     _gestureCurrentPoint = [self convertPoint:event.locationInWindow fromView:nil];
+
+    // Track if we've actually moved (more than a few pixels to account for jitter)
+    CGFloat totalDistance = hypot(_gestureCurrentPoint.x - _gestureStartPoint.x,
+                                   _gestureCurrentPoint.y - _gestureStartPoint.y);
+    if (totalDistance > 5.0) {
+        _didDrag = YES;
+    }
 
     // Track downward movement for L-shape detection
     // Note: In Cocoa, Y increases upward, so downward movement means currentY < startY
@@ -94,14 +104,27 @@
         if ([_gestureDelegate respondsToSelector:@selector(gestureRecognized:)]) {
             [_gestureDelegate gestureRecognized:recognizedGesture];
         }
-    } else {
-        // No gesture recognized - show context menu as normal
-        // We need to manually trigger the context menu since we intercepted rightMouseDown
-        NSMenu* menu = [self menuForEvent:event];
-        if (menu) {
-            [NSMenu popUpContextMenu:menu withEvent:event forView:self];
+    } else if (!_didDrag) {
+        // No drag occurred - this was just a right-click, forward to browser view
+        // Find the actual browser view (should be a subview of this container)
+        for (NSView* subview in self.subviews) {
+            if (!subview.hidden) {
+                // Synthesize a right-click event at the original location
+                NSEvent* clickEvent = [NSEvent mouseEventWithType:NSEventTypeRightMouseDown
+                                                         location:event.locationInWindow
+                                                    modifierFlags:event.modifierFlags
+                                                        timestamp:event.timestamp
+                                                     windowNumber:event.windowNumber
+                                                          context:nil
+                                                      eventNumber:event.eventNumber
+                                                       clickCount:1
+                                                         pressure:event.pressure];
+                [subview rightMouseDown:clickEvent];
+                break;
+            }
         }
     }
+    // If drag occurred but no gesture recognized, do nothing (user was just exploring)
 }
 
 // Forward mouse events to subviews (the CEF browser views)

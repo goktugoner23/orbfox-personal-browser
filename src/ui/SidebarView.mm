@@ -218,8 +218,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     NSView* _bookmarksPanelContainer;
     NSScrollView* _bookmarksScrollView;
     BookmarkDropContainerView* _bookmarksContainer;
-    NSMutableSet<NSString*>* _collapsedFolders;
-    BOOL _foldersInitialized;  // Track if we've set initial collapsed state
+    NSMutableSet<NSString*>* _expandedFolders;  // Track folders user has expanded (default is collapsed)
     int64_t _selectedBookmarkId;
     AddBookmarkPopoverController* _addBookmarkPopover;
     DSIconButton* _addBookmarkButton;
@@ -250,8 +249,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         _activePanel = SidebarPanelTabs;
         _tabRows = [NSMutableArray array];
         _workspaceTabs = [NSMutableArray array];
-        _collapsedFolders = [NSMutableSet set];
-        _foldersInitialized = NO;
+        _expandedFolders = [NSMutableSet set];  // Empty = all folders collapsed by default
         [self setupViews];
     }
     return self;
@@ -1694,13 +1692,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     std::vector<Bookmark> allEntries = bookmarks->GetAllBookmarks();
     std::vector<std::string> folders = bookmarks->GetFolders();
 
-    // On first load, collapse all folders by default
-    if (!_foldersInitialized && !folders.empty()) {
-        for (const auto& folder : folders) {
-            [_collapsedFolders addObject:[NSString stringWithUTF8String:folder.c_str()]];
-        }
-        _foldersInitialized = YES;
-    }
+    // Folders are collapsed by default (not in _expandedFolders set)
 
     CGFloat contentWidth = _bookmarksContainer.bounds.size.width;
     CGFloat y = 0;
@@ -1777,7 +1769,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         } else {
             // Create folder header
             NSString* folderName = item[@"name"];
-            BOOL isCollapsed = [_collapsedFolders containsObject:folderName];
+            BOOL isCollapsed = ![_expandedFolders containsObject:folderName];
 
             NSView* folderHeader = [self createFolderHeader:folderName
                                                         atY:y
@@ -2348,10 +2340,12 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     NSString* folderName = objc_getAssociatedObject(sender, "folderName");
     if (!folderName) return;
 
-    if ([_collapsedFolders containsObject:folderName]) {
-        [_collapsedFolders removeObject:folderName];
+    if ([_expandedFolders containsObject:folderName]) {
+        // Currently expanded, collapse it
+        [_expandedFolders removeObject:folderName];
     } else {
-        [_collapsedFolders addObject:folderName];
+        // Currently collapsed, expand it
+        [_expandedFolders addObject:folderName];
     }
     [self reloadBookmarks];
 }
@@ -2422,10 +2416,10 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         bookmarks->UpdateBookmark(entry.id, entry.title, [newName UTF8String]);
     }
 
-    // Update collapsed state
-    if ([_collapsedFolders containsObject:oldName]) {
-        [_collapsedFolders removeObject:oldName];
-        [_collapsedFolders addObject:newName];
+    // Update expanded state (preserve if folder was expanded)
+    if ([_expandedFolders containsObject:oldName]) {
+        [_expandedFolders removeObject:oldName];
+        [_expandedFolders addObject:newName];
     }
 
     [self reloadBookmarks];
@@ -2443,7 +2437,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     // If folder is empty, delete without confirmation
     if (folderBookmarks.empty()) {
         bookmarks->DeleteFolder([folderName UTF8String]);
-        [_collapsedFolders removeObject:folderName];
+        [_expandedFolders removeObject:folderName];
         [self reloadBookmarks];
         return;
     }
@@ -2470,7 +2464,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
             if (bm) {
                 // DeleteFolder handles both bookmarks and folder entry
                 bm->DeleteFolder([folderNameCopy UTF8String]);
-                [strongSelf->_collapsedFolders removeObject:folderNameCopy];
+                [strongSelf->_expandedFolders removeObject:folderNameCopy];
                 [strongSelf reloadBookmarks];
             }
         }
