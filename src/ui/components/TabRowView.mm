@@ -15,6 +15,7 @@ NSPasteboardType const TabRowPasteboardType = @"com.orbfox.tabrow";
     DSIconButton* _closeButton;
     NSImageView* _pinIconView;
     NSImageView* _muteIconView;
+    NSImageView* _hibernateIconView;
     NSProgressIndicator* _loadingIndicator;
     NSImageView* _faviconView;
 }
@@ -29,6 +30,7 @@ NSPasteboardType const TabRowPasteboardType = @"com.orbfox.tabrow";
         _isLoading = NO;
         _isPinned = NO;
         _isMuted = NO;
+        _isHibernated = NO;
 
         CGFloat iconSize = [DSLayout iconSizeSmall];
         CGFloat padding = [DSSpacing sm];
@@ -71,6 +73,17 @@ NSPasteboardType const TabRowPasteboardType = @"com.orbfox.tabrow";
         _muteIconView.autoresizingMask = NSViewMinXMargin;
         _muteIconView.hidden = YES;
         [self addSubview:_muteIconView];
+
+        // Hibernation icon (moon symbol)
+        _hibernateIconView = [[NSImageView alloc] initWithFrame:NSMakeRect(
+            frame.size.width - 58, (frame.size.height - 14) / 2, 14, 14)];
+        _hibernateIconView.image = [NSImage imageWithSystemSymbolName:@"moon.zzz.fill" accessibilityDescription:@"Hibernated"];
+        _hibernateIconView.contentTintColor = [DSColors textSecondary];
+        _hibernateIconView.imageScaling = NSImageScaleProportionallyUpOrDown;
+        _hibernateIconView.autoresizingMask = NSViewMinXMargin;
+        _hibernateIconView.hidden = YES;
+        [self addSubview:_hibernateIconView];
+
         _closeButton.autoresizingMask = NSViewMinXMargin;
         _closeButton.hidden = YES;
         _closeButton.target = self;
@@ -510,6 +523,14 @@ NSPasteboardType const TabRowPasteboardType = @"com.orbfox.tabrow";
 - (void)setIsMuted:(BOOL)isMuted {
     _isMuted = isMuted;
     _muteIconView.hidden = !isMuted;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setIsHibernated:(BOOL)isHibernated {
+    _isHibernated = isHibernated;
+    _hibernateIconView.hidden = !isHibernated;
+    // Dim the tab row when hibernated
+    self.alphaValue = isHibernated ? 0.6 : 1.0;
     [self setNeedsDisplay:YES];
 }
 

@@ -48,10 +48,16 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 - **Middle-click support** - mouse button 3 opens items in background tabs
   - Middle-click bookmarks, history, or web page links to open without switching
   - Middle-click tabs to duplicate in background
-- **Mouse gestures** - Vivaldi-style right-click drag gestures
+- **Mouse gestures** - Vivaldi-style right-click drag gestures (configurable in settings)
   - Drag left → Go back
   - Drag right → Go forward
   - L-shape (down then right) → Close current tab
+  - Individual gesture toggles in orbfox://settings
+- **Tab hibernation** - Automatic memory optimization
+  - Tabs inactive for 5+ minutes are suspended
+  - Browser closed, tab data preserved
+  - Moon icon shows hibernated state
+  - Pinned tabs never hibernate
 - **Image context menu** - right-click images to save, copy address, or open in new tab
 - **DevTools Panel** (Cmd+Opt+I) - Integrated Chrome DevTools
   - Slides in from right as embedded panel
@@ -60,6 +66,7 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
   - "Inspect Element" from context menu
 - **Session persistence** - restore workspaces and tabs on restart (Vivaldi-style)
 - **Crash recovery** - automatic session restore after unexpected shutdown
+- **Crash reporting** - detailed crash reports saved to disk
 - **Bookmark import** - import bookmarks from Chrome, Safari, Firefox, Edge
 - **Bookmarks panel** - full bookmark management
   - Add bookmarks via popover with URL, nickname, description

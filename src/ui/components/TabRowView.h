@@ -16,6 +16,7 @@ extern NSPasteboardType const TabRowPasteboardType;
 @property (nonatomic, assign) BOOL isLoading;
 @property (nonatomic, assign) BOOL isPinned;
 @property (nonatomic, assign) BOOL isMuted;
+@property (nonatomic, assign) BOOL isHibernated;
 @property (nonatomic, strong) NSImage* favicon;
 @property (nonatomic, weak) SidebarView* sidebarView;
 

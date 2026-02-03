@@ -1,6 +1,8 @@
 #include "session_storage.h"
 
+#include <chrono>
 #include <cstdio>
+#include <ctime>
 #include <fstream>
 #include <sstream>
 
@@ -161,4 +163,64 @@ bool SessionStorage::DidCrashLastSession() {
 void SessionStorage::AutoSave(const SavedSession& session) {
     // Same as Save(), but called periodically for crash recovery
     Save(session);
+}
+
+std::string SessionStorage::GetCrashReportPath() {
+    return orbfox::utils::GetAppSupportPath() + "/crash_report.txt";
+}
+
+void SessionStorage::WriteCrashReport(const SavedSession& session) {
+    std::ofstream file(GetCrashReportPath());
+    if (!file.is_open()) return;
+
+    // Get current timestamp
+    auto now = std::chrono::system_clock::now();
+    auto time = std::chrono::system_clock::to_time_t(now);
+    char timestamp[64];
+    std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", std::localtime(&time));
+
+    file << "OrbFox Crash Report\n";
+    file << "==================\n\n";
+    file << "Detected: " << timestamp << "\n";
+    file << "Platform: macOS\n\n";
+
+    file << "Session State at Crash:\n";
+    file << "-----------------------\n";
+    file << "Workspaces: " << session.workspaces.size() << "\n";
+    file << "Active workspace index: " << session.active_workspace_index << "\n\n";
+
+    int totalTabs = 0;
+    for (size_t i = 0; i < session.workspaces.size(); ++i) {
+        const auto& ws = session.workspaces[i];
+        file << "Workspace " << (i + 1) << ": " << ws.name << "\n";
+        file << "  Color: " << ws.color << "\n";
+        file << "  Active tab: " << ws.active_tab_index << "\n";
+        file << "  Tabs (" << ws.tabs.size() << "):\n";
+
+        for (size_t j = 0; j < ws.tabs.size(); ++j) {
+            const auto& tab = ws.tabs[j];
+            file << "    " << (j + 1) << ". " << tab.title << "\n";
+            file << "       URL: " << tab.url << "\n";
+            if (tab.is_pinned) file << "       [Pinned]\n";
+            if (tab.is_muted) file << "       [Muted]\n";
+        }
+        totalTabs += ws.tabs.size();
+        file << "\n";
+    }
+
+    file << "Total tabs: " << totalTabs << "\n";
+    file.close();
+}
+
+std::string SessionStorage::GetLastCrashReport() {
+    std::ifstream file(GetCrashReportPath());
+    if (!file.is_open()) return "";
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
+void SessionStorage::ClearCrashReports() {
+    std::remove(GetCrashReportPath().c_str());
 }

@@ -25,6 +25,8 @@ struct Tab {
     bool is_loading = false;
     bool is_pinned = false;
     bool is_muted = false;
+    bool is_hibernated = false;  // True if browser is suspended to save memory
+    int64_t last_active_time = 0;  // Timestamp when tab was last active (for auto-hibernate)
 
 #ifndef UNIT_TEST
     CefRefPtr<CefBrowser> browser;

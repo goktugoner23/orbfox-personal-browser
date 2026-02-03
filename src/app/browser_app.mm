@@ -143,6 +143,11 @@ void BrowserApp::OnContextInitialized() {
     bool shouldRestore = (didCrash || settings.restore_session) && g_session_storage->HasSavedSession();
     if (shouldRestore) {
         SavedSession session = g_session_storage->Load();
+
+        // Write crash report if we crashed
+        if (didCrash && !session.workspaces.empty()) {
+            SessionStorage::WriteCrashReport(session);
+        }
         if (!session.workspaces.empty()) {
             // Remember the default workspace ID to delete it after creating restored ones
             // (DeleteWorkspace won't delete if it's the only workspace)

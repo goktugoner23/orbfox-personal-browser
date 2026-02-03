@@ -49,10 +49,16 @@ public:
     static void MarkCleanShutdown();
     [[nodiscard]] static bool DidCrashLastSession();
 
+    // Crash reporting - writes crash info to a log file
+    static void WriteCrashReport(const SavedSession& session);
+    [[nodiscard]] static std::string GetLastCrashReport();
+    static void ClearCrashReports();
+
     // Auto-save session periodically (call from timer)
     void AutoSave(const SavedSession& session);
 
 private:
     static std::string GetSessionPath();
     static std::string GetCrashLockPath();
+    static std::string GetCrashReportPath();
 };

@@ -88,6 +88,9 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     NSRect _savedBrowserContainerFrame;
     NSRect _savedSidebarFrame;
     NSRect _savedToolbarFrame;
+
+    // Tab hibernation timer
+    NSTimer* _hibernationTimer;
 }
 
 - (instancetype)initWithTabManager:(TabManager*)tabManager {
@@ -126,10 +129,27 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         [self setupViews];
         [self setupCallbacks];
         [self setupKeyboardShortcuts];
+        [self startHibernationTimer];
 
         [window center];
     }
     return self;
+}
+
+- (void)startHibernationTimer {
+    // Check for inactive tabs every 60 seconds
+    _hibernationTimer = [NSTimer scheduledTimerWithTimeInterval:60.0
+                                                         target:self
+                                                       selector:@selector(checkInactiveTabs)
+                                                       userInfo:nil
+                                                        repeats:YES];
+}
+
+- (void)checkInactiveTabs {
+    if (_tabManager) {
+        // Hibernate tabs inactive for 5 minutes (300 seconds)
+        _tabManager->HibernateInactiveTabs(300);
+    }
 }
 
 - (void)setupViews {
@@ -209,6 +229,15 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         MainWindowController* strongSelf = weakSelf;
         if (!strongSelf || !tab) return;
 
+        // Update active time for hibernation tracking
+        strongSelf.tabManager->UpdateTabActiveTime(tab->id);
+
+        // If tab is hibernated, wake it (this will trigger on_tab_woken callback)
+        if (tab->is_hibernated) {
+            strongSelf.tabManager->WakeTab(tab->id);
+            return;  // on_tab_woken will handle showing the browser
+        }
+
         // Capture all data BEFORE dispatch_async to avoid dangling pointer
         int tabId = tab->id;
         std::string url = tab->url;
@@ -270,6 +299,54 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         dispatch_async(dispatch_get_main_queue(), ^{
             [strongSelf.sidebarView updateWorkspaceButton];
             [strongSelf.sidebarView reloadTabs];
+        });
+    };
+
+    // Tab hibernation: close browser to free memory
+    callbacks.on_tab_hibernated = [weakSelf](Tab* tab) {
+        MainWindowController* strongSelf = weakSelf;
+        if (!strongSelf || !tab) return;
+
+        // Capture browser reference before async
+        CefRefPtr<CefBrowser> browser = tab->browser;
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // Close the browser to free memory
+            if (browser) {
+                CefRefPtr<CefBrowserHost> host = browser->GetHost();
+                if (host) {
+                    NSView* browserView = (__bridge NSView*)host->GetWindowHandle();
+                    if (browserView) {
+                        [browserView removeFromSuperview];
+                    }
+                    host->CloseBrowser(true);
+                }
+            }
+            // Clear browser references (must be done on main thread after browser closes)
+            tab->browser = nullptr;
+            tab->client = nullptr;
+
+            // Update sidebar to show hibernation indicator
+            [strongSelf.sidebarView reloadTabs];
+        });
+    };
+
+    // Tab woken: recreate browser
+    callbacks.on_tab_woken = [weakSelf](Tab* tab) {
+        MainWindowController* strongSelf = weakSelf;
+        if (!strongSelf || !tab) return;
+
+        // Capture data before async
+        int tabId = tab->id;
+        std::string url = tab->url;
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // Recreate the browser for this tab
+            Tab* t = strongSelf.tabManager->GetTabById(tabId);
+            if (t) {
+                [strongSelf createBrowserForTab:t];
+                [strongSelf.sidebarView reloadTabs];
+            }
         });
     };
 
@@ -1809,6 +1886,10 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 }
 
 - (void)dealloc {
+    if (_hibernationTimer) {
+        [_hibernationTimer invalidate];
+        _hibernationTimer = nil;
+    }
     if (_eventMonitor) {
         [NSEvent removeMonitor:_eventMonitor];
         _eventMonitor = nil;

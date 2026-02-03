@@ -32,6 +32,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Master toggle to enable/disable all gestures
   - Individual toggles for back, forward, and close tab gestures
   - Settings persist across sessions
+- **Tab Hibernation** - Automatic memory optimization for inactive tabs
+  - Tabs inactive for 5+ minutes are automatically hibernated
+  - Browser instance closed to free memory, tab data preserved
+  - Tabs wake instantly when clicked (browser recreated)
+  - Moon icon indicator shows hibernated state in sidebar
+  - Pinned tabs are never hibernated
+- **Crash Reporting** - Detailed crash reports for debugging
+  - Crash report written to `~/Library/Application Support/OrbFox/crash_report.txt`
+  - Includes timestamp, platform info, and full session state
+  - Lists all workspaces and tabs with URLs at time of crash
+- **Manual Testing Checklist** - Comprehensive QA checklist
+  - 18 sections covering all features
+  - 200+ individual test cases
+  - Located at `documentation/manual_testing_checklist.md`
 - **Context Menu Bookmark Options** - Right-click to add bookmarks
   - "Add Link to Bookmarks" appears when right-clicking links
   - "Bookmark This Page" available on all context menus

@@ -1393,6 +1393,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         row.isLoading = tab->is_loading;
         row.isPinned = tab->is_pinned;
         row.isMuted = tab->is_muted;
+        row.isHibernated = tab->is_hibernated;
         row.sidebarView = self;
 
         NSString* url = [NSString stringWithUTF8String:tab->url.c_str()];

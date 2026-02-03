@@ -25,6 +25,8 @@ struct TabManagerCallbacks {
     std::function<void(Tab*)> on_tab_activated;
     std::function<void(Tab*)> on_tab_updated;
     std::function<void(Workspace*)> on_workspace_changed;
+    std::function<void(Tab*)> on_tab_hibernated;  // Called when tab is hibernated
+    std::function<void(Tab*)> on_tab_woken;       // Called when hibernated tab needs browser recreated
 };
 
 // Manages tabs and workspaces
@@ -69,6 +71,12 @@ public:
 
     // Reorder workspace (drag & drop)
     bool ReorderWorkspace(int workspace_id, int new_index);
+
+    // Tab hibernation (memory optimization)
+    bool HibernateTab(int tab_id);           // Suspend tab to save memory
+    bool WakeTab(int tab_id);                // Wake hibernated tab (recreates browser)
+    void HibernateInactiveTabs(int64_t inactive_seconds = 300);  // Hibernate tabs inactive for N seconds
+    void UpdateTabActiveTime(int tab_id);    // Mark tab as recently active
 
     // Workspace naming
     bool WorkspaceNameExists(const std::string& name) const;

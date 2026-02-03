@@ -1,5 +1,7 @@
 #include "tab_manager.h"
 
+#include <chrono>
+
 TabManager::TabManager() {
     // Create default workspace
     CreateWorkspace("WS 1");
@@ -495,4 +497,73 @@ bool TabManager::ReorderWorkspace(int workspace_id, int new_index) {
     }
 
     return true;
+}
+
+// Tab hibernation methods
+
+static int64_t GetCurrentTimestamp() {
+    auto now = std::chrono::system_clock::now();
+    return std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+}
+
+bool TabManager::HibernateTab(int tab_id) {
+    Tab* tab = GetTabById(tab_id);
+    if (!tab) return false;
+
+    // Don't hibernate pinned tabs or already hibernated tabs
+    if (tab->is_pinned || tab->is_hibernated) return false;
+
+    // Don't hibernate the active tab
+    Tab* activeTab = GetActiveTab();
+    if (activeTab && activeTab->id == tab_id) return false;
+
+    tab->is_hibernated = true;
+
+    if (callbacks_.on_tab_hibernated) {
+        callbacks_.on_tab_hibernated(tab);
+    }
+
+    return true;
+}
+
+bool TabManager::WakeTab(int tab_id) {
+    Tab* tab = GetTabById(tab_id);
+    if (!tab || !tab->is_hibernated) return false;
+
+    tab->is_hibernated = false;
+    tab->last_active_time = GetCurrentTimestamp();
+
+    if (callbacks_.on_tab_woken) {
+        callbacks_.on_tab_woken(tab);
+    }
+
+    return true;
+}
+
+void TabManager::HibernateInactiveTabs(int64_t inactive_seconds) {
+    int64_t now = GetCurrentTimestamp();
+    int64_t threshold = now - inactive_seconds;
+
+    for (auto& workspace : workspaces_) {
+        for (auto& tab : workspace->tabs) {
+            // Skip pinned, hibernated, loading, or recently active tabs
+            if (tab->is_pinned || tab->is_hibernated || tab->is_loading) continue;
+
+            // Skip the active tab in the active workspace
+            if (workspace.get() == GetActiveWorkspace() &&
+                tab.get() == workspace->GetActiveTab()) continue;
+
+            // Hibernate if inactive for too long
+            if (tab->last_active_time > 0 && tab->last_active_time < threshold) {
+                HibernateTab(tab->id);
+            }
+        }
+    }
+}
+
+void TabManager::UpdateTabActiveTime(int tab_id) {
+    Tab* tab = GetTabById(tab_id);
+    if (tab) {
+        tab->last_active_time = GetCurrentTimestamp();
+    }
 }
