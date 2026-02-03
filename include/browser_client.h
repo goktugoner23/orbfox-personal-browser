@@ -64,6 +64,9 @@ public:
         MENU_ID_INSPECT_ELEMENT = 50004,
         MENU_ID_ADD_LINK_BOOKMARK = 50005,
         MENU_ID_BOOKMARK_PAGE = 50006,
+        MENU_ID_SAVE_IMAGE = 50007,
+        MENU_ID_COPY_IMAGE_ADDRESS = 50008,
+        MENU_ID_OPEN_IMAGE_NEW_TAB = 50009,
     };
 
     BrowserClient();

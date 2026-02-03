@@ -511,6 +511,18 @@ void BrowserClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
     CefString selection = params->GetSelectionText();
     bool has_selection = !selection.empty();
 
+    // Check if right-clicking on an image
+    bool is_image = (params->GetMediaType() == CM_MEDIATYPE_IMAGE);
+    CefString image_url = params->GetSourceUrl();
+
+    if (is_image && !image_url.empty()) {
+        // Image context menu
+        model->AddItem(MENU_ID_SAVE_IMAGE, "Save Image As...");
+        model->AddItem(MENU_ID_COPY_IMAGE_ADDRESS, "Copy Image Address");
+        model->AddItem(MENU_ID_OPEN_IMAGE_NEW_TAB, "Open Image in New Tab");
+        model->AddSeparator();
+    }
+
     if (is_link) {
         // Link context menu
         model->AddItem(MENU_ID_OPEN_LINK_NEW_TAB, "Open Link in New Tab");
@@ -617,6 +629,28 @@ bool BrowserClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
         case MENU_ID_BOOKMARK_PAGE: {
             if (on_bookmark_action_) {
                 on_bookmark_action_("add", "");
+            }
+            return true;
+        }
+        case MENU_ID_SAVE_IMAGE: {
+            CefString image_url = params->GetSourceUrl();
+            if (!image_url.empty()) {
+                // Trigger download of the image
+                browser->GetHost()->StartDownload(image_url);
+            }
+            return true;
+        }
+        case MENU_ID_COPY_IMAGE_ADDRESS: {
+            CefString image_url = params->GetSourceUrl();
+            if (!image_url.empty() && on_copy_to_clipboard_) {
+                on_copy_to_clipboard_(image_url.ToString());
+            }
+            return true;
+        }
+        case MENU_ID_OPEN_IMAGE_NEW_TAB: {
+            CefString image_url = params->GetSourceUrl();
+            if (!image_url.empty() && on_open_link_) {
+                on_open_link_(image_url.ToString(), false);  // false = foreground
             }
             return true;
         }
