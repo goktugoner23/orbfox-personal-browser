@@ -1,6 +1,29 @@
 #include "tab_manager.h"
 
 #include <chrono>
+#include <regex>
+
+namespace {
+
+// Extract domain from URL for comparison
+// Returns empty string if URL is invalid or has no host
+std::string ExtractDomain(const std::string& url) {
+    // Simple regex to extract host from URL
+    // Matches: scheme://[user:pass@]host[:port][/path]
+    static const std::regex url_regex(R"(^[a-zA-Z][a-zA-Z0-9+.-]*://(?:[^@/]*@)?([^:/?#]+))");
+    std::smatch match;
+    if (std::regex_search(url, match, url_regex) && match.size() > 1) {
+        std::string host = match[1].str();
+        // Remove www. prefix for comparison
+        if (host.substr(0, 4) == "www.") {
+            host = host.substr(4);
+        }
+        return host;
+    }
+    return "";
+}
+
+}  // namespace
 
 TabManager::TabManager() {
     // Create default workspace
@@ -258,11 +281,18 @@ void TabManager::UpdateTabTitle(int tab_id, const std::string& title) {
 void TabManager::UpdateTabUrl(int tab_id, const std::string& url) {
     Tab* tab = GetTabById(tab_id);
     if (tab) {
-        // Clear favicon data when URL changes to prevent stale favicon association
-        // (fixes race condition where old favicon arrives after navigation to new URL)
+        // Only clear favicon data when navigating to a different domain
+        // This prevents losing favicons due to minor URL changes (trailing slash,
+        // fragments, query params) while still clearing when navigating to a new site
         if (tab->url != url) {
-            tab->favicon_url.clear();
-            tab->favicon_data.clear();
+            std::string old_domain = ExtractDomain(tab->url);
+            std::string new_domain = ExtractDomain(url);
+
+            // Clear favicon only if domain actually changed (navigating to different site)
+            if (!old_domain.empty() && !new_domain.empty() && old_domain != new_domain) {
+                tab->favicon_url.clear();
+                tab->favicon_data.clear();
+            }
         }
 
         tab->url = url;

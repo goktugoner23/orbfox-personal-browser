@@ -80,6 +80,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - User can expand folders, state persists during session
 
 ### Fixed
+- **Background Tab Favicon Not Showing** - Fixed favicon disappearing for tabs opened in background
+  - Favicon data was being cleared on any URL change (including trailing slash normalization)
+  - Now only clears favicon when navigating to a different domain
+  - Prevents losing favicons when `reloadTabs` is triggered after URL normalization
 - **Mouse Gesture Context Menu Integration** - Fixed context menu and gesture interaction
   - CEF's internal context menu handling was bypassing Cocoa event interception
   - Added global context menu suppression flag during gesture tracking
