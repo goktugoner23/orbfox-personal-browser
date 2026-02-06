@@ -15,7 +15,7 @@
 // Layout constants
 static const CGFloat kIconStripWidth = 44.0;
 static const CGFloat kSidebarWidth = 280.0;
-static const CGFloat kWorkspaceHeight = 48.0;  // Total height of workspace row (taller to avoid clipping tabs)
+static const CGFloat kWorkspaceHeight = 64.0;  // Total height of workspace row (taller to avoid clipping tabs)
 static const CGFloat kNewTabButtonHeight = 44.0;
 
 // ============================================================================
@@ -805,7 +805,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
 
         // Position tabs to align with plus button - offset down from center
         CGFloat containerHeight = _workspaceTabsContainer.bounds.size.height;
-        CGFloat tabY = (containerHeight - tabHeight) / 2;
+        CGFloat tabY = (containerHeight - tabHeight) / 2 - 17;  // Nudge down to align with add button
         tabContainer.frame = NSMakeRect(x, tabY, totalWidth, tabHeight);
 
         // Color dot
