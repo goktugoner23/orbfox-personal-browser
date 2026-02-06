@@ -136,7 +136,8 @@ std::string SettingsStorage::ToJson() const {
     ss << "  \"gestures_enabled\": " << (settings_.gestures_enabled ? "true" : "false") << ",\n";
     ss << "  \"gesture_back_enabled\": " << (settings_.gesture_back_enabled ? "true" : "false") << ",\n";
     ss << "  \"gesture_forward_enabled\": " << (settings_.gesture_forward_enabled ? "true" : "false") << ",\n";
-    ss << "  \"gesture_close_tab_enabled\": " << (settings_.gesture_close_tab_enabled ? "true" : "false") << "\n";
+    ss << "  \"gesture_close_tab_enabled\": " << (settings_.gesture_close_tab_enabled ? "true" : "false") << ",\n";
+    ss << "  \"gesture_reopen_tab_enabled\": " << (settings_.gesture_reopen_tab_enabled ? "true" : "false") << "\n";
     ss << "}\n";
     return ss.str();
 }
@@ -161,6 +162,7 @@ bool SettingsStorage::FromJson(const std::string& json) {
     settings_.gesture_back_enabled = orbfox::utils::GetJsonBool(json, "gesture_back_enabled", settings_.gesture_back_enabled);
     settings_.gesture_forward_enabled = orbfox::utils::GetJsonBool(json, "gesture_forward_enabled", settings_.gesture_forward_enabled);
     settings_.gesture_close_tab_enabled = orbfox::utils::GetJsonBool(json, "gesture_close_tab_enabled", settings_.gesture_close_tab_enabled);
+    settings_.gesture_reopen_tab_enabled = orbfox::utils::GetJsonBool(json, "gesture_reopen_tab_enabled", settings_.gesture_reopen_tab_enabled);
 
     return true;
 }

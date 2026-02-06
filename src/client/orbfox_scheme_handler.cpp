@@ -571,6 +571,18 @@ const char* kSettingsPageHtml = R"HTML(
                             </label>
                         </div>
                     </div>
+                    <div class="setting-row gesture-option">
+                        <div class="setting-label">
+                            <h3>Reverse L-Shape to Reopen Tab</h3>
+                            <p>Right-click, drag down then left to reopen closed tab</p>
+                        </div>
+                        <div class="setting-control">
+                            <label class="toggle">
+                                <input type="checkbox" id="gesture_reopen_tab_enabled" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -636,6 +648,7 @@ const char* kSettingsPageHtml = R"HTML(
             document.getElementById('gesture_back_enabled').checked = settings.gesture_back_enabled !== false;
             document.getElementById('gesture_forward_enabled').checked = settings.gesture_forward_enabled !== false;
             document.getElementById('gesture_close_tab_enabled').checked = settings.gesture_close_tab_enabled !== false;
+            document.getElementById('gesture_reopen_tab_enabled').checked = settings.gesture_reopen_tab_enabled !== false;
             updateGestureOptionsState();
         }
 
@@ -770,6 +783,11 @@ const char* kSettingsPageHtml = R"HTML(
 
         document.getElementById('gesture_close_tab_enabled').addEventListener('change', (e) => {
             settings.gesture_close_tab_enabled = e.target.checked;
+            saveSettings();
+        });
+
+        document.getElementById('gesture_reopen_tab_enabled').addEventListener('change', (e) => {
+            settings.gesture_reopen_tab_enabled = e.target.checked;
             saveSettings();
         });
 

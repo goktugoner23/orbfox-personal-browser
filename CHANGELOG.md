@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Persistent Browser Storage** - Cookies and localStorage now persist between sessions
+  - Set `cache_path` in CefSettings for persistent storage
+  - YouTube login, video resume positions, and site preferences now saved
+  - Data stored in `~/Library/Application Support/OrbFox/cache`
 - **Bookmark Import** - Import bookmarks from other browsers via Bookmarks menu
   - Supports Chrome, Safari, Firefox, and Microsoft Edge
   - Auto-detects installed browsers and available profiles
@@ -26,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Drag left → Go back
   - Drag right → Go forward
   - L-shape (down then right) → Close current tab
+  - Reverse L-shape (down then left) → Reopen last closed tab
   - Minimum 50pt drag distance to trigger gesture
   - Falls back to context menu if no gesture detected
 - **Gesture Settings** - Configure mouse gestures in `orbfox://settings`
@@ -80,6 +85,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - User can expand folders, state persists during session
 
 ### Fixed
+- **Middle-Click on Links** - Fixed middle-click opening links in current tab instead of background tab
+  - Implemented `OnOpenURLFromTab` handler in `CefRequestHandler`
+  - Middle-click sends `CEF_WOD_NEW_BACKGROUND_TAB` disposition, now correctly routed
+- **Middle-Click on Tabs** - Changed middle-click on sidebar tabs to close tab (was duplicating)
 - **Background Tab Favicon Not Showing** - Fixed favicon disappearing for tabs opened in background
   - Favicon data was being cleared on any URL change (including trailing slash normalization)
   - Now only clears favicon when navigating to a different domain
@@ -107,8 +116,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - CEF creates browser views visible by default
   - Now immediately hides browser view if tab is not active
 - **Middle-Click on Links** - Fixed middle-click on web page links opening in current tab
-  - `OnBeforePopup` now checks `target_disposition` for `CEF_WOD_NEW_BACKGROUND_TAB`
-  - Properly routes to background tab creation instead of foreground
+  - Implemented `OnOpenURLFromTab` handler in `CefRequestHandler` (middle-click doesn't use `OnBeforePopup`)
+  - Checks `target_disposition` for `CEF_WOD_NEW_BACKGROUND_TAB` and routes to background tab creation
 - **Bookmarks Page** (`orbfox://bookmarks`) - Native bookmarks page as default homepage
   - Grid layout with bookmark cards showing favicons and titles
   - Folder sections with collapsible organization

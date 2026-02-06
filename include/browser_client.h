@@ -164,6 +164,12 @@ public:
                         bool user_gesture,
                         bool is_redirect) override;
 
+    bool OnOpenURLFromTab(CefRefPtr<CefBrowser> browser,
+                          CefRefPtr<CefFrame> frame,
+                          const CefString& target_url,
+                          WindowOpenDisposition target_disposition,
+                          bool user_gesture) override;
+
     CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(
         CefRefPtr<CefBrowser> browser,
         CefRefPtr<CefFrame> frame,

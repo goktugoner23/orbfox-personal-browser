@@ -499,11 +499,13 @@ int main(int argc, char* argv[]) {
         settings.remote_debugging_port = 9222;
 #endif
 
-        // Set a unique cache path to avoid singleton conflicts
+        // Set cache paths for persistent storage (cookies, localStorage, etc.)
         NSString* appSupportPath = [NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES) firstObject];
-        NSString* cachePath = [appSupportPath stringByAppendingPathComponent:@"OrbFox"];
+        NSString* orbfoxPath = [appSupportPath stringByAppendingPathComponent:@"OrbFox"];
+        NSString* cachePath = [orbfoxPath stringByAppendingPathComponent:@"cache"];
         [[NSFileManager defaultManager] createDirectoryAtPath:cachePath withIntermediateDirectories:YES attributes:nil error:nil];
-        CefString(&settings.root_cache_path) = [cachePath UTF8String];
+        CefString(&settings.root_cache_path) = [orbfoxPath UTF8String];
+        CefString(&settings.cache_path) = [cachePath UTF8String];
 
         // Set framework path - helps CEF find its resources
         NSString* frameworkPath = [[NSBundle mainBundle] privateFrameworksPath];

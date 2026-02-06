@@ -5,9 +5,10 @@
 // Gesture types recognized by the container
 typedef NS_ENUM(NSInteger, GestureType) {
     GestureTypeNone,
-    GestureTypeLeft,      // Drag left → Go back
-    GestureTypeRight,     // Drag right → Go forward
-    GestureTypeLShape,    // Down then right → Close tab
+    GestureTypeLeft,          // Drag left → Go back
+    GestureTypeRight,         // Drag right → Go forward
+    GestureTypeLShape,        // Down then right → Close tab
+    GestureTypeReverseLShape, // Down then left → Reopen closed tab
 };
 
 @protocol GestureContainerDelegate <NSObject>

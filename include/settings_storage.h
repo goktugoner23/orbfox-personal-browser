@@ -18,9 +18,10 @@ struct Settings {
 
     // Gestures
     bool gestures_enabled = true;
-    bool gesture_back_enabled = true;      // Left drag = go back
-    bool gesture_forward_enabled = true;   // Right drag = go forward
-    bool gesture_close_tab_enabled = true; // L-shape = close tab
+    bool gesture_back_enabled = true;       // Left drag = go back
+    bool gesture_forward_enabled = true;    // Right drag = go forward
+    bool gesture_close_tab_enabled = true;  // L-shape = close tab
+    bool gesture_reopen_tab_enabled = true; // Reverse L-shape = reopen closed tab
 };
 
 class SettingsStorage {

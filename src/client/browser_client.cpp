@@ -340,6 +340,31 @@ bool BrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
     return false;
 }
 
+bool BrowserClient::OnOpenURLFromTab(CefRefPtr<CefBrowser> browser,
+                                      CefRefPtr<CefFrame> frame,
+                                      const CefString& target_url,
+                                      WindowOpenDisposition target_disposition,
+                                      bool user_gesture) {
+    CEF_REQUIRE_UI_THREAD();
+    (void)browser;
+    (void)frame;
+    (void)user_gesture;
+
+    if (!target_url.empty()) {
+        std::string url = target_url.ToString();
+
+        // Check disposition to determine how to open the link
+        // Middle-click sends CEF_WOD_NEW_BACKGROUND_TAB
+        bool background = (target_disposition == CEF_WOD_NEW_BACKGROUND_TAB);
+
+        if (on_open_link_) {
+            on_open_link_(url, background);
+            return true;  // We handled it
+        }
+    }
+    return false;  // Let CEF handle it
+}
+
 // Static list of blocked domains (ads, trackers, analytics)
 const std::set<std::string>& BrowserClient::GetBlockedDomains() {
     static const std::set<std::string> domains = {

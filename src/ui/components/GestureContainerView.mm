@@ -120,6 +120,12 @@
         // L-shape: went down, then right
         recognizedGesture = GestureTypeLShape;
     }
+    // Check for reverse L-shape gesture: down then left
+    // We need: moved down significantly at some point, AND ended up to the left
+    else if (_hasMovedDown && dx <= -_minimumGestureDistance && gestureSettings.gesture_reopen_tab_enabled) {
+        // Reverse L-shape: went down, then left
+        recognizedGesture = GestureTypeReverseLShape;
+    }
     // Check for horizontal gestures (must be primarily horizontal)
     else if (horizontalDistance >= _minimumGestureDistance && horizontalDistance > verticalDistance * 1.5) {
         if (dx < 0 && gestureSettings.gesture_back_enabled) {

@@ -890,6 +890,10 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
             // L-shape (down then right) → Close tab
             [self closeCurrentTab];
             break;
+        case GestureTypeReverseLShape:
+            // Reverse L-shape (down then left) → Reopen closed tab
+            [self reopenClosedTab];
+            break;
         case GestureTypeNone:
             break;
     }
