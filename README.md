@@ -112,6 +112,38 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 - macOS 12.0 or later (ARM64)
 - CMake 3.15+
 - Xcode Command Line Tools
+- CEF Binary Distribution (see below)
+
+## CEF Setup
+
+The Chromium Embedded Framework (CEF) binaries are **not included** in this repository due to their large size (~200 MB). You must download CEF separately before building.
+
+1. Download CEF 144 for macOS ARM64 from the [CEF Builds](https://cef-builds.spotifycdn.com/index.html):
+   - Platform: **macOS 64-bit ARM** (arm64)
+   - Branch: **144** (or latest stable)
+   - Download the "Standard Distribution"
+
+2. Extract and place in the project root:
+   ```bash
+   # Extract the downloaded archive
+   tar -xzf cef_binary_*.tar.bz2
+
+   # Rename to 'cef' directory
+   mv cef_binary_* cef
+   ```
+
+3. Your directory structure should look like:
+   ```
+   personal-browser/
+   ├── cef/
+   │   ├── cmake/
+   │   ├── include/
+   │   ├── libcef_dll/
+   │   ├── Release/
+   │   └── ...
+   ├── src/
+   └── ...
+   ```
 
 ## Building
 
