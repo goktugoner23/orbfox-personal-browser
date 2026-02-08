@@ -11,6 +11,13 @@
 #include <unistd.h>
 #endif
 
+#ifdef PLATFORM_WIN
+#include <windows.h>
+#include <shlobj.h>
+#include <direct.h>
+#include <sys/stat.h>
+#endif
+
 namespace orbfox {
 namespace utils {
 
@@ -20,8 +27,13 @@ void EnsureDirectoryExists(const std::string& path) {
     if (stat(path.c_str(), &st) != 0) {
         mkdir(path.c_str(), 0755);
     }
+#elif defined(PLATFORM_WIN)
+    struct _stat st;
+    if (_stat(path.c_str(), &st) != 0) {
+        _mkdir(path.c_str());
+    }
 #else
-    (void)path;  // Unused on non-Apple platforms
+    (void)path;
 #endif
 }
 
@@ -41,13 +53,26 @@ bool IsValidDownloadPath(const std::string& path, bool check_exists) {
         return false;
     }
 
-    // Must be absolute path (starts with /) or home path (starts with ~)
+    // Must be absolute path
+#ifdef PLATFORM_WIN
+    // Windows: drive letter (C:\) or UNC path (\\server)
+    bool is_absolute = (path.length() >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/'))
+                    || (path.length() >= 2 && path[0] == '\\' && path[1] == '\\');
+    if (!is_absolute) {
+        return false;
+    }
+
+    // Prevent writing to Windows system directories
+    if (path.find("\\Windows\\") != std::string::npos ||
+        path.find("\\System32\\") != std::string::npos) {
+        return false;
+    }
+#else
     if (path[0] != '/' && path[0] != '~') {
         return false;
     }
 
     // Check for suspicious patterns - only for absolute paths
-    // (~ paths will be expanded and checked after expansion if needed)
     if (path[0] == '/') {
         // Prevent writing to system directories
         if (path.find("/etc/") == 0 ||
@@ -57,23 +82,27 @@ bool IsValidDownloadPath(const std::string& path, bool check_exists) {
             path.find("/var/") == 0 ||
             path.find("/System/") == 0 ||
             path.find("/Library/") == 0) {
-            // Allow ~/Library/... paths for app-specific storage
-            // but block /Library (system-wide)
             return false;
         }
     }
+#endif
 
     if (check_exists) {
 #ifdef __APPLE__
         // Resolve symlinks and verify it's a real directory
         char resolved[PATH_MAX];
         if (realpath(path.c_str(), resolved) == nullptr) {
-            return false;  // Path doesn't exist or can't be resolved
+            return false;
         }
 
         struct stat st;
         if (stat(resolved, &st) != 0 || !S_ISDIR(st.st_mode)) {
-            return false;  // Not a directory
+            return false;
+        }
+#elif defined(PLATFORM_WIN)
+        struct _stat st;
+        if (_stat(path.c_str(), &st) != 0 || !(st.st_mode & _S_IFDIR)) {
+            return false;
         }
 #endif
     }
@@ -104,6 +133,15 @@ std::string GetHomeDirectory() {
         home = pw ? pw->pw_dir : "/tmp";
     }
     return std::string(home);
+#elif defined(PLATFORM_WIN)
+    // Use USERPROFILE (e.g., C:\Users\username)
+    char path[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PROFILE, NULL, 0, path))) {
+        return std::string(path);
+    }
+    // Fallback
+    const char* home = std::getenv("USERPROFILE");
+    return home ? std::string(home) : "C:\\";
 #else
     return "/tmp";
 #endif
@@ -115,6 +153,15 @@ std::string GetAppSupportPath() {
     std::string app_support = home + "/Library/Application Support/OrbFox";
     EnsureDirectoryExists(app_support);
     return app_support;
+#elif defined(PLATFORM_WIN)
+    // Use %LOCALAPPDATA%\OrbFox (e.g., C:\Users\username\AppData\Local\OrbFox)
+    char path[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, path))) {
+        std::string app_support = std::string(path) + "\\OrbFox";
+        EnsureDirectoryExists(app_support);
+        return app_support;
+    }
+    return ".";
 #else
     return ".";
 #endif
@@ -171,14 +218,29 @@ bool AtomicWriteFile(const std::string& path, const std::string& content) {
 
     return true;
 #else
-    // Fallback for non-Apple platforms: direct write
-    std::FILE* file = std::fopen(path.c_str(), "w");
+    // Write to temp file, then rename for atomicity
+    std::string temp_path = path + ".tmp";
+    std::FILE* file = std::fopen(temp_path.c_str(), "w");
     if (!file) {
         return false;
     }
     size_t written = std::fwrite(content.data(), 1, content.size(), file);
+    bool write_ok = (written == content.size());
+    if (write_ok) {
+        write_ok = (std::fflush(file) == 0);
+    }
     std::fclose(file);
-    return written == content.size();
+    if (!write_ok) {
+        std::remove(temp_path.c_str());
+        return false;
+    }
+    // On Windows, rename fails if target exists — remove first
+    std::remove(path.c_str());
+    if (std::rename(temp_path.c_str(), path.c_str()) != 0) {
+        std::remove(temp_path.c_str());
+        return false;
+    }
+    return true;
 #endif
 }
 

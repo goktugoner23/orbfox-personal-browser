@@ -98,7 +98,6 @@ endif()
 
 # App-specific source files (not in core library)
 set(SOURCES
-    src/main.cpp
     src/client/browser_client.cpp
     src/client/orbfox_scheme_handler.cpp
 )
@@ -161,6 +160,42 @@ if(APPLE)
         src/ui/components/AddBookmarkPopoverController.mm
         src/data/bookmark_importer.mm
     )
+elseif(WIN32)
+    list(APPEND SOURCES
+        src/platform/win/main_win.cpp
+        src/app/browser_app_win.cpp
+        src/ui/win/MainWindow.cpp
+        src/ui/win/SidebarWindow.cpp
+        src/ui/win/ToolbarWindow.cpp
+        src/ui/win/BookmarksPanel.cpp
+        src/ui/win/HistoryPanel.cpp
+        src/ui/win/DownloadsPanel.cpp
+        src/ui/win/FindBar.cpp
+        src/ui/win/BookmarkEditDialog.cpp
+        src/ui/win/AutocompleteDropdown.cpp
+        src/ui/win/GestureHandler.cpp
+        src/ui/win/DevToolsPanel.cpp
+        src/ui/win/SettingsPanel.cpp
+        resources/win/OrbFox.rc
+    )
+
+    # Windows UI headers (for IDE indexing)
+    list(APPEND UI_HEADERS
+        src/ui/win/MainWindow.h
+        src/ui/win/SidebarWindow.h
+        src/ui/win/ToolbarWindow.h
+        src/ui/win/BookmarksPanel.h
+        src/ui/win/HistoryPanel.h
+        src/ui/win/DownloadsPanel.h
+        src/ui/win/FindBar.h
+        src/ui/win/BookmarkEditDialog.h
+        src/ui/win/AutocompleteDropdown.h
+        src/ui/win/GestureHandler.h
+        src/ui/win/DevToolsPanel.h
+        src/ui/win/SettingsPanel.h
+        src/ui/win/DesignSystem.h
+        resources/win/resource.h
+    )
 endif()
 
 # Create executable
@@ -174,8 +209,15 @@ if(APPLE)
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.orbfox.browser"
     )
+elseif(WIN32)
+    add_executable(OrbFox WIN32 ${SOURCES} ${HEADERS} ${UI_HEADERS})
+
+    set_target_properties(OrbFox PROPERTIES
+        OUTPUT_NAME "OrbFox"
+        WIN32_EXECUTABLE TRUE
+    )
 else()
-    add_executable(OrbFox WIN32 ${SOURCES} ${HEADERS})
+    add_executable(OrbFox ${SOURCES} ${HEADERS} ${UI_HEADERS})
 endif()
 
 # Include directories
@@ -317,12 +359,36 @@ if(APPLE)
     endforeach()
 
 elseif(WIN32)
+    # Windows-specific include directories
+    target_include_directories(OrbFox PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/ui/win
+    )
+
+    # Windows libraries
     target_link_libraries(OrbFox PRIVATE
         user32
         gdi32
+        gdiplus
         shell32
+        dwmapi
+        shlwapi
+        comctl32
+        ole32
+        comdlg32
     )
-    target_compile_definitions(OrbFox PRIVATE PLATFORM_WIN)
+
+    target_compile_definitions(OrbFox PRIVATE
+        PLATFORM_WIN
+        _UNICODE
+        UNICODE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
+    )
+
+    # Use static runtime for release builds
+    if(MSVC)
+        set_property(TARGET OrbFox PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
 endif()
 
 # Compiler warnings

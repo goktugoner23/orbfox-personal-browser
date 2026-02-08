@@ -1,0 +1,40 @@
+// Windows resource file for OrbFox browser
+
+#include <winver.h>
+
+// Application icon
+IDI_ORBFOX ICON "OrbFox.ico"
+
+// Version information
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     0,1,0,0
+PRODUCTVERSION  0,1,0,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+FILEFLAGS       VS_FF_DEBUG
+#else
+FILEFLAGS       0
+#endif
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "OrbFox"
+            VALUE "FileDescription",  "OrbFox Web Browser"
+            VALUE "FileVersion",      "0.1.0"
+            VALUE "InternalName",     "OrbFox"
+            VALUE "LegalCopyright",   "MIT License"
+            VALUE "OriginalFilename", "OrbFox.exe"
+            VALUE "ProductName",      "OrbFox"
+            VALUE "ProductVersion",   "0.1.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

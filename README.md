@@ -109,43 +109,80 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 
 ## Requirements
 
+### macOS
 - macOS 12.0 or later (ARM64)
 - CMake 3.15+
 - Xcode Command Line Tools
+- CEF Binary Distribution (see below)
+
+### Windows
+- Windows 10 or later (x64)
+- CMake 3.15+
+- Visual Studio 2019 or later (with C++ workload)
 - CEF Binary Distribution (see below)
 
 ## CEF Setup
 
 The Chromium Embedded Framework (CEF) binaries are **not included** in this repository due to their large size (~200 MB). You must download CEF separately before building.
 
-1. Download CEF 144 for macOS ARM64 from the [CEF Builds](https://cef-builds.spotifycdn.com/index.html):
+### Version
+
+| Component | Version |
+|-----------|---------|
+| CEF | `144.0.11+ge135be2+chromium-144.0.7559.97` |
+| Chromium | `144.0.7559.97` |
+| Branch | `144` |
+
+Both macOS and Windows builds **must** use the same CEF version for consistency.
+
+### macOS (ARM64)
+
+1. Download from [CEF Builds](https://cef-builds.spotifycdn.com/index.html):
    - Platform: **macOS 64-bit ARM** (arm64)
-   - Branch: **144** (or latest stable)
-   - Download the "Standard Distribution"
+   - Search for version `144.0.11` or branch `144`
+   - Download the **Standard Distribution**
 
 2. Extract and place in the project root:
    ```bash
-   # Extract the downloaded archive
-   tar -xzf cef_binary_*.tar.bz2
-
-   # Rename to 'cef' directory
-   mv cef_binary_* cef
+   tar -xjf cef_binary_144.0.11*.tar.bz2
+   mv cef_binary_144.0.11* cef
    ```
 
-3. Your directory structure should look like:
+### Windows (x64)
+
+1. Download from [CEF Builds](https://cef-builds.spotifycdn.com/index.html):
+   - Platform: **Windows 64-bit** (x64)
+   - Search for version `144.0.11` or branch `144`
+   - Download the **Standard Distribution**
+
+2. Extract and place in the project root:
+   ```powershell
+   # Extract the downloaded archive and rename to 'cef'
+   mv cef_binary_144.0.11* cef
    ```
-   personal-browser/
-   ├── cef/
-   │   ├── cmake/
-   │   ├── include/
-   │   ├── libcef_dll/
-   │   ├── Release/
-   │   └── ...
-   ├── src/
-   └── ...
+
+3. Install SQLite3 via vcpkg:
+   ```powershell
+   vcpkg install sqlite3:x64-windows
    ```
+
+### Directory structure after setup:
+
+```
+personal-browser/
+├── cef/
+│   ├── cmake/
+│   ├── include/
+│   ├── libcef_dll/
+│   ├── Release/
+│   └── ...
+├── src/
+└── ...
+```
 
 ## Building
+
+### macOS
 
 ```bash
 # Configure
@@ -156,6 +193,20 @@ cmake --build build -j8
 
 # Run
 open build/OrbFox.app
+```
+
+### Windows
+
+```powershell
+# Configure (using Visual Studio generator)
+# If using vcpkg for SQLite3, add: -DCMAKE_TOOLCHAIN_FILE=<vcpkg-root>/scripts/buildsystems/vcpkg.cmake
+cmake -B build -G "Visual Studio 17 2022" -A x64
+
+# Build
+cmake --build build --config Release
+
+# Run
+.\build\Release\OrbFox.exe
 ```
 
 ## Testing
@@ -287,24 +338,20 @@ Helper apps in `Contents/Frameworks/` handle subprocess execution.
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| Cmd+T | New tab |
-| Cmd+W | Close tab |
-| Cmd+L | Focus URL bar |
-| Cmd+R | Reload |
-| Cmd+[ | Back |
-| Cmd+] | Forward |
-| Cmd+1-9 | Switch to tab |
-| Cmd+D | Bookmark this page |
-| Cmd+Shift+N | New bookmark folder |
-| Cmd+Shift+Y | Show History |
-| Cmd+Shift+B | Show Bookmarks |
-| Cmd+Shift+T | Reopen closed tab |
-| Cmd+F | Find in Page |
-| Cmd+Opt+I | Toggle DevTools |
-| Cmd+Opt+Left | Previous workspace |
-| Cmd+Opt+Right | Next workspace |
+| Action | macOS | Windows |
+|--------|-------|---------|
+| New tab | Cmd+T | Ctrl+T |
+| Close tab | Cmd+W | Ctrl+W |
+| Reopen closed tab | Cmd+Shift+T | Ctrl+Shift+T |
+| Focus URL bar | Cmd+L | Ctrl+L |
+| Find in Page | Cmd+F | Ctrl+F |
+| Reload | Cmd+R | Ctrl+R |
+| Back | Cmd+[ | Ctrl+[ |
+| Forward | Cmd+] | Ctrl+] |
+| Switch to tab 1-9 | Cmd+1-9 | Ctrl+1-9 |
+| Toggle DevTools | Cmd+Opt+I | Ctrl+Alt+I / F12 |
+| Previous workspace | Cmd+Opt+Left | Ctrl+Alt+Left |
+| Next workspace | Cmd+Opt+Right | Ctrl+Alt+Right |
 
 ## License
 

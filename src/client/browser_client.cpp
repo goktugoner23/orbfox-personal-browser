@@ -762,18 +762,19 @@ bool BrowserClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
         bool is_cmd = (event.modifiers & EVENTFLAG_COMMAND_DOWN) != 0;
         bool is_ctrl = (event.modifiers & EVENTFLAG_CONTROL_DOWN) != 0;
         bool is_shift = (event.modifiers & EVENTFLAG_SHIFT_DOWN) != 0;
+        bool is_alt = (event.modifiers & EVENTFLAG_ALT_DOWN) != 0;
         bool is_modifier = is_cmd || is_ctrl;
 
         if (is_modifier) {
             switch (vk) {
-                case 'R':  // Cmd+R: Reload
-                    if (!is_shift) {  // Don't trigger on Cmd+Shift+R
+                case 'R':  // Cmd/Ctrl+R: Reload
+                    if (!is_shift) {
                         browser->Reload();
                         return true;
                     }
                     break;
 
-                case 'L':  // Cmd+L: Focus URL bar
+                case 'L':  // Cmd/Ctrl+L: Focus URL bar
                     if (!is_shift) {
                         if (on_focus_url_bar_) {
                             on_focus_url_bar_();
@@ -783,24 +784,101 @@ bool BrowserClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
                     }
                     break;
 
-                // Cmd+[: Back (macOS) - use native_key_code to avoid conflict with VK_LWIN
-                // macOS native key code for '[' is 33
                 default:
-                    if (nk == 33 && !is_shift) {  // '[' key on macOS
-                        if (browser->CanGoBack()) {
-                            browser->GoBack();
-                        }
-                        return true;
-                    }
-                    if (nk == 30 && !is_shift) {  // ']' key on macOS
-                        if (browser->CanGoForward()) {
-                            browser->GoForward();
-                        }
-                        return true;
-                    }
                     break;
             }
+
+#ifdef PLATFORM_MAC
+            // Cmd+[: Back, Cmd+]: Forward (macOS native key codes)
+            if (nk == 33 && !is_shift) {  // '[' key on macOS
+                if (browser->CanGoBack()) {
+                    browser->GoBack();
+                }
+                return true;
+            }
+            if (nk == 30 && !is_shift) {  // ']' key on macOS
+                if (browser->CanGoForward()) {
+                    browser->GoForward();
+                }
+                return true;
+            }
+#endif
+
+#ifdef PLATFORM_WIN
+            // Windows: forward shortcuts to MainWindow via custom message
+            // since BrowserClient can't perform tab/panel operations directly
+            HWND browserHwnd = browser->GetHost()->GetWindowHandle();
+            HWND rootHwnd = GetAncestor(browserHwnd, GA_ROOT);
+
+            // Ctrl+[: Back, Ctrl+]: Forward
+            if (vk == 0xDB && !is_shift) {  // VK_OEM_4 = '['
+                if (browser->CanGoBack()) {
+                    browser->GoBack();
+                }
+                return true;
+            }
+            if (vk == 0xDD && !is_shift) {  // VK_OEM_6 = ']'
+                if (browser->CanGoForward()) {
+                    browser->GoForward();
+                }
+                return true;
+            }
+
+            // Shortcuts that need MainWindow — forward via PostMessage
+            if (vk == 'T' && !is_shift && !is_alt) {  // Ctrl+T: New tab
+                PostMessage(rootHwnd, WM_APP + 1, 1, 0);
+                return true;
+            }
+            if (vk == 'W' && !is_shift && !is_alt) {  // Ctrl+W: Close tab
+                PostMessage(rootHwnd, WM_APP + 1, 2, 0);
+                return true;
+            }
+            if (vk == 'F' && !is_shift && !is_alt) {  // Ctrl+F: Find
+                PostMessage(rootHwnd, WM_APP + 1, 3, 0);
+                return true;
+            }
+            if (vk == 'T' && is_shift && !is_alt) {  // Ctrl+Shift+T: Reopen tab
+                PostMessage(rootHwnd, WM_APP + 1, 4, 0);
+                return true;
+            }
+            if (vk == 'I' && is_alt) {  // Ctrl+Alt+I: Toggle DevTools
+                PostMessage(rootHwnd, WM_APP + 1, 5, 0);
+                return true;
+            }
+            if (vk == VK_LEFT && is_alt) {  // Ctrl+Alt+Left: Previous workspace
+                PostMessage(rootHwnd, WM_APP + 1, 6, 0);
+                return true;
+            }
+            if (vk == VK_RIGHT && is_alt) {  // Ctrl+Alt+Right: Next workspace
+                PostMessage(rootHwnd, WM_APP + 1, 7, 0);
+                return true;
+            }
+            // Ctrl+1-9: Switch to tab
+            if (vk >= '1' && vk <= '9' && !is_shift && !is_alt) {
+                PostMessage(rootHwnd, WM_APP + 1, 8, vk - '1');
+                return true;
+            }
+#endif
         }
+
+#ifdef PLATFORM_WIN
+        // F12: Toggle DevTools (no modifier needed)
+        if (vk == VK_F12) {
+            HWND browserHwnd = browser->GetHost()->GetWindowHandle();
+            HWND rootHwnd = GetAncestor(browserHwnd, GA_ROOT);
+            PostMessage(rootHwnd, WM_APP + 1, 5, 0);
+            return true;
+        }
+
+        // Escape: hide find bar
+        if (vk == VK_ESCAPE && !content_fullscreen_) {
+            HWND browserHwnd = browser->GetHost()->GetWindowHandle();
+            HWND rootHwnd = GetAncestor(browserHwnd, GA_ROOT);
+            // Forward to MainWindow — it will hide find bar if visible
+            PostMessage(rootHwnd, WM_KEYDOWN, VK_ESCAPE, 0);
+            return false;  // Also let CEF process it
+        }
+#endif
     }
     return false;
 }
@@ -849,7 +927,11 @@ bool BrowserClient::OnBeforeDownload(CefRefPtr<CefBrowser> browser,
         filename = "download";
     }
 
+#ifdef PLATFORM_WIN
+    std::string downloads_path = orbfox::utils::GetHomeDirectory() + "\\Downloads\\" + filename;
+#else
     std::string downloads_path = orbfox::utils::GetHomeDirectory() + "/Downloads/" + filename;
+#endif
 
     callback->Continue(downloads_path, false);
     return true;
@@ -937,7 +1019,7 @@ void BrowserClient::OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
     item.current_speed = download_item->GetCurrentSpeed();
 
     // Get filename - extract from path (most reliable)
-    size_t lastSlash = full_path.find_last_of('/');
+    size_t lastSlash = full_path.find_last_of("/\\");
     if (lastSlash != std::string::npos) {
         item.filename = full_path.substr(lastSlash + 1);
     } else {
