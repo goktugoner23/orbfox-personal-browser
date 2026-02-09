@@ -85,6 +85,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - User can expand folders, state persists during session
 
 ### Fixed
+- **DevTools Tabs Clickable** - Fixed DevTools panel tabs (Elements, Console, Sources, etc.) not responding to clicks
+  - Removed custom header overlay that was blocking mouse events on the DevTools content
+  - DevTools window now uses native titlebar styling without overlays
+  - Window properly configured to hide titlebar buttons while remaining interactive
+- **Google Sign-In Popups** - Fixed OAuth popup windows not appearing for authentication
+  - `OnBeforePopup` was cancelling all popups, including auth flows
+  - Now detects OAuth/authentication URLs and allows actual popup windows
+  - Checks for common auth domains (Google, Microsoft, Apple, Facebook, GitHub)
+  - Small popup windows (typical for OAuth) are also allowed
+- **Google One Tap Sign-In** - Fixed Google's modal-based authentication not working
+  - FedCM (Federated Credential Management) API was failing with AbortError
+  - Disabled FedCM features to force fallback to traditional iframe/popup auth
+  - Enabled StorageAccessAPI for third-party cookie support
+  - Sites like obilet.com with Google Sign-In now work correctly
 - **Middle-Click on Links** - Fixed middle-click opening links in current tab instead of background tab
   - Implemented `OnOpenURLFromTab` handler in `CefRequestHandler`
   - Middle-click sends `CEF_WOD_NEW_BACKGROUND_TAB` disposition, now correctly routed

@@ -1138,89 +1138,26 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     // Store reference
     _devToolsWindow = devToolsWindow;
 
-    // Style the window to be borderless
+    // Style the window - keep titlebar but make it minimal/hidden
+    // IMPORTANT: Don't change styleMask to borderless (crashes due to CEF KVO observers)
+    // and don't use FullSizeContentView (invisible titlebar captures mouse events)
     _devToolsWindow.titlebarAppearsTransparent = YES;
     _devToolsWindow.titleVisibility = NSWindowTitleHidden;
-    _devToolsWindow.styleMask = NSWindowStyleMaskBorderless | NSWindowStyleMaskResizable;
     _devToolsWindow.backgroundColor = [DSColors devToolsBackground];
     _devToolsWindow.hasShadow = NO;
     _devToolsWindow.movable = NO;
-    _devToolsWindow.level = NSNormalWindowLevel;
 
-    // Make it a child window
+    // Hide the standard window buttons (close, minimize, zoom)
+    [[_devToolsWindow standardWindowButton:NSWindowCloseButton] setHidden:YES];
+    [[_devToolsWindow standardWindowButton:NSWindowMiniaturizeButton] setHidden:YES];
+    [[_devToolsWindow standardWindowButton:NSWindowZoomButton] setHidden:YES];
+
+    // Make it a child window so it follows the main window
     [self.window addChildWindow:_devToolsWindow ordered:NSWindowAbove];
 
-    // Find the CEF browser view inside the DevTools window and resize it to make room for header
-    NSView* devToolsContentView = _devToolsWindow.contentView;
-    CGFloat windowHeight = devToolsContentView.bounds.size.height;
-
-    // Create a header bar at the top with close button
-    NSView* headerBar = [[NSView alloc] initWithFrame:NSMakeRect(0, windowHeight - kTitleBarHeight, _devToolsWidth, kTitleBarHeight)];
-    headerBar.wantsLayer = YES;
-    headerBar.layer.backgroundColor = [DSColors devToolsBackground].CGColor;
-    headerBar.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
-
-    // Add a subtle bottom border to header
-    NSView* headerBorder = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, _devToolsWidth, 1)];
-    headerBorder.wantsLayer = YES;
-    headerBorder.layer.backgroundColor = [DSColors divider].CGColor;
-    headerBorder.autoresizingMask = NSViewWidthSizable;
-    [headerBar addSubview:headerBorder];
-
-    // Create close button
-    if (!_devToolsCloseButton) {
-        _devToolsCloseButton = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 28, 28)];
-        _devToolsCloseButton.bordered = NO;
-        _devToolsCloseButton.wantsLayer = YES;
-        _devToolsCloseButton.layer.cornerRadius = 4;
-        _devToolsCloseButton.layer.backgroundColor = [NSColor clearColor].CGColor;
-
-        NSImage* closeIcon = [NSImage imageWithSystemSymbolName:@"xmark"
-                                       accessibilityDescription:@"Close DevTools"];
-        NSImageSymbolConfiguration* config = [NSImageSymbolConfiguration configurationWithPointSize:10
-                                                                                            weight:NSFontWeightMedium];
-        closeIcon = [closeIcon imageWithSymbolConfiguration:config];
-        _devToolsCloseButton.image = closeIcon;
-        _devToolsCloseButton.contentTintColor = [NSColor colorWithRed:0.6 green:0.6 blue:0.63 alpha:1.0];
-        _devToolsCloseButton.target = self;
-        _devToolsCloseButton.action = @selector(closeDevTools);
-        _devToolsCloseButton.toolTip = @"Close DevTools";
-
-        NSTrackingArea* trackingArea = [[NSTrackingArea alloc]
-            initWithRect:_devToolsCloseButton.bounds
-                 options:NSTrackingMouseEnteredAndExited | NSTrackingActiveInKeyWindow | NSTrackingInVisibleRect
-                   owner:self
-                userInfo:@{@"button": @"devToolsClose"}];
-        [_devToolsCloseButton addTrackingArea:trackingArea];
-    }
-
-    // Position close button on right side of header
-    CGFloat buttonSize = 24.0;
-    _devToolsCloseButton.frame = NSMakeRect(_devToolsWidth - buttonSize - 22, (kTitleBarHeight - buttonSize) / 2, buttonSize, buttonSize);
-    _devToolsCloseButton.autoresizingMask = NSViewMinXMargin;
-    [_devToolsCloseButton removeFromSuperview];
-    [headerBar addSubview:_devToolsCloseButton];
-
-    // Add "DevTools" label on left side
-    NSTextField* titleLabel = [NSTextField labelWithString:@"DevTools"];
-    titleLabel.font = [NSFont systemFontOfSize:12 weight:NSFontWeightMedium];
-    titleLabel.textColor = [NSColor colorWithRed:0.6 green:0.6 blue:0.63 alpha:1.0];
-    titleLabel.frame = NSMakeRect(10, (kTitleBarHeight - 16) / 2, 80, 16);
-    [headerBar addSubview:titleLabel];
-
-    // Add the header bar to the DevTools window
-    [devToolsContentView addSubview:headerBar positioned:NSWindowAbove relativeTo:nil];
-
-    // Resize the CEF browser view to be below the header
-    for (NSView* subview in devToolsContentView.subviews) {
-        if (subview != headerBar && subview != _devToolsCloseButton) {
-            NSRect frame = subview.frame;
-            frame.size.height = windowHeight - kTitleBarHeight;
-            frame.origin.y = 0;
-            subview.frame = frame;
-            subview.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-        }
-    }
+    // No custom header - use DevTools' native UI for now to ensure tabs are clickable
+    // The system titlebar (though transparent/hidden) provides the window chrome
+    // User can close via F12 or the divider
 
     // Calculate positions
     NSView* contentView = self.window.contentView;
@@ -1272,6 +1209,10 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         }
 
         self->_devToolsAnimating = NO;
+
+        // Make DevTools window key so it can receive mouse clicks
+        // Child windows don't automatically become key when clicked
+        [self->_devToolsWindow makeKeyWindow];
     }];
 }
 

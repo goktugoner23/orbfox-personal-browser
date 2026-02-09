@@ -249,9 +249,15 @@ target_link_libraries(OrbFox PRIVATE
     OrbFoxCore
     libcef_dll_wrapper
     ${CEF_STANDARD_LIBS}
-    optimized ${CEF_LIB_RELEASE}
-    debug ${CEF_LIB_DEBUG}
 )
+
+# On Windows/Linux, link against CEF shared library (not needed on macOS - uses framework)
+if(CEF_LIB_RELEASE AND CEF_LIB_DEBUG)
+    target_link_libraries(OrbFox PRIVATE
+        optimized ${CEF_LIB_RELEASE}
+        debug ${CEF_LIB_DEBUG}
+    )
+endif()
 
 # Platform-specific configuration
 if(APPLE)

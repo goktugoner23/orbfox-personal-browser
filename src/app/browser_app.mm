@@ -83,9 +83,19 @@ void BrowserApp::OnRegisterCustomSchemes(CefRawPtr<CefSchemeRegistrar> registrar
 
 void BrowserApp::OnBeforeCommandLineProcessing(
     const CefString& /*process_type*/,
-    CefRefPtr<CefCommandLine> /*command_line*/) {
-    // Multi-process mode is now enabled via helper apps
-    // No special flags needed for normal operation
+    CefRefPtr<CefCommandLine> command_line) {
+    // Disable FedCM - it's not fully supported and causes Google Sign-In to fail
+    // This forces fallback to traditional iframe/popup OAuth flow
+    command_line->AppendSwitchWithValue("disable-features",
+        "FedCm,FedCmAuthz,FedCmIdpSigninStatusApi,FedCmWithoutWellKnownEnforcement");
+
+    // Enable third-party cookie support for OAuth/authentication
+    // Many sites still rely on third-party cookies for sign-in
+    command_line->AppendSwitchWithValue("enable-features",
+        "StorageAccessAPI,ThirdPartyStoragePartitioning");
+
+    // Disable SameSite cookie restrictions that break OAuth flows
+    command_line->AppendSwitch("disable-site-isolation-trials");
 }
 
 void BrowserApp::OnContextInitialized() {

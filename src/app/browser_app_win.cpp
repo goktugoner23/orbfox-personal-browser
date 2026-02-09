@@ -96,6 +96,18 @@ void BrowserApp::OnBeforeCommandLineProcessing(
 
     // Disable features that might cause issues on some systems
     command_line->AppendSwitch("disable-gpu-shader-disk-cache");
+
+    // Disable FedCM - it's not fully supported and causes Google Sign-In to fail
+    // This forces fallback to traditional iframe/popup OAuth flow
+    command_line->AppendSwitchWithValue("disable-features",
+        "FedCm,FedCmAuthz,FedCmIdpSigninStatusApi,FedCmWithoutWellKnownEnforcement");
+
+    // Enable third-party cookie support for OAuth/authentication
+    command_line->AppendSwitchWithValue("enable-features",
+        "StorageAccessAPI,ThirdPartyStoragePartitioning");
+
+    // Disable SameSite cookie restrictions that break OAuth flows
+    command_line->AppendSwitch("disable-site-isolation-trials");
 }
 
 void BrowserApp::OnContextInitialized() {

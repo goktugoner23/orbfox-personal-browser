@@ -111,7 +111,6 @@ bool BrowserClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
     (void)frame;
     (void)target_frame_name;
     (void)user_gesture;
-    (void)popup_features;
     (void)window_info;
     (void)client;
     (void)settings;
@@ -119,9 +118,45 @@ bool BrowserClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
     (void)no_javascript_access;
     CEF_REQUIRE_UI_THREAD();
 
-    if (!target_url.empty()) {
-        std::string url = target_url.ToString();
+    std::string url = target_url.ToString();
 
+    // Allow actual popup windows for OAuth/authentication flows
+    // These require real popups to communicate auth results back to opener
+    if (target_disposition == CEF_WOD_NEW_POPUP) {
+        // Check if this looks like an OAuth/auth popup (small window or auth URL)
+        bool isAuthPopup = false;
+
+        // Check for common OAuth/authentication domains
+        if (url.find("accounts.google.com") != std::string::npos ||
+            url.find("login.microsoftonline.com") != std::string::npos ||
+            url.find("appleid.apple.com") != std::string::npos ||
+            url.find("facebook.com/login") != std::string::npos ||
+            url.find("facebook.com/v") != std::string::npos ||  // Facebook OAuth
+            url.find("twitter.com/oauth") != std::string::npos ||
+            url.find("x.com/oauth") != std::string::npos ||
+            url.find("github.com/login/oauth") != std::string::npos ||
+            url.find("oauth") != std::string::npos ||
+            url.find("signin") != std::string::npos ||
+            url.find("auth") != std::string::npos) {
+            isAuthPopup = true;
+        }
+
+        // Also check popup features - auth popups typically have specific dimensions
+        if (popup_features.widthSet && popup_features.heightSet) {
+            // Small windows (typical for OAuth popups) - allow them
+            if (popup_features.width <= 700 && popup_features.height <= 800) {
+                isAuthPopup = true;
+            }
+        }
+
+        if (isAuthPopup) {
+            // Allow the popup to open normally for authentication
+            return false;  // Don't cancel - let CEF create the popup
+        }
+    }
+
+    // For regular links/popups, open as new tab
+    if (!url.empty()) {
         // Check disposition to determine how to open the link
         bool background = (target_disposition == CEF_WOD_NEW_BACKGROUND_TAB);
 
@@ -136,7 +171,7 @@ bool BrowserClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
             browser->GetMainFrame()->LoadURL(target_url);
         }
     }
-    return true;  // Cancel popup, we handled it
+    return true;  // Cancel popup, we handled it by opening as tab
 }
 
 // CefLoadHandler methods
