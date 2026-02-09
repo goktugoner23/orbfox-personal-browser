@@ -50,6 +50,7 @@ compile_commands.json
 # User-specific
 *.local
 .env
+google_oauth_credentials.json
 
 # Application data (generated at runtime)
 *.db

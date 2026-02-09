@@ -65,6 +65,9 @@
 - (void)bookmarkThisPage;
 - (void)newBookmarkFolder;
 
+// Account
+- (void)showAccountPopover:(NSView*)anchorView;
+
 // History
 - (void)reloadHistoryPanelIfVisible;
 

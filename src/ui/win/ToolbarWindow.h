@@ -42,12 +42,19 @@ public:
     // Update blocked tracker count
     void SetBlockedCount(int count);
 
+    // Avatar / Account
+    void SetSignedIn(bool signed_in);
+    void SetAvatarImage(HBITMAP bitmap);
+    void SetAvatarUrl(const std::string& url);
+
     // Callbacks
     using NavigationCallback = std::function<void(NavigationAction)>;
     using UrlSubmitCallback = std::function<void(const std::string& url)>;
+    using AvatarClickCallback = std::function<void()>;
 
     void SetNavigationCallback(NavigationCallback callback) { on_navigation_ = std::move(callback); }
     void SetUrlSubmitCallback(UrlSubmitCallback callback) { on_url_submit_ = std::move(callback); }
+    void SetAvatarClickCallback(AvatarClickCallback callback) { on_avatar_click_ = std::move(callback); }
 
     // Static window procedure
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -70,6 +77,7 @@ private:
     // Drawing
     void DrawButtons(HDC hdc);
     void DrawSecurityIndicator(HDC hdc);
+    void DrawAvatarButton(HDC hdc);
 
     // Layout update
     void UpdateLayout();
@@ -94,19 +102,26 @@ private:
     bool is_loading_ = false;
 
     // Hover state
-    int hovered_button_ = -1;  // 0=back, 1=forward, 2=reload
+    int hovered_button_ = -1;  // 0=back, 1=forward, 2=reload, 3=avatar
     bool tracking_mouse_ = false;
     int blocked_count_ = 0;
+
+    // Avatar state
+    bool is_signed_in_ = false;
+    HBITMAP avatar_bitmap_ = nullptr;
+    std::string avatar_url_;
 
     // Layout
     static constexpr int kButtonSize = 28;
     static constexpr int kButtonSpacing = 4;
     static constexpr int kUrlBarHeight = 32;
     static constexpr int kSidebarWidth = 280;  // Must match MainWindow
+    static constexpr int kAvatarSize = 28;     // Circular avatar size
 
     // Callbacks
     NavigationCallback on_navigation_;
     UrlSubmitCallback on_url_submit_;
+    AvatarClickCallback on_avatar_click_;
 
     // Fonts
     HFONT font_ = nullptr;

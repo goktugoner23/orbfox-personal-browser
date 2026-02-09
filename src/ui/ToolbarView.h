@@ -20,4 +20,9 @@
 - (void)setBlockedCount:(int)count;
 - (void)focusURLField;
 
+// User account avatar
+- (void)setSignedIn:(BOOL)signedIn;
+- (void)setAvatarImage:(NSImage*)image;
+- (void)setAvatarURL:(NSString*)urlString;
+
 @end

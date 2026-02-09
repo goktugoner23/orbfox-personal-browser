@@ -10,10 +10,45 @@
 // Custom NSTextField that forwards scroll events to field editor when editing
 // ============================================================================
 
-@interface ScrollableURLField : NSTextField
+@interface ScrollableURLField : NSTextField {
+    BOOL _wasFirstResponder;
+}
 @end
 
 @implementation ScrollableURLField
+
+- (BOOL)becomeFirstResponder {
+    // Track that we're becoming first responder (wasn't focused before)
+    _wasFirstResponder = NO;
+    BOOL result = [super becomeFirstResponder];
+    return result;
+}
+
+- (void)mouseDown:(NSEvent*)event {
+    // Check if we already have a field editor (already focused)
+    NSText* fieldEditor = [self currentEditor];
+    BOOL alreadyEditing = (fieldEditor != nil);
+
+    if (!alreadyEditing) {
+        // First click - become first responder and select all
+        [super mouseDown:event];
+
+        // Select all text after becoming first responder
+        fieldEditor = [self currentEditor];
+        if (fieldEditor) {
+            [fieldEditor selectAll:nil];
+        }
+        _wasFirstResponder = YES;
+    } else if (!_wasFirstResponder) {
+        // This handles the case where we became first responder via Tab key
+        // First click after Tab focus should also select all
+        [fieldEditor selectAll:nil];
+        _wasFirstResponder = YES;
+    } else {
+        // Second click (or later) - position cursor at click location
+        [super mouseDown:event];
+    }
+}
 
 - (void)scrollWheel:(NSEvent*)event {
     // When editing, forward scroll to the field editor (NSTextView)
@@ -78,6 +113,11 @@
     // Autocomplete
     AutocompleteDropdownView* _autocompleteDropdown;
     BOOL _isEditingURL;
+    // User avatar
+    NSButton* _avatarButton;
+    NSImageView* _avatarImageView;
+    BOOL _isSignedIn;
+    NSString* _cachedAvatarURL;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -119,8 +159,9 @@
     [self addSubview:_reloadButton];
     x += buttonSize + [DSSpacing md];
 
-    // Actions area (right side with bookmark, extensions, etc.)
-    CGFloat actionsWidth = 44;  // Space for bookmark button
+    // Actions area (right side with bookmark + avatar)
+    CGFloat avatarSize = 28;  // Circular avatar size
+    CGFloat actionsWidth = buttonSize + [DSSpacing sm] + avatarSize + [DSSpacing xs];
     CGFloat actionsX = self.bounds.size.width - actionsWidth - [DSSpacing sm];
 
     _actionsArea = [[NSView alloc] initWithFrame:NSMakeRect(actionsX, 0, actionsWidth, self.bounds.size.height)];
@@ -128,15 +169,48 @@
     [self addSubview:_actionsArea];
 
     // Bookmark button (ribbon/flag icon like Vivaldi)
+    CGFloat bookmarkX = 0;
     _bookmarkButton = [DSIconButton buttonWithIcon:@"bookmark" tooltip:@"Bookmark this page"];
     _bookmarkButton.frame = NSMakeRect(
-        (actionsWidth - buttonSize) / 2,
+        bookmarkX,
         (self.bounds.size.height - buttonSize) / 2,
         buttonSize, buttonSize);
     _bookmarkButton.showsHoverBackground = NO;  // No hover background, just tint change
     _bookmarkButton.target = self;
     _bookmarkButton.action = @selector(toggleBookmark:);
     [_actionsArea addSubview:_bookmarkButton];
+
+    // Avatar button (circular user profile photo)
+    CGFloat avatarX = bookmarkX + buttonSize + [DSSpacing sm];
+    CGFloat avatarY = (self.bounds.size.height - avatarSize) / 2;
+
+    _avatarButton = [[NSButton alloc] initWithFrame:NSMakeRect(avatarX, avatarY, avatarSize, avatarSize)];
+    _avatarButton.wantsLayer = YES;
+    _avatarButton.layer.cornerRadius = avatarSize / 2;
+    _avatarButton.layer.masksToBounds = YES;
+    _avatarButton.layer.backgroundColor = [DSColors surface].CGColor;
+    _avatarButton.bordered = NO;
+    _avatarButton.title = @"";
+    _avatarButton.target = self;
+    _avatarButton.action = @selector(avatarClicked:);
+    _avatarButton.toolTip = @"Account";
+    [_actionsArea addSubview:_avatarButton];
+
+    // Avatar image view (inside button)
+    _avatarImageView = [[NSImageView alloc] initWithFrame:NSMakeRect(0, 0, avatarSize, avatarSize)];
+    _avatarImageView.imageScaling = NSImageScaleProportionallyUpOrDown;
+    _avatarImageView.wantsLayer = YES;
+    _avatarImageView.layer.cornerRadius = avatarSize / 2;
+    _avatarImageView.layer.masksToBounds = YES;
+
+    // Default signed-out icon
+    NSImage* defaultIcon = [NSImage imageWithSystemSymbolName:@"person.circle.fill"
+                                    accessibilityDescription:@"Account"];
+    NSImageSymbolConfiguration* config = [NSImageSymbolConfiguration configurationWithPointSize:avatarSize - 4
+                                                                                        weight:NSFontWeightRegular];
+    _avatarImageView.image = [defaultIcon imageWithSymbolConfiguration:config];
+    _avatarImageView.contentTintColor = [DSColors textSecondary];
+    [_avatarButton addSubview:_avatarImageView];
 
     // URL container (now narrower to make room for actions)
     CGFloat containerPadding = 7;
@@ -306,6 +380,12 @@
     [self showBookmarkPopoverForId:bookmarkId title:title url:url folder:folder];
 }
 
+- (void)avatarClicked:(id)sender {
+    (void)sender;
+    // Tell the window controller to show the account popover
+    [_windowController showAccountPopover:_avatarButton];
+}
+
 - (void)showBookmarkPopoverForId:(int64_t)bookmarkId
                            title:(NSString*)title
                              url:(NSString*)url
@@ -465,6 +545,69 @@
                                           accessibilityDescription:@"Bookmark"];
         _bookmarkButton.contentTintColor = [DSColors textSecondary];
     }
+}
+
+#pragma mark - Avatar Methods
+
+- (void)setSignedIn:(BOOL)signedIn {
+    _isSignedIn = signedIn;
+
+    if (!signedIn) {
+        // Reset to default icon
+        CGFloat avatarSize = _avatarImageView.bounds.size.width;
+        NSImage* defaultIcon = [NSImage imageWithSystemSymbolName:@"person.circle.fill"
+                                        accessibilityDescription:@"Account"];
+        NSImageSymbolConfiguration* config = [NSImageSymbolConfiguration configurationWithPointSize:avatarSize - 4
+                                                                                            weight:NSFontWeightRegular];
+        _avatarImageView.image = [defaultIcon imageWithSymbolConfiguration:config];
+        _avatarImageView.contentTintColor = [DSColors textSecondary];
+        _avatarButton.toolTip = @"Sign in";
+        _cachedAvatarURL = nil;
+    } else {
+        _avatarButton.toolTip = @"Account";
+    }
+}
+
+- (void)setAvatarImage:(NSImage*)image {
+    if (image) {
+        _avatarImageView.image = image;
+        _avatarImageView.contentTintColor = nil;  // Use actual image colors
+    }
+}
+
+- (void)setAvatarURL:(NSString*)urlString {
+    if (!urlString || urlString.length == 0) {
+        return;
+    }
+
+    // Don't reload if same URL
+    if ([_cachedAvatarURL isEqualToString:urlString]) {
+        return;
+    }
+    _cachedAvatarURL = urlString;
+
+    // Load image asynchronously
+    NSURL* url = [NSURL URLWithString:urlString];
+    if (!url) return;
+
+    NSURLSessionDataTask* task = [[NSURLSession sharedSession]
+        dataTaskWithURL:url
+        completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+            (void)response;
+            if (error || !data) return;
+
+            NSImage* image = [[NSImage alloc] initWithData:data];
+            if (!image) return;
+
+            // Update on main thread
+            dispatch_async(dispatch_get_main_queue(), ^{
+                // Only update if URL still matches (in case of rapid changes)
+                if ([self->_cachedAvatarURL isEqualToString:urlString]) {
+                    [self setAvatarImage:image];
+                }
+            });
+        }];
+    [task resume];
 }
 
 - (void)updateLoadingProgressView {

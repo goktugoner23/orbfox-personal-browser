@@ -2,6 +2,7 @@
 #import "SidebarView.h"
 #import "ToolbarView.h"
 #import "FindBarView.h"
+#import "AccountPopover.h"
 #import "Components.h"
 #import "GestureContainerView.h"
 #import <QuartzCore/QuartzCore.h>
@@ -43,6 +44,8 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
 @property (nonatomic, strong) DevToolsDividerView* devToolsDivider;
 @property (nonatomic, assign) CGFloat devToolsWidth;
 @property (nonatomic, assign) BOOL devToolsAnimating;
+// Account popover
+@property (nonatomic, strong) AccountPopoverController* accountPopover;
 @end
 
 // Forward declare resizeDevToolsToWidth: for DevToolsDividerView
@@ -1636,6 +1639,17 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         // Show bookmarks panel to see the new folder
         [_sidebarView showPanel:SidebarPanelFavorites];
     }
+}
+
+#pragma mark - Account
+
+- (void)showAccountPopover:(NSView*)anchorView {
+    if (!_accountPopover) {
+        _accountPopover = [[AccountPopoverController alloc] init];
+        _accountPopover.windowController = self;
+    }
+
+    [_accountPopover showRelativeToView:anchorView];
 }
 
 #pragma mark - History

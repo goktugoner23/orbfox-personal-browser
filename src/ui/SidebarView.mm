@@ -2576,14 +2576,20 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         __weak SidebarView* weakSelf = self;
         NSString* urlCopy = row.url;
         int64_t entryId = entry.id;
+
+        // Single click = just select/highlight (don't open)
         row.onClick = ^{
             SidebarView* strongSelf = weakSelf;
             if (!strongSelf) return;
-            // Open as new tab in active workspace
-            [strongSelf.windowController createNewTab:urlCopy];
-            strongSelf->_activePanel = SidebarPanelTabs;
-            [strongSelf updateIconSelection];
-            [strongSelf updatePanelVisibility];
+            // Just select this row visually - don't navigate
+            row.isSelected = YES;
+        };
+
+        // Double click = open in background tab
+        row.onDoubleClick = ^{
+            SidebarView* strongSelf = weakSelf;
+            if (!strongSelf) return;
+            [strongSelf.windowController openUrlInBackgroundTab:urlCopy];
         };
 
         row.onRightClick = ^(NSEvent* event) {

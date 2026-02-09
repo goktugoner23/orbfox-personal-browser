@@ -14,6 +14,7 @@ ToolbarWindow::ToolbarWindow(TabManager* tab_manager)
 
 ToolbarWindow::~ToolbarWindow() {
     if (font_) DeleteObject(font_);
+    if (avatar_bitmap_) DeleteObject(avatar_bitmap_);
     if (hwnd_) DestroyWindow(hwnd_);
 }
 
@@ -205,6 +206,9 @@ void ToolbarWindow::OnPaint() {
     // Draw security indicator
     DrawSecurityIndicator(memDC);
 
+    // Draw avatar button
+    DrawAvatarButton(memDC);
+
     BitBlt(hdc, 0, 0, clientRect.right, clientRect.bottom, memDC, 0, 0, SRCCOPY);
 
     SelectObject(memDC, oldBitmap);
@@ -245,7 +249,7 @@ void ToolbarWindow::OnMouseMove(int x, int y) {
     RECT clientRect;
     GetClientRect(hwnd_, &clientRect);
 
-    // Check button hover
+    // Check button hover (nav buttons)
     int buttonX = kSidebarWidth + DesignSystem::GetSpacingSM();
     int buttonY = (clientRect.bottom - kButtonSize) / 2;
 
@@ -260,6 +264,17 @@ void ToolbarWindow::OnMouseMove(int x, int y) {
         buttonX += kButtonSize + kButtonSpacing;
     }
 
+    // Check avatar button hover
+    if (newHovered == -1) {
+        int avatarX = clientRect.right - kAvatarSize - DesignSystem::GetSpacingSM();
+        int avatarY = (clientRect.bottom - kAvatarSize) / 2;
+        RECT avatarRect = { avatarX, avatarY, avatarX + kAvatarSize, avatarY + kAvatarSize };
+        POINT pt = { x, y };
+        if (PtInRect(&avatarRect, pt)) {
+            newHovered = 3;  // Avatar button
+        }
+    }
+
     if (newHovered != hovered_button_) {
         hovered_button_ = newHovered;
         InvalidateRect(hwnd_, nullptr, FALSE);
@@ -270,6 +285,7 @@ void ToolbarWindow::OnLButtonDown(int x, int y) {
     RECT clientRect;
     GetClientRect(hwnd_, &clientRect);
 
+    // Check nav buttons
     int buttonX = kSidebarWidth + DesignSystem::GetSpacingSM();
     int buttonY = (clientRect.bottom - kButtonSize) / 2;
 
@@ -293,6 +309,18 @@ void ToolbarWindow::OnLButtonDown(int x, int y) {
             return;
         }
         buttonX += kButtonSize + kButtonSpacing;
+    }
+
+    // Check avatar button
+    int avatarX = clientRect.right - kAvatarSize - DesignSystem::GetSpacingSM();
+    int avatarY = (clientRect.bottom - kAvatarSize) / 2;
+    RECT avatarRect = { avatarX, avatarY, avatarX + kAvatarSize, avatarY + kAvatarSize };
+    POINT pt = { x, y };
+    if (PtInRect(&avatarRect, pt)) {
+        if (on_avatar_click_) {
+            on_avatar_click_();
+        }
+        return;
     }
 }
 
@@ -410,9 +438,12 @@ void ToolbarWindow::UpdateLayout() {
     int buttonAreaWidth = kSidebarWidth + DesignSystem::GetSpacingSM() + (kButtonSize + kButtonSpacing) * 3;
     int securityIndicatorWidth = DesignSystem::GetIconSizeSmall() + DesignSystem::GetSpacingSM();
 
+    // Leave room for avatar on the right
+    int avatarAreaWidth = kAvatarSize + DesignSystem::GetSpacingSM() * 2;
+
     int urlX = buttonAreaWidth + securityIndicatorWidth + DesignSystem::GetSpacingSM();
     int urlY = (clientRect.bottom - kUrlBarHeight) / 2;
-    int urlWidth = clientRect.right - urlX - DesignSystem::GetSpacingMD();
+    int urlWidth = clientRect.right - urlX - avatarAreaWidth;
 
     SetWindowPos(url_edit_, nullptr,
         urlX, urlY,
@@ -486,6 +517,101 @@ void ToolbarWindow::FocusUrlBar() {
 void ToolbarWindow::SetBlockedCount(int count) {
     blocked_count_ = count;
     InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void ToolbarWindow::DrawAvatarButton(HDC hdc) {
+    RECT clientRect;
+    GetClientRect(hwnd_, &clientRect);
+
+    int x = clientRect.right - kAvatarSize - DesignSystem::GetSpacingSM();
+    int y = (clientRect.bottom - kAvatarSize) / 2;
+
+    // Draw circular background
+    COLORREF bgColor = DesignSystem::GetSurfaceColor();
+    if (hovered_button_ == 3) {
+        bgColor = DesignSystem::GetSurfaceHoverColor();
+    }
+
+    // Draw circle using GDI+ for smoother rendering
+    HBRUSH circleBrush = CreateSolidBrush(bgColor);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, circleBrush);
+    HPEN circlePen = CreatePen(PS_SOLID, 1, DesignSystem::GetBorderColor());
+    HPEN oldPen = (HPEN)SelectObject(hdc, circlePen);
+
+    Ellipse(hdc, x, y, x + kAvatarSize, y + kAvatarSize);
+
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(circleBrush);
+    DeleteObject(circlePen);
+
+    if (avatar_bitmap_ && is_signed_in_) {
+        // Draw the avatar image (clipped to circle)
+        HDC memDC = CreateCompatibleDC(hdc);
+        HBITMAP oldBitmap = (HBITMAP)SelectObject(memDC, avatar_bitmap_);
+
+        // Create circular clip region
+        HRGN clipRgn = CreateEllipticRgn(x, y, x + kAvatarSize, y + kAvatarSize);
+        SelectClipRgn(hdc, clipRgn);
+
+        // Stretch the bitmap to fit
+        BITMAP bm;
+        GetObject(avatar_bitmap_, sizeof(bm), &bm);
+        StretchBlt(hdc, x, y, kAvatarSize, kAvatarSize,
+                   memDC, 0, 0, bm.bmWidth, bm.bmHeight, SRCCOPY);
+
+        SelectClipRgn(hdc, nullptr);
+        DeleteObject(clipRgn);
+
+        SelectObject(memDC, oldBitmap);
+        DeleteDC(memDC);
+    } else {
+        // Draw default person icon
+        RECT iconRect = { x, y, x + kAvatarSize, y + kAvatarSize };
+        COLORREF iconColor = is_signed_in_ ? DesignSystem::GetTextPrimaryColor() : DesignSystem::GetTextTertiaryColor();
+
+        // Simple person icon using unicode
+        const wchar_t* personIcon = L"\U0001F464";  // 👤
+        HFONT iconFont = CreateFont(kAvatarSize - 8, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI Emoji");
+        HFONT oldFont = (HFONT)SelectObject(hdc, iconFont);
+        DesignSystem::DrawTextWithColor(hdc, personIcon, iconRect, iconColor, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(hdc, oldFont);
+        DeleteObject(iconFont);
+    }
+}
+
+void ToolbarWindow::SetSignedIn(bool signed_in) {
+    is_signed_in_ = signed_in;
+    if (!signed_in) {
+        // Clear avatar
+        if (avatar_bitmap_) {
+            DeleteObject(avatar_bitmap_);
+            avatar_bitmap_ = nullptr;
+        }
+        avatar_url_.clear();
+    }
+    InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void ToolbarWindow::SetAvatarImage(HBITMAP bitmap) {
+    if (avatar_bitmap_) {
+        DeleteObject(avatar_bitmap_);
+    }
+    avatar_bitmap_ = bitmap;
+    InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void ToolbarWindow::SetAvatarUrl(const std::string& url) {
+    if (url == avatar_url_ || url.empty()) return;
+    avatar_url_ = url;
+
+    // Load image asynchronously using WinHTTP
+    // For now, this is a placeholder - full implementation would need async download
+    // The MainWindow should call SetAvatarImage with the downloaded bitmap
+
+    // TODO: Implement async image download
+    // For now, the MainWindow is responsible for downloading and calling SetAvatarImage
 }
 
 #endif  // PLATFORM_WIN

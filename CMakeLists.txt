@@ -66,6 +66,7 @@ set(CORE_SOURCES
     src/client/download_manager.cpp
     src/utils/filesystem_utils.cpp
     src/utils/json_utils.cpp
+    src/sync/google_auth.cpp
 )
 
 set(CORE_HEADERS
@@ -80,6 +81,8 @@ set(CORE_HEADERS
     include/download_manager.h
     include/utils/filesystem_utils.h
     include/utils/json_utils.h
+    include/sync/sync_types.h
+    include/sync/google_auth.h
 )
 
 add_library(OrbFoxCore STATIC ${CORE_SOURCES} ${CORE_HEADERS})
@@ -126,6 +129,7 @@ set(UI_HEADERS
     src/ui/SidebarView.h
     src/ui/ToolbarView.h
     src/ui/BookmarkEditPopover.h
+    src/ui/AccountPopover.h
     src/ui/AutocompleteDropdown.h
     src/ui/FindBarView.h
     src/ui/components/Components.h
@@ -154,6 +158,7 @@ if(APPLE)
         src/ui/SidebarView.mm
         src/ui/ToolbarView.mm
         src/ui/BookmarkEditPopover.mm
+        src/ui/AccountPopover.mm
         src/ui/AutocompleteDropdown.mm
         src/ui/FindBarView.mm
         src/ui/components/DesignSystem.mm
@@ -170,6 +175,7 @@ if(APPLE)
         src/ui/components/BookmarkDropContainerView.mm
         src/ui/components/AddBookmarkPopoverController.mm
         src/data/bookmark_importer.mm
+        src/sync/google_auth_mac.mm
     )
 elseif(WIN32)
     list(APPEND SOURCES
@@ -187,6 +193,7 @@ elseif(WIN32)
         src/ui/win/GestureHandler.cpp
         src/ui/win/DevToolsPanel.cpp
         src/ui/win/SettingsPanel.cpp
+        src/sync/google_auth_win.cpp
         resources/win/OrbFox.rc
     )
 
@@ -264,11 +271,13 @@ if(APPLE)
     find_library(COCOA_LIBRARY Cocoa REQUIRED)
     find_library(APPKIT_LIBRARY AppKit REQUIRED)
     find_library(QUARTZCORE_LIBRARY QuartzCore REQUIRED)
+    find_library(SECURITY_LIBRARY Security REQUIRED)
 
     target_link_libraries(OrbFox PRIVATE
         ${COCOA_LIBRARY}
         ${APPKIT_LIBRARY}
         ${QUARTZCORE_LIBRARY}
+        ${SECURITY_LIBRARY}
     )
 
     target_compile_definitions(OrbFox PRIVATE PLATFORM_MAC)
@@ -281,6 +290,7 @@ if(APPLE)
         src/ui/SidebarView.mm
         src/ui/ToolbarView.mm
         src/ui/BookmarkEditPopover.mm
+        src/ui/AccountPopover.mm
         src/ui/AutocompleteDropdown.mm
         src/ui/FindBarView.mm
         src/ui/components/DesignSystem.mm
@@ -296,6 +306,7 @@ if(APPLE)
         src/ui/components/TabRowView.mm
         src/ui/components/BookmarkDropContainerView.mm
         src/ui/components/AddBookmarkPopoverController.mm
+        src/sync/google_auth_mac.mm
         PROPERTIES COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
     )
 
