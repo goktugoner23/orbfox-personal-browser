@@ -16,6 +16,7 @@
 #include "bookmark_storage.h"
 #include "utils/filesystem_utils.h"
 
+#include "include/cef_app.h"
 #include "include/cef_browser.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -210,8 +211,56 @@ LRESULT MainWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
     return DefWindowProc(hwnd_, msg, wParam, lParam);
 }
 
+void MainWindow::CreateMenuBar() {
+    HMENU menuBar = CreateMenu();
+
+    // File menu
+    HMENU fileMenu = CreatePopupMenu();
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_NEW_TAB,     L"New Tab\tCtrl+T");
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_CLOSE_TAB,   L"Close Tab\tCtrl+W");
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_REOPEN_TAB,  L"Reopen Closed Tab\tCtrl+Shift+T");
+    AppendMenuW(fileMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(fileMenu, MF_STRING, IDM_FILE_EXIT,        L"Exit\tAlt+F4");
+    AppendMenuW(menuBar, MF_POPUP, (UINT_PTR)fileMenu,     L"&File");
+
+    // Edit menu
+    HMENU editMenu = CreatePopupMenu();
+    AppendMenuW(editMenu, MF_STRING, IDM_EDIT_FIND,        L"Find in Page\tCtrl+F");
+    AppendMenuW(menuBar, MF_POPUP, (UINT_PTR)editMenu,     L"&Edit");
+
+    // View menu
+    HMENU viewMenu = CreatePopupMenu();
+    AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_RELOAD,      L"Reload\tCtrl+R");
+    AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_STOP,        L"Stop Loading");
+    AppendMenuW(viewMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(viewMenu, MF_STRING, IDM_VIEW_DEVTOOLS,    L"Developer Tools\tF12");
+    AppendMenuW(menuBar, MF_POPUP, (UINT_PTR)viewMenu,     L"&View");
+
+    // Window menu
+    HMENU windowMenu = CreatePopupMenu();
+    AppendMenuW(windowMenu, MF_STRING, IDM_WINDOW_TABS,       L"Tabs");
+    AppendMenuW(windowMenu, MF_STRING, IDM_WINDOW_BOOKMARKS,  L"Bookmarks");
+    AppendMenuW(windowMenu, MF_STRING, IDM_WINDOW_HISTORY,    L"History");
+    AppendMenuW(windowMenu, MF_STRING, IDM_WINDOW_DOWNLOADS,  L"Downloads");
+    AppendMenuW(windowMenu, MF_STRING, IDM_WINDOW_SETTINGS,   L"Settings");
+    AppendMenuW(windowMenu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(windowMenu, MF_STRING, IDM_WINDOW_PREV_WORKSPACE, L"Previous Workspace\tCtrl+Alt+\u2190");
+    AppendMenuW(windowMenu, MF_STRING, IDM_WINDOW_NEXT_WORKSPACE, L"Next Workspace\tCtrl+Alt+\u2192");
+    AppendMenuW(menuBar, MF_POPUP, (UINT_PTR)windowMenu,  L"&Window");
+
+    // Help menu
+    HMENU helpMenu = CreatePopupMenu();
+    AppendMenuW(helpMenu, MF_STRING, IDM_HELP_ABOUT,       L"About OrbFox");
+    AppendMenuW(menuBar, MF_POPUP, (UINT_PTR)helpMenu,     L"&Help");
+
+    SetMenu(hwnd_, menuBar);
+}
+
 void MainWindow::OnCreate() {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
+
+    // Create menu bar
+    CreateMenuBar();
 
     // Create browser parent window (container for CEF browser views)
     browser_parent_hwnd_ = CreateWindowExW(
@@ -320,6 +369,15 @@ void MainWindow::OnCreate() {
                 if (newTab) {
                     tab_manager_->SetActiveTab(newTab->id);
                 }
+            }
+        }
+    });
+
+    sidebar_->SetTabReloadCallback([this](int tab_id) {
+        if (tab_manager_) {
+            Tab* tab = tab_manager_->GetTabById(tab_id);
+            if (tab && tab->browser) {
+                tab->browser->Reload();
             }
         }
     });
@@ -552,10 +610,36 @@ void MainWindow::OnDestroy() {
 void MainWindow::OnCommand(WPARAM wParam, LPARAM lParam) {
     (void)lParam;
 
-    // Menu/accelerator command handling
     int cmd = LOWORD(wParam);
     switch (cmd) {
-        // TODO: Add menu command IDs
+        case IDM_FILE_NEW_TAB:       CreateNewTab(); break;
+        case IDM_FILE_CLOSE_TAB:     CloseCurrentTab(); break;
+        case IDM_FILE_REOPEN_TAB:
+            if (tab_manager_) tab_manager_->ReopenClosedTab();
+            break;
+        case IDM_FILE_EXIT:          Close(); break;
+        case IDM_EDIT_FIND:          ShowFindBar(); break;
+        case IDM_VIEW_RELOAD:        Reload(); break;
+        case IDM_VIEW_STOP:
+            if (tab_manager_) {
+                Tab* active = tab_manager_->GetActiveTab();
+                if (active && active->browser) active->browser->StopLoad();
+            }
+            break;
+        case IDM_VIEW_DEVTOOLS:      ToggleDevTools(); break;
+        case IDM_WINDOW_TABS:        ShowTabsPanel(); break;
+        case IDM_WINDOW_BOOKMARKS:   ShowBookmarksPanel(); break;
+        case IDM_WINDOW_HISTORY:     ShowHistoryPanel(); break;
+        case IDM_WINDOW_DOWNLOADS:   ShowDownloadsPanel(); break;
+        case IDM_WINDOW_SETTINGS:
+            if (sidebar_) sidebar_->ShowPanel(SidebarWindow::Panel::Settings);
+            break;
+        case IDM_WINDOW_PREV_WORKSPACE: SwitchToPreviousWorkspace(); break;
+        case IDM_WINDOW_NEXT_WORKSPACE: SwitchToNextWorkspace(); break;
+        case IDM_HELP_ABOUT:
+            MessageBoxW(hwnd_, L"OrbFox Browser v1.0.0\n\nA personal browser built with CEF.",
+                        L"About OrbFox", MB_OK | MB_ICONINFORMATION);
+            break;
         default:
             break;
     }
@@ -1025,7 +1109,7 @@ void MainWindow::CreateBrowserForTab(int tab_id, const std::string& url) {
 
     // Browser window info
     CefWindowInfo window_info;
-    window_info.SetAsChild(browser_parent_hwnd_, rect);
+    window_info.SetAsChild(browser_parent_hwnd_, CefRect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top));
 
     // Browser settings
     CefBrowserSettings browser_settings;

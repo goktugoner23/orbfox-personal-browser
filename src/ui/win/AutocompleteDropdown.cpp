@@ -126,8 +126,8 @@ LRESULT AutocompleteDropdown::HandleMessage(UINT msg, WPARAM wParam, LPARAM lPar
 }
 
 void AutocompleteDropdown::OnCreate() {
-    font_title_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody());
-    font_url_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeSmall());
+    font_title_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody());
+    font_url_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeSmall());
 }
 
 void AutocompleteDropdown::OnPaint() {

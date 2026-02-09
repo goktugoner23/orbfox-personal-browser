@@ -209,9 +209,9 @@ LRESULT SettingsPanel::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 void SettingsPanel::OnCreate() {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
 
-    font_normal_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody());
-    font_bold_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody(), FW_SEMIBOLD);
-    font_small_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeSmall());
+    font_normal_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody());
+    font_bold_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody(), FW_SEMIBOLD);
+    font_small_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeSmall());
 
     // New Tab URL edit
     new_tab_url_edit_ = CreateWindowExW(
@@ -589,7 +589,7 @@ void SettingsPanel::OnLButtonUp(int x, int y) {
                            L"Clear Browsing Data", MB_YESNO | MB_ICONQUESTION) == IDYES) {
                 // Clear history
                 if (HistoryStorage* storage = GetHistoryStorage()) {
-                    storage->ClearHistory();
+                    storage->ClearHistoryBefore(std::time(nullptr));
                 }
                 // Call external callback for additional cleanup
                 if (on_clear_data_) {
@@ -637,7 +637,7 @@ void SettingsPanel::OnMouseWheel(int delta) {
     GetClientRect(hwnd_, &clientRect);
 
     scroll_offset_ -= delta / 3;
-    scroll_offset_ = std::max(0, std::min(scroll_offset_, content_height_ - clientRect.bottom + 50));
+    scroll_offset_ = (std::max)(0, (std::min)(scroll_offset_, static_cast<int>(content_height_ - clientRect.bottom + 50)));
 
     UpdateLayout();
     InvalidateRect(hwnd_, nullptr, FALSE);

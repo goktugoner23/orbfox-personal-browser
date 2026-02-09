@@ -124,7 +124,7 @@ public:
                        int popup_id,
                        const CefString& target_url,
                        const CefString& target_frame_name,
-                       WindowOpenDisposition target_disposition,
+                       cef_window_open_disposition_t target_disposition,
                        bool user_gesture,
                        const CefPopupFeatures& popup_features,
                        CefWindowInfo& window_info,
@@ -167,7 +167,7 @@ public:
     bool OnOpenURLFromTab(CefRefPtr<CefBrowser> browser,
                           CefRefPtr<CefFrame> frame,
                           const CefString& target_url,
-                          WindowOpenDisposition target_disposition,
+                          cef_window_open_disposition_t target_disposition,
                           bool user_gesture) override;
 
     CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(

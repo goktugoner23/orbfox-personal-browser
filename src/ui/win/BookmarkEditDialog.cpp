@@ -321,8 +321,8 @@ LRESULT BookmarkEditDialog::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam
 void BookmarkEditDialog::OnCreate() {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
 
-    font_normal_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody());
-    font_label_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeSmall());
+    font_normal_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody());
+    font_label_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeSmall());
 
     RECT clientRect;
     GetClientRect(hwnd_, &clientRect);
@@ -668,7 +668,7 @@ void BookmarkEditDialog::ShowNewFolderDialog() {
     if (!dlgHwnd) return;
 
     // Create controls
-    HFONT font = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody());
+    HFONT font = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody());
 
     HWND labelHwnd = CreateWindowExW(
         0, L"STATIC", L"Enter folder name:",

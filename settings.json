@@ -1,0 +1,13 @@
+{
+  "homepage_url": "orbfox://bookmarks",
+  "new_tab_url": "orbfox://bookmarks",
+  "restore_session": true,
+  "tracking_protection": true,
+  "download_path": "",
+  "ask_before_download": true,
+  "gestures_enabled": true,
+  "gesture_back_enabled": true,
+  "gesture_forward_enabled": true,
+  "gesture_close_tab_enabled": true,
+  "gesture_reopen_tab_enabled": true
+}

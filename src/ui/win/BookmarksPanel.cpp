@@ -150,8 +150,8 @@ LRESULT BookmarksPanel::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 void BookmarksPanel::OnCreate() {
-    font_normal_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody());
-    font_bold_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody(), FW_SEMIBOLD);
+    font_normal_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody());
+    font_bold_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody(), FW_SEMIBOLD);
 }
 
 void BookmarksPanel::OnPaint() {

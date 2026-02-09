@@ -18,6 +18,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Use static runtime on Windows to match CEF's libcef_dll_wrapper (/MT)
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 # Build type
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
@@ -36,7 +41,13 @@ endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CEF_ROOT}/cmake")
 find_package(CEF REQUIRED)
-find_package(SQLite3 REQUIRED)
+
+# SQLite3: use bundled amalgamation on Windows, system package elsewhere
+if(WIN32)
+    add_subdirectory(third_party/sqlite3)
+else()
+    find_package(SQLite3 REQUIRED)
+endif()
 
 # Add CEF wrapper library
 add_subdirectory(${CEF_LIBCEF_DLL_WRAPPER_PATH} libcef_dll_wrapper)
@@ -216,6 +227,11 @@ elseif(WIN32)
         OUTPUT_NAME "OrbFox"
         WIN32_EXECUTABLE TRUE
     )
+
+    # Embed application manifest (Common Controls v6, OS compatibility)
+    set_property(TARGET OrbFox APPEND_STRING PROPERTY
+        LINK_FLAGS " /MANIFEST:EMBED /MANIFESTINPUT:\"${CMAKE_SOURCE_DIR}/resources/win/OrbFox.exe.manifest\""
+    )
 else()
     add_executable(OrbFox ${SOURCES} ${HEADERS} ${UI_HEADERS})
 endif()
@@ -233,6 +249,8 @@ target_link_libraries(OrbFox PRIVATE
     OrbFoxCore
     libcef_dll_wrapper
     ${CEF_STANDARD_LIBS}
+    optimized ${CEF_LIB_RELEASE}
+    debug ${CEF_LIB_DEBUG}
 )
 
 # Platform-specific configuration
@@ -385,10 +403,8 @@ elseif(WIN32)
         NOMINMAX
     )
 
-    # Use static runtime for release builds
-    if(MSVC)
-        set_property(TARGET OrbFox PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    endif()
+    # Use dynamic runtime to match CEF's libcef.dll
+    # (default /MD is correct; do not set /MT)
 endif()
 
 # Compiler warnings
@@ -416,10 +432,11 @@ if(APPLE)
         COMMENT "Copying app icon..."
     )
 else()
+    # Windows: CEF expects resources (icudtl.dat, .pak files) next to the executable
     add_custom_command(TARGET OrbFox POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CEF_ROOT}/Resources"
-            "$<TARGET_FILE_DIR:OrbFox>/Resources"
+            "$<TARGET_FILE_DIR:OrbFox>"
         COMMENT "Copying CEF resources..."
     )
 

@@ -66,8 +66,8 @@ inline int GetFontSizeTitle() { return 17; }
 inline const wchar_t* GetFontFamily() { return L"Segoe UI"; }
 
 // Create a font with the specified size and weight
-inline HFONT CreateFont(int size, int weight = FW_NORMAL) {
-    return CreateFontW(
+inline HFONT MakeFont(int size, int weight = FW_NORMAL) {
+    return ::CreateFontW(
         -MulDiv(size, GetDeviceCaps(GetDC(NULL), LOGPIXELSY), 72),
         0, 0, 0, weight, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,

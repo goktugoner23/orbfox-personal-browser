@@ -1,0 +1,18 @@
+{
+  "active_workspace_index": 0,
+  "workspaces": [
+    {
+      "name": "Integration Test",
+      "color": "#123456",
+      "active_tab_index": 0,
+      "tabs": [
+        {
+          "url": "https://google.com",
+          "title": "Google",
+          "is_pinned": true,
+          "is_muted": false
+        }
+      ]
+    }
+  ]
+}

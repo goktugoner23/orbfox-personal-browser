@@ -171,7 +171,7 @@ LRESULT FindBar::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 
 void FindBar::OnCreate() {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
-    font_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody());
+    font_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody());
 
     // Search input
     search_edit_ = CreateWindowExW(

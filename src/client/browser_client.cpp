@@ -99,7 +99,7 @@ bool BrowserClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
                                    int popup_id,
                                    const CefString& target_url,
                                    const CefString& target_frame_name,
-                                   WindowOpenDisposition target_disposition,
+                                   cef_window_open_disposition_t target_disposition,
                                    bool user_gesture,
                                    const CefPopupFeatures& popup_features,
                                    CefWindowInfo& window_info,
@@ -343,7 +343,7 @@ bool BrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
 bool BrowserClient::OnOpenURLFromTab(CefRefPtr<CefBrowser> browser,
                                       CefRefPtr<CefFrame> frame,
                                       const CefString& target_url,
-                                      WindowOpenDisposition target_disposition,
+                                      cef_window_open_disposition_t target_disposition,
                                       bool user_gesture) {
     CEF_REQUIRE_UI_THREAD();
     (void)browser;

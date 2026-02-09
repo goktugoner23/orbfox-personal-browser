@@ -490,7 +490,7 @@ const char* kSettingsPageHtml = R"HTML(
                     </div>
                 </div>
             </section>
-
+)HTML" R"HTML(
             <!-- Downloads Section -->
             <section id="downloads" class="section">
                 <h2>Downloads</h2>

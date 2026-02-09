@@ -3,6 +3,7 @@
 #ifdef PLATFORM_WIN
 
 #include <windows.h>
+#include <objbase.h>
 #include <gdiplus.h>
 #include <string>
 #include <vector>
@@ -47,6 +48,7 @@ public:
     using TabSelectedCallback = std::function<void(int tab_id)>;
     using TabCloseCallback = std::function<void(int tab_id)>;
     using TabDuplicateCallback = std::function<void(int tab_id)>;
+    using TabReloadCallback = std::function<void(int tab_id)>;
     using TabMoveCallback = std::function<void(int tab_id, int workspace_id)>;
     using NewTabCallback = std::function<void()>;
     using WorkspaceSelectedCallback = std::function<void(int workspace_id)>;
@@ -55,6 +57,7 @@ public:
     void SetTabSelectedCallback(TabSelectedCallback callback) { on_tab_selected_ = std::move(callback); }
     void SetTabCloseCallback(TabCloseCallback callback) { on_tab_close_ = std::move(callback); }
     void SetTabDuplicateCallback(TabDuplicateCallback callback) { on_tab_duplicate_ = std::move(callback); }
+    void SetTabReloadCallback(TabReloadCallback callback) { on_tab_reload_ = std::move(callback); }
     void SetTabMoveCallback(TabMoveCallback callback) { on_tab_move_ = std::move(callback); }
     void SetNewTabCallback(NewTabCallback callback) { on_new_tab_ = std::move(callback); }
     void SetWorkspaceSelectedCallback(WorkspaceSelectedCallback callback) { on_workspace_selected_ = std::move(callback); }
@@ -186,6 +189,7 @@ private:
     TabSelectedCallback on_tab_selected_;
     TabCloseCallback on_tab_close_;
     TabDuplicateCallback on_tab_duplicate_;
+    TabReloadCallback on_tab_reload_;
     TabMoveCallback on_tab_move_;
     NewTabCallback on_new_tab_;
     WorkspaceSelectedCallback on_workspace_selected_;

@@ -142,9 +142,9 @@ LRESULT DownloadsPanel::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 void DownloadsPanel::OnCreate() {
-    font_normal_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody());
-    font_small_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeSmall());
-    font_bold_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody(), FW_SEMIBOLD);
+    font_normal_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody());
+    font_small_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeSmall());
+    font_bold_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody(), FW_SEMIBOLD);
 }
 
 void DownloadsPanel::OnPaint() {
@@ -369,7 +369,15 @@ void DownloadsPanel::ShowContextMenu(int x, int y, int index) {
             }
             break;
         case 4:  // Retry
-            // TODO: Implement retry
+            {
+                std::string url = item.original_url.empty() ? item.url : item.original_url;
+                if (!url.empty() && on_retry_download_) {
+                    DownloadManager::GetInstance().SetPendingOriginalUrl(url);
+                    DownloadManager::GetInstance().SetIsRestart(true);
+                    on_retry_download_(url);
+                }
+            }
+            Refresh();
             break;
         case 5:  // Remove from list
             DownloadManager::GetInstance().RemoveDownload(item.id);

@@ -846,7 +846,11 @@ protected:
         manager_->ResetForTesting();
 
         // Create unique test directory
+#ifdef _WIN32
+        test_dir_ = std::filesystem::temp_directory_path().string() + "/orbfox_download_test_" +
+#else
         test_dir_ = "/tmp/orbfox_download_test_" +
+#endif
                     std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
         std::filesystem::create_directories(test_dir_);
         test_file_ = test_dir_ + "/downloads.json";

@@ -129,8 +129,32 @@ private:
     LONG saved_ex_style_ = 0;
     RECT saved_rect_ = {};
 
+    // Menu bar
+    void CreateMenuBar();
+
     // Timer IDs
     static constexpr UINT_PTR kHibernationTimerId = 1;
+
+    // Menu command IDs
+    enum MenuCmd {
+        IDM_FILE_NEW_TAB = 40001,
+        IDM_FILE_CLOSE_TAB,
+        IDM_FILE_REOPEN_TAB,
+        IDM_FILE_EXIT,
+        IDM_EDIT_FIND,
+        IDM_VIEW_RELOAD,
+        IDM_VIEW_STOP,
+        IDM_VIEW_DEVTOOLS,
+        IDM_VIEW_FULLSCREEN,
+        IDM_WINDOW_TABS,
+        IDM_WINDOW_BOOKMARKS,
+        IDM_WINDOW_HISTORY,
+        IDM_WINDOW_DOWNLOADS,
+        IDM_WINDOW_SETTINGS,
+        IDM_WINDOW_PREV_WORKSPACE,
+        IDM_WINDOW_NEXT_WORKSPACE,
+        IDM_HELP_ABOUT,
+    };
 
     // Layout constants
     static constexpr int kDefaultWidth = 1280;

@@ -7,6 +7,7 @@
 #include "include/wrapper/cef_helpers.h"
 
 #include <windowsx.h>
+#include <algorithm>
 
 bool DevToolsPanel::class_registered_ = false;
 
@@ -236,10 +237,6 @@ LRESULT DevToolsPanel::HandleDividerMessage(UINT msg, WPARAM wParam, LPARAM lPar
             OnDividerLButtonUp(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             return 0;
 
-        case WM_MOUSEENTER:
-            OnDividerMouseEnter();
-            return 0;
-
         case WM_MOUSELEAVE:
             OnDividerMouseLeave();
             return 0;
@@ -254,8 +251,8 @@ LRESULT DevToolsPanel::HandleDividerMessage(UINT msg, WPARAM wParam, LPARAM lPar
 void DevToolsPanel::OnCreate() {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
 
-    font_normal_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody());
-    font_bold_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody(), FW_SEMIBOLD);
+    font_normal_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody());
+    font_bold_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody(), FW_SEMIBOLD);
 
     // Create header bar (drawn manually in OnPaint)
     // No separate window needed - just reserve space at top
@@ -479,7 +476,7 @@ void DevToolsPanel::OnDividerMouseMove(int x, int y) {
         int newWidth = parentRect.right - parentPt.x;
 
         // Clamp to min/max
-        newWidth = max(kMinWidth, min(kMaxWidth, newWidth));
+        newWidth = (std::max)(kMinWidth, (std::min)(kMaxWidth, newWidth));
 
         ResizeToWidth(newWidth);
     }
@@ -706,7 +703,7 @@ void DevToolsPanel::Show(CefRefPtr<CefBrowser> browser, int inspectX, int inspec
     CefWindowInfo windowInfo;
     RECT containerRect;
     GetClientRect(browser_container_, &containerRect);
-    windowInfo.SetAsChild(browser_container_, containerRect);
+    windowInfo.SetAsChild(browser_container_, CefRect(containerRect.left, containerRect.top, containerRect.right - containerRect.left, containerRect.bottom - containerRect.top));
 
     CefBrowserSettings settings;
 
@@ -753,13 +750,13 @@ bool DevToolsPanel::IsInspecting(CefRefPtr<CefBrowser> browser) const {
 }
 
 void DevToolsPanel::SetWidth(int width) {
-    panel_width_ = max(kMinWidth, min(kMaxWidth, width));
+    panel_width_ = (std::max)(kMinWidth, (std::min)(kMaxWidth, width));
 }
 
 void DevToolsPanel::ResizeToWidth(int newWidth) {
     if (!visible_ || animating_) return;
 
-    panel_width_ = max(kMinWidth, min(kMaxWidth, newWidth));
+    panel_width_ = (std::max)(kMinWidth, (std::min)(kMaxWidth, newWidth));
 
     // Reposition divider and panel
     RECT parentRect;

@@ -5,6 +5,7 @@
 #include "history_storage.h"
 
 #include <windowsx.h>
+#include <commctrl.h>
 #include <algorithm>
 #include <ctime>
 
@@ -140,7 +141,7 @@ LRESULT HistoryPanel::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
                 if (HistoryStorage* storage = GetHistoryStorage()) {
                     if (MessageBoxW(hwnd_, L"Clear all browsing history?", L"Clear History",
                                     MB_YESNO | MB_ICONQUESTION) == IDYES) {
-                        storage->ClearHistory();
+                        storage->ClearHistoryBefore(std::time(nullptr));
                         Refresh();
                     }
                 }
@@ -165,8 +166,8 @@ LRESULT HistoryPanel::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 void HistoryPanel::OnCreate() {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
 
-    font_normal_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody());
-    font_small_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeSmall());
+    font_normal_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody());
+    font_small_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeSmall());
 
     // Search box
     search_edit_ = CreateWindowExW(

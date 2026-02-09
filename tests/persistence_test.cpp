@@ -6,6 +6,11 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 // ============================================================================
 // HistoryStorage Tests
@@ -15,7 +20,11 @@ class HistoryStorageTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Create unique test directory using process ID and timestamp
+#ifdef _WIN32
+        test_dir_ = std::filesystem::temp_directory_path().string() + "/orbfox_test_history_" + std::to_string(_getpid()) + "_" +
+#else
         test_dir_ = "/tmp/orbfox_test_history_" + std::to_string(getpid()) + "_" +
+#endif
                     std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
         std::filesystem::create_directories(test_dir_);
         test_db_path_ = test_dir_ + "/history.db";

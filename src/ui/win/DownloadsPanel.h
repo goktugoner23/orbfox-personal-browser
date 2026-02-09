@@ -30,6 +30,10 @@ public:
     using OpenFileCallback = std::function<void(const std::string& path)>;
     void SetOpenFileCallback(OpenFileCallback cb) { on_open_file_ = std::move(cb); }
 
+    // Callback to retry a download (navigates to URL in the active browser)
+    using RetryDownloadCallback = std::function<void(const std::string& url)>;
+    void SetRetryDownloadCallback(RetryDownloadCallback cb) { on_retry_download_ = std::move(cb); }
+
     static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 private:
@@ -73,6 +77,7 @@ private:
     static constexpr UINT_PTR kTimerId = 1;
 
     OpenFileCallback on_open_file_;
+    RetryDownloadCallback on_retry_download_;
 
     HFONT font_normal_ = nullptr;
     HFONT font_small_ = nullptr;

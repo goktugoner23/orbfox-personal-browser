@@ -9,6 +9,7 @@
 
 #include <windows.h>
 #include <shlobj.h>
+#include <objbase.h>
 #include <gdiplus.h>
 #include <string>
 

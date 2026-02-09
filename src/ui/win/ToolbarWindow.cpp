@@ -150,7 +150,7 @@ LRESULT ToolbarWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 void ToolbarWindow::OnCreate() {
     HINSTANCE hInstance = GetModuleHandle(nullptr);
 
-    font_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody());
+    font_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody());
 
     // Create URL edit control
     url_edit_ = CreateWindowExW(

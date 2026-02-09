@@ -196,9 +196,9 @@ LRESULT SidebarWindow::HandleMessage(UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 void SidebarWindow::OnCreate() {
-    font_normal_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody());
-    font_bold_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeBody(), FW_SEMIBOLD);
-    font_small_ = DesignSystem::CreateFont(DesignSystem::GetFontSizeSmall());
+    font_normal_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody());
+    font_bold_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeBody(), FW_SEMIBOLD);
+    font_small_ = DesignSystem::MakeFont(DesignSystem::GetFontSizeSmall());
     // Create icon font using Segoe UI Symbol for emoji rendering
     font_icon_ = CreateFontW(
         -MulDiv(12, GetDeviceCaps(GetDC(NULL), LOGPIXELSY), 72),
@@ -228,6 +228,10 @@ void SidebarWindow::OnCreate() {
 
     history_panel_->SetOpenUrlCallback([this](const std::string& url, bool bg) {
         if (on_open_url_) on_open_url_(url, bg);
+    });
+
+    downloads_panel_->SetRetryDownloadCallback([this](const std::string& url) {
+        if (on_open_url_) on_open_url_(url, false);
     });
 
     settings_panel_->SetOpenUrlCallback([this](const std::string& url, bool bg) {
@@ -1169,7 +1173,7 @@ void SidebarWindow::OnContextMenuCommand(int cmd_id) {
             break;
 
         case CMD_RELOAD_TAB:
-            // TODO: Implement reload callback
+            if (on_tab_reload_) on_tab_reload_(tab_id);
             break;
 
         case CMD_PIN_TAB:
