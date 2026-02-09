@@ -35,6 +35,9 @@ public:
     // Get ID token for Firebase auth
     std::string GetIdToken();
 
+    // Get Firebase ID token (exchanged from Google token)
+    std::string GetFirebaseToken();
+
     // Set callback for auth state changes
     void SetOnAuthStateChanged(std::function<void(bool signedIn)> callback);
 
@@ -61,6 +64,7 @@ private:
                                AuthCallback callback);
     void FetchUserProfile(AuthCallback callback);
     bool RefreshAccessToken();
+    bool ExchangeGoogleTokenForFirebase();
 
     // Platform-specific token storage (implemented in platform files)
     bool StoreTokens(const AuthTokens& tokens);
@@ -96,8 +100,13 @@ namespace OAuthConfig {
     std::string GetTokenUri();
     std::string GetRedirectUri();  // http://localhost
 
+    // Firebase config
+    std::string GetFirebaseApiKey();
+    std::string GetFirebaseDatabaseUrl();
+
     // Fixed endpoints
     constexpr const char* USERINFO_ENDPOINT = "https://www.googleapis.com/oauth2/v3/userinfo";
+    constexpr const char* FIREBASE_AUTH_ENDPOINT = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp";
     constexpr const char* SCOPES = "openid email profile";
 
     // Local server port range (appended to redirect_uri)

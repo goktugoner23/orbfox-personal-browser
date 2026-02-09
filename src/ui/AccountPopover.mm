@@ -3,6 +3,7 @@
 #import "ToolbarView.h"
 #import "components/Components.h"
 #include "sync/google_auth.h"
+#include "sync/sync_service.h"
 
 @implementation AccountPopoverController {
     NSPopover* _popover;
@@ -41,6 +42,16 @@
 
     // Show appropriate view based on auth state
     [self updateAuthState];
+
+    // Observe sync completion notifications
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleSyncCompleted:)
+                                                 name:@"OrbFoxSyncCompleted"
+                                               object:nil];
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 - (void)createSignedOutView:(NSView*)parent width:(CGFloat)width height:(CGFloat)height {
@@ -434,17 +445,63 @@
     _syncNowButton.title = @"Syncing...";
     _syncStatusLabel.stringValue = @"Syncing...";
 
-    // TODO: Trigger actual sync via SyncService
-    // For now, just simulate with a delay
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        self->_syncNowButton.enabled = YES;
-        self->_syncNowButton.title = @"Sync Now";
-        self->_syncStatusLabel.stringValue = @"Synced just now";
+    // Trigger actual sync via SyncService
+    // Using notification pattern to avoid capturing ObjC objects in C++ lambda
+    SyncService::GetInstance().SyncNow([](const SyncResult& result) {
+        bool success = result.success;
+        std::string errorMsg = result.error_message;
+        int bookmarks = result.bookmarks_synced;
+        int history = result.history_synced;
+        bool settings = result.settings_synced;
 
-        if (self.onSyncNow) {
-            self.onSyncNow();
-        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSMutableDictionary* userInfo = [NSMutableDictionary dictionary];
+            userInfo[@"success"] = @(success);
+            if (!errorMsg.empty()) {
+                userInfo[@"error"] = [NSString stringWithUTF8String:errorMsg.c_str()];
+            }
+            userInfo[@"bookmarks"] = @(bookmarks);
+            userInfo[@"history"] = @(history);
+            userInfo[@"settings"] = @(settings);
+
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"OrbFoxSyncCompleted"
+                                                                object:nil
+                                                              userInfo:userInfo];
+        });
     });
+}
+
+- (void)handleSyncCompleted:(NSNotification*)notification {
+    NSDictionary* info = notification.userInfo;
+    BOOL success = [info[@"success"] boolValue];
+
+    _syncNowButton.enabled = YES;
+    _syncNowButton.title = @"Sync Now";
+
+    if (success) {
+        int bookmarks = [info[@"bookmarks"] intValue];
+        int history = [info[@"history"] intValue];
+        BOOL settings = [info[@"settings"] boolValue];
+
+        NSMutableArray* parts = [NSMutableArray array];
+        if (bookmarks > 0) [parts addObject:@"bookmarks"];
+        if (history > 0) [parts addObject:@"history"];
+        if (settings) [parts addObject:@"settings"];
+
+        if (parts.count > 0) {
+            _syncStatusLabel.stringValue = [NSString stringWithFormat:@"Synced %@",
+                                           [parts componentsJoinedByString:@", "]];
+        } else {
+            _syncStatusLabel.stringValue = @"Synced (no changes)";
+        }
+    } else {
+        NSString* error = info[@"error"];
+        _syncStatusLabel.stringValue = error ?: @"Sync failed";
+    }
+
+    if (self.onSyncNow) {
+        self.onSyncNow();
+    }
 }
 
 @end

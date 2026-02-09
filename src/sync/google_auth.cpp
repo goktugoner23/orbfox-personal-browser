@@ -29,6 +29,8 @@ namespace {
         std::string auth_uri;
         std::string token_uri;
         std::string redirect_uri;
+        std::string firebase_api_key;
+        std::string firebase_database_url;
         bool loaded = false;
     };
 
@@ -94,6 +96,9 @@ namespace {
                     config.token_uri = GetNestedJsonString(content, "installed", "token_uri");
                     // redirect_uris is an array, just use localhost
                     config.redirect_uri = "http://localhost";
+                    // Firebase config (loaded from JSON - required for sync)
+                    config.firebase_api_key = GetNestedJsonString(content, "installed", "firebase_api_key");
+                    config.firebase_database_url = GetNestedJsonString(content, "installed", "firebase_database_url");
                     config.loaded = true;
                     break;
                 }
@@ -110,6 +115,8 @@ namespace OAuthConfig {
     std::string GetAuthUri() { return GetConfigData().auth_uri; }
     std::string GetTokenUri() { return GetConfigData().token_uri; }
     std::string GetRedirectUri() { return GetConfigData().redirect_uri; }
+    std::string GetFirebaseApiKey() { return GetConfigData().firebase_api_key; }
+    std::string GetFirebaseDatabaseUrl() { return GetConfigData().firebase_database_url; }
 }
 
 #ifdef _WIN32

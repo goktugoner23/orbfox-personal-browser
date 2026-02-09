@@ -163,6 +163,8 @@ std::string TokensToJson(const AuthTokens& tokens) {
     ss << "\"access_token\":\"" << EscapeJsonString(tokens.access_token) << "\",";
     ss << "\"refresh_token\":\"" << EscapeJsonString(tokens.refresh_token) << "\",";
     ss << "\"id_token\":\"" << EscapeJsonString(tokens.id_token) << "\",";
+    ss << "\"firebase_token\":\"" << EscapeJsonString(tokens.firebase_token) << "\",";
+    ss << "\"firebase_user_id\":\"" << EscapeJsonString(tokens.firebase_user_id) << "\",";
     ss << "\"expires_at\":" << tokens.expires_at;
     ss << "}";
     return ss.str();
@@ -174,6 +176,8 @@ AuthTokens TokensFromJson(const std::string& json) {
     tokens.access_token = GetJsonString(json, "access_token", "");
     tokens.refresh_token = GetJsonString(json, "refresh_token", "");
     tokens.id_token = GetJsonString(json, "id_token", "");
+    tokens.firebase_token = GetJsonString(json, "firebase_token", "");
+    tokens.firebase_user_id = GetJsonString(json, "firebase_user_id", "");
     tokens.expires_at = static_cast<std::time_t>(GetJsonInt(json, "expires_at", 0));
     return tokens;
 }
@@ -364,7 +368,16 @@ void GoogleAuth::FetchUserProfile(AuthCallback callback) {
         StoreUserProfile(profile_);
 
         is_signed_in_ = true;
+    }
 
+    // Exchange Google token for Firebase token (for database access)
+    if (!ExchangeGoogleTokenForFirebase()) {
+        // Firebase exchange failed, but Google auth succeeded
+        // Sync won't work but user is still "signed in" to Google
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
         result.success = true;
         result.profile = profile_;
         result.tokens = tokens_;
@@ -375,6 +388,69 @@ void GoogleAuth::FetchUserProfile(AuthCallback callback) {
     }
 
     callback(result);
+}
+
+std::string GoogleAuth::GetFirebaseToken() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_signed_in_) return "";
+
+    if (tokens_.IsExpired()) {
+        if (!RefreshAccessToken()) {
+            return "";
+        }
+    }
+    return tokens_.firebase_token;
+}
+
+bool GoogleAuth::ExchangeGoogleTokenForFirebase() {
+    using namespace orbfox::utils;
+
+    std::string google_id_token = tokens_.id_token;
+    if (google_id_token.empty()) {
+        return false;
+    }
+
+    std::string api_key = OAuthConfig::GetFirebaseApiKey();
+    if (api_key.empty()) {
+        return false;
+    }
+
+    // Build Firebase Auth request
+    // POST https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=[API_KEY]
+    std::string url = std::string(OAuthConfig::FIREBASE_AUTH_ENDPOINT) + "?key=" + api_key;
+
+    // Build JSON body
+    std::ostringstream body;
+    body << "{";
+    body << "\"postBody\":\"id_token=" << UrlEncode(google_id_token) << "&providerId=google.com\",";
+    body << "\"requestUri\":\"http://localhost\",";
+    body << "\"returnIdpCredential\":true,";
+    body << "\"returnSecureToken\":true";
+    body << "}";
+
+    std::string response = HttpPost(url, body.str(), "application/json");
+
+    if (response.empty()) {
+        return false;
+    }
+
+    // Check for error
+    std::string error = GetJsonString(response, "error", "");
+    if (!error.empty()) {
+        return false;
+    }
+
+    // Extract Firebase tokens
+    tokens_.firebase_token = GetJsonString(response, "idToken", "");
+    tokens_.firebase_user_id = GetJsonString(response, "localId", "");
+
+    if (tokens_.firebase_token.empty()) {
+        return false;
+    }
+
+    // Update stored tokens
+    StoreTokens(tokens_);
+    return true;
 }
 
 #endif // __APPLE__

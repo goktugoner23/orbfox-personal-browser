@@ -16,7 +16,9 @@ struct UserProfile {
 struct AuthTokens {
     std::string access_token;
     std::string refresh_token;
-    std::string id_token;
+    std::string id_token;           // Google ID token
+    std::string firebase_token;     // Firebase ID token (for database access)
+    std::string firebase_user_id;   // Firebase user ID
     std::time_t expires_at = 0;
 
     bool IsExpired() const {

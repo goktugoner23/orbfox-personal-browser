@@ -83,6 +83,7 @@ set(CORE_HEADERS
     include/utils/json_utils.h
     include/sync/sync_types.h
     include/sync/google_auth.h
+    include/sync/sync_service.h
 )
 
 add_library(OrbFoxCore STATIC ${CORE_SOURCES} ${CORE_HEADERS})
@@ -176,6 +177,7 @@ if(APPLE)
         src/ui/components/AddBookmarkPopoverController.mm
         src/data/bookmark_importer.mm
         src/sync/google_auth_mac.mm
+        src/sync/sync_service.mm
     )
 elseif(WIN32)
     list(APPEND SOURCES
@@ -307,6 +309,7 @@ if(APPLE)
         src/ui/components/BookmarkDropContainerView.mm
         src/ui/components/AddBookmarkPopoverController.mm
         src/sync/google_auth_mac.mm
+        src/sync/sync_service.mm
         PROPERTIES COMPILE_FLAGS "-x objective-c++ -fobjc-arc"
     )
 
