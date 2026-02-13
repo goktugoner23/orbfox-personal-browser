@@ -14,7 +14,11 @@
 #include "bookmark_storage.h"
 #include "download_manager.h"
 #include "settings_storage.h"
+#include "session_storage.h"
 #include "DevToolsClient.h"
+
+// Defined in browser_app.mm
+extern void SaveSession();
 
 // Layout constants
 static const CGFloat kTitleBarHeight = 28.0;
@@ -94,6 +98,13 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 
     // Tab hibernation timer
     NSTimer* _hibernationTimer;
+    NSTimeInterval _lastBrowserActivityTime;  // Last time user interacted with any tab
+
+    // Shutdown state
+    BOOL _isTerminating;       // True when app is quitting (Cmd+Q), false for window close (red X)
+    BOOL _isShuttingDown;      // True while waiting for browsers to finish closing
+    NSTimer* _shutdownTimer;
+    int _shutdownCheckCount;
 }
 
 - (instancetype)initWithTabManager:(TabManager*)tabManager {
@@ -118,6 +129,7 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         _tabRealNavigationFlags = [NSMutableDictionary new];
         _tabLoadingStartTimes = [NSMutableDictionary new];
         _tabLoadingGeneration = [NSMutableDictionary new];
+        _lastBrowserActivityTime = [NSDate timeIntervalSinceReferenceDate];
 
         window.delegate = self;
         window.minSize = NSMakeSize(800, 600);
@@ -149,10 +161,14 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 }
 
 - (void)checkInactiveTabs {
-    if (_tabManager) {
-        // Hibernate tabs inactive for 5 minutes (300 seconds)
-        _tabManager->HibernateInactiveTabs(300);
-    }
+    if (!_tabManager) return;
+
+    // Only hibernate when the entire browser has been idle for 5 minutes.
+    // If the user is actively browsing (any tab), don't hibernate other tabs.
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if (now - _lastBrowserActivityTime < 300.0) return;
+
+    _tabManager->HibernateInactiveTabs(300);
 }
 
 - (void)setupViews {
@@ -233,6 +249,7 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         if (!strongSelf || !tab) return;
 
         // Update active time for hibernation tracking
+        strongSelf->_lastBrowserActivityTime = [NSDate timeIntervalSinceReferenceDate];
         strongSelf.tabManager->UpdateTabActiveTime(tab->id);
 
         // If tab is hibernated, wake it (this will trigger on_tab_woken callback)
@@ -1902,23 +1919,90 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 
 #pragma mark - NSWindowDelegate
 
+- (void)initiateTermination {
+    _isTerminating = YES;
+}
+
 - (BOOL)windowShouldClose:(NSWindow*)sender {
     (void)sender;
-    // Close all browsers
+
+    // Save session before anything else
+    SaveSession();
+    SessionStorage::MarkCleanShutdown();
+
+    // Window close (red X) — just hide, stay in dock
+    if (!_isTerminating) {
+        [self.window orderOut:nil];
+        return NO;
+    }
+
+    // App quit (Cmd+Q) — full shutdown
+    if (_isShuttingDown) return NO;
+
+    // Close all CEF browsers
+    int count = 0;
     for (const auto& workspace : _tabManager->GetWorkspaces()) {
         for (const auto& tab : workspace->tabs) {
             if (tab->browser) {
                 tab->browser->GetHost()->CloseBrowser(true);
+                count++;
             }
         }
     }
-    return YES;
+
+    if (_devToolsClient && _devToolsClient->GetBrowser()) {
+        _devToolsClient->GetBrowser()->GetHost()->CloseBrowser(true);
+        count++;
+    }
+
+    if (count == 0) return YES;  // No browsers, close immediately
+
+    // Poll until all browsers have completed their close cycle
+    _isShuttingDown = YES;
+    _shutdownCheckCount = 0;
+    _shutdownTimer = [NSTimer scheduledTimerWithTimeInterval:0.05
+                                                     target:self
+                                                   selector:@selector(checkBrowsersClosed)
+                                                   userInfo:nil
+                                                    repeats:YES];
+    return NO;
+}
+
+- (void)checkBrowsersClosed {
+    _shutdownCheckCount++;
+
+    // Check if all browser clients report their browser as closed
+    bool anyAlive = false;
+    for (const auto& workspace : _tabManager->GetWorkspaces()) {
+        for (const auto& tab : workspace->tabs) {
+            if (tab->client && tab->client->GetBrowser()) {
+                anyAlive = true;
+                break;
+            }
+        }
+        if (anyAlive) break;
+    }
+
+    if (!anyAlive && _devToolsClient) {
+        anyAlive = (_devToolsClient->GetBrowser() != nullptr);
+    }
+
+    if (!anyAlive) {
+        // All browsers finished their close cycle — safe to proceed
+        [_shutdownTimer invalidate];
+        _shutdownTimer = nil;
+        [self.window close];
+    } else if (_shutdownCheckCount > 60) {
+        // Safety timeout (3s). Browsers stuck — hard exit to avoid CefShutdown crash.
+        // Session was already saved before we started closing.
+        [_shutdownTimer invalidate];
+        _shutdownTimer = nil;
+        _exit(0);
+    }
 }
 
 - (void)windowWillClose:(NSNotification*)notification {
     (void)notification;
-    // Close DevTools if open (CEF will close its window)
-    [self closeDevTools];
     CefQuitMessageLoop();
 }
 

@@ -9,8 +9,8 @@
 #include "include/cef_application_mac.h"
 #include "include/wrapper/cef_library_loader.h"
 
-// Forward declarations for menu actions
-@class MainWindowController;
+// Import MainWindowController for window lookup during shutdown
+#import "MainWindowController.h"
 
 // Application delegate
 @interface AppDelegate : NSObject <NSApplicationDelegate, NSMenuDelegate> {
@@ -32,6 +32,20 @@
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender {
     (void)sender;
+    return NO;
+}
+
+- (BOOL)applicationShouldHandleReopen:(NSApplication*)sender hasVisibleWindows:(BOOL)hasVisibleWindows {
+    (void)sender;
+    if (!hasVisibleWindows) {
+        // Show the hidden main window when user clicks dock icon
+        for (NSWindow* window in [NSApp windows]) {
+            if ([window.windowController isKindOfClass:[MainWindowController class]]) {
+                [window makeKeyAndOrderFront:nil];
+                return NO;
+            }
+        }
+    }
     return YES;
 }
 
@@ -470,6 +484,21 @@
 // Required for proper CEF message loop handling
 - (void)terminate:(id)sender {
     (void)sender;
+    // Find the main window and trigger full shutdown.
+    // Don't rely on keyWindow — it's nil when the app is in the background.
+    for (NSWindow* window in [self windows]) {
+        if ([window.windowController isKindOfClass:[MainWindowController class]]) {
+            MainWindowController* controller = (MainWindowController*)window.windowController;
+            [controller initiateTermination];
+            // Show window if hidden (was ordered out on close) so performClose: works
+            if (!window.isVisible) {
+                [window makeKeyAndOrderFront:nil];
+            }
+            [window performClose:nil];
+            return;
+        }
+    }
+    // No main window found — safe to quit directly
     CefQuitMessageLoop();
 }
 

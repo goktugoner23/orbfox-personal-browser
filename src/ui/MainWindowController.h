@@ -89,4 +89,7 @@
 - (void)closeDevTools;
 @property (nonatomic, readonly) BOOL devToolsOpen;
 
+// Shutdown — call before performClose: to trigger full app termination
+- (void)initiateTermination;
+
 @end
