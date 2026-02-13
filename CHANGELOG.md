@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Google Account & Sync** - Sign in with Google account for sync features
+  - Account popover accessible from toolbar avatar button
+  - User avatar display with sign-in status
+  - Firebase token handling for database access
+  - Sync service with UI notifications and status display
 - **Persistent Browser Storage** - Cookies and localStorage now persist between sessions
   - Set `cache_path` in CefSettings for persistent storage
   - YouTube login, video resume positions, and site preferences now saved
@@ -85,6 +90,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - User can expand folders, state persists during session
 
 ### Fixed
+- **App Quit Crash** - Fixed CefShutdown crash (EXC_BREAKPOINT/SIGTRAP) when quitting the browser
+  - `CefShutdown()` was called while CEF browsers were still alive, causing SIGTRAP
+  - Replaced with `_exit(0)` after `CefQuitMessageLoop()` — session is saved before quit
+- **Closed Tabs Reappearing** - Fixed tabs reappearing after being closed and restarting the browser
+  - `SaveSession()` was only called on window close notification, which didn't always fire
+  - Now called on both window hide (red X) and app quit (Cmd+Q) paths
+- **macOS Window Close Behavior** - Closing the window now hides the app instead of quitting
+  - Red X button hides window, app stays in dock with indicator dot
+  - Clicking dock icon restores the hidden window
+  - Cmd+Q properly quits the application
 - **DevTools Tabs Clickable** - Fixed DevTools panel tabs (Elements, Console, Sources, etc.) not responding to clicks
   - Removed custom header overlay that was blocking mouse events on the DevTools content
   - DevTools window now uses native titlebar styling without overlays

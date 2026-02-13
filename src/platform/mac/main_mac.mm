@@ -484,17 +484,11 @@
 // Required for proper CEF message loop handling
 - (void)terminate:(id)sender {
     (void)sender;
-    // Find the main window and trigger full shutdown.
+    // Find the main window controller and trigger shutdown directly.
     // Don't rely on keyWindow — it's nil when the app is in the background.
     for (NSWindow* window in [self windows]) {
         if ([window.windowController isKindOfClass:[MainWindowController class]]) {
-            MainWindowController* controller = (MainWindowController*)window.windowController;
-            [controller initiateTermination];
-            // Show window if hidden (was ordered out on close) so performClose: works
-            if (!window.isVisible) {
-                [window makeKeyAndOrderFront:nil];
-            }
-            [window performClose:nil];
+            [(MainWindowController*)window.windowController shutdownAndQuit];
             return;
         }
     }
@@ -574,8 +568,10 @@ int main(int argc, char* argv[]) {
         // This will block until CefQuitMessageLoop() is called
         CefRunMessageLoop();
 
-        // Shutdown CEF
-        CefShutdown();
+        // Session is already saved by shutdownAndQuit/windowShouldClose.
+        // Use _exit() to terminate immediately — CefShutdown() crashes if
+        // browsers haven't fully completed their async close cycle.
+        _exit(0);
     }
 
     return 0;

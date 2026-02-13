@@ -101,10 +101,7 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     NSTimeInterval _lastBrowserActivityTime;  // Last time user interacted with any tab
 
     // Shutdown state
-    BOOL _isTerminating;       // True when app is quitting (Cmd+Q), false for window close (red X)
-    BOOL _isShuttingDown;      // True while waiting for browsers to finish closing
-    NSTimer* _shutdownTimer;
-    int _shutdownCheckCount;
+    BOOL _isShuttingDown;
 }
 
 - (instancetype)initWithTabManager:(TabManager*)tabManager {
@@ -1919,86 +1916,23 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 
 #pragma mark - NSWindowDelegate
 
-- (void)initiateTermination {
-    _isTerminating = YES;
+- (void)shutdownAndQuit {
+    if (_isShuttingDown) return;
+    _isShuttingDown = YES;
+
+    SaveSession();
+    SessionStorage::MarkCleanShutdown();
+    CefQuitMessageLoop();
 }
 
 - (BOOL)windowShouldClose:(NSWindow*)sender {
     (void)sender;
 
-    // Save session before anything else
+    // Hide window — app stays in dock (standard macOS behavior)
     SaveSession();
     SessionStorage::MarkCleanShutdown();
-
-    // Window close (red X) — just hide, stay in dock
-    if (!_isTerminating) {
-        [self.window orderOut:nil];
-        return NO;
-    }
-
-    // App quit (Cmd+Q) — full shutdown
-    if (_isShuttingDown) return NO;
-
-    // Close all CEF browsers
-    int count = 0;
-    for (const auto& workspace : _tabManager->GetWorkspaces()) {
-        for (const auto& tab : workspace->tabs) {
-            if (tab->browser) {
-                tab->browser->GetHost()->CloseBrowser(true);
-                count++;
-            }
-        }
-    }
-
-    if (_devToolsClient && _devToolsClient->GetBrowser()) {
-        _devToolsClient->GetBrowser()->GetHost()->CloseBrowser(true);
-        count++;
-    }
-
-    if (count == 0) return YES;  // No browsers, close immediately
-
-    // Poll until all browsers have completed their close cycle
-    _isShuttingDown = YES;
-    _shutdownCheckCount = 0;
-    _shutdownTimer = [NSTimer scheduledTimerWithTimeInterval:0.05
-                                                     target:self
-                                                   selector:@selector(checkBrowsersClosed)
-                                                   userInfo:nil
-                                                    repeats:YES];
+    [self.window orderOut:nil];
     return NO;
-}
-
-- (void)checkBrowsersClosed {
-    _shutdownCheckCount++;
-
-    // Check if all browser clients report their browser as closed
-    bool anyAlive = false;
-    for (const auto& workspace : _tabManager->GetWorkspaces()) {
-        for (const auto& tab : workspace->tabs) {
-            if (tab->client && tab->client->GetBrowser()) {
-                anyAlive = true;
-                break;
-            }
-        }
-        if (anyAlive) break;
-    }
-
-    if (!anyAlive && _devToolsClient) {
-        anyAlive = (_devToolsClient->GetBrowser() != nullptr);
-    }
-
-    if (!anyAlive) {
-        // All browsers finished their close cycle — safe to proceed
-        [_shutdownTimer invalidate];
-        _shutdownTimer = nil;
-        [self.window close];
-    } else if (_shutdownCheckCount > 60) {
-        // Safety timeout (3s). Browsers stuck — hard exit to avoid CefShutdown crash.
-        // Session was already saved before we started closing.
-        [_shutdownTimer invalidate];
-        _shutdownTimer = nil;
-        _exit(0);
-    }
 }
 
 - (void)windowWillClose:(NSNotification*)notification {
