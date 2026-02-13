@@ -1158,9 +1158,50 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     // Make it a child window so it follows the main window
     [self.window addChildWindow:_devToolsWindow ordered:NSWindowAbove];
 
-    // No custom header - use DevTools' native UI for now to ensure tabs are clickable
-    // The system titlebar (though transparent/hidden) provides the window chrome
-    // User can close via F12 or the divider
+    // Add close button in the titlebar area — CEF's compositor paints over regular NSViews,
+    // but NSTitlebarAccessoryViewController lives above all content in the native titlebar layer.
+    if (_devToolsCloseButton) {
+        [_devToolsCloseButton removeFromSuperview];
+        _devToolsCloseButton = nil;
+    }
+
+    CGFloat btnSize = 24;
+    CGFloat barHeight = 28;
+
+    NSView* barView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 100, barHeight)];
+    barView.wantsLayer = YES;
+    barView.layer.backgroundColor = [DSColors devToolsBackground].CGColor;
+
+    _devToolsCloseButton = [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"xmark"
+                                                                      accessibilityDescription:@"Close DevTools"]
+                                              target:self
+                                              action:@selector(closeDevTools)];
+    _devToolsCloseButton.bordered = NO;
+    _devToolsCloseButton.wantsLayer = YES;
+    _devToolsCloseButton.layer.cornerRadius = btnSize / 2;
+    _devToolsCloseButton.contentTintColor = [NSColor colorWithRed:0.6 green:0.6 blue:0.63 alpha:1.0];
+    _devToolsCloseButton.frame = NSMakeRect(
+        barView.bounds.size.width - btnSize - 6,
+        (barHeight - btnSize) / 2,
+        btnSize, btnSize);
+    _devToolsCloseButton.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
+    [barView addSubview:_devToolsCloseButton];
+
+    NSTrackingArea* trackingArea = [[NSTrackingArea alloc]
+        initWithRect:_devToolsCloseButton.bounds
+             options:NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways
+               owner:self
+            userInfo:@{@"button": @"devToolsClose"}];
+    [_devToolsCloseButton addTrackingArea:trackingArea];
+
+    NSTitlebarAccessoryViewController* accessory = [[NSTitlebarAccessoryViewController alloc] init];
+    accessory.view = barView;
+    accessory.layoutAttribute = NSLayoutAttributeRight;
+
+    while (_devToolsWindow.titlebarAccessoryViewControllers.count > 0) {
+        [_devToolsWindow removeTitlebarAccessoryViewControllerAtIndex:0];
+    }
+    [_devToolsWindow addTitlebarAccessoryViewController:accessory];
 
     // Calculate positions
     NSView* contentView = self.window.contentView;
