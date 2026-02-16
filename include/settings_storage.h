@@ -2,6 +2,12 @@
 
 #include <mutex>
 #include <string>
+#include <vector>
+
+struct SearchShortcut {
+    std::string key;           // e.g. "y"
+    std::string url_template;  // e.g. "https://www.youtube.com/results?search_query=%s"
+};
 
 struct Settings {
     // General
@@ -22,6 +28,13 @@ struct Settings {
     bool gesture_forward_enabled = true;    // Right drag = go forward
     bool gesture_close_tab_enabled = true;  // L-shape = close tab
     bool gesture_reopen_tab_enabled = true; // Reverse L-shape = reopen closed tab
+
+    // Search shortcuts (Vivaldi-style)
+    std::vector<SearchShortcut> search_shortcuts = {
+        {"g", "https://www.google.com/search?q=%s"},
+        {"y", "https://www.youtube.com/results?search_query=%s"},
+        {"a", "https://www.amazon.com/s?k=%s"},
+    };
 };
 
 class SettingsStorage {
@@ -44,6 +57,9 @@ public:
 
     // Search is always Google
     static std::string GetSearchUrl(const std::string& query);
+
+    // Resolve address bar input: scheme check → shortcut → URL-like → search fallback
+    std::string ResolveAddressBarInput(const std::string& input) const;
 
     // Get resolved download path (expands ~ if needed)
     std::string GetResolvedDownloadPath() const;

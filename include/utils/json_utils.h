@@ -26,6 +26,16 @@ bool GetJsonBool(const std::string& json, const std::string& key,
 /// Handles: " -> \", \ -> \\, newline -> \n, carriage return -> \r, tab -> \t
 std::string EscapeJsonString(const std::string& str);
 
+/// Extracts the raw content of a JSON array for a given key.
+/// Returns the content between [ and ] (exclusive), or empty string if not found.
+std::string GetJsonArrayContent(const std::string& json, const std::string& key);
+
+/// Iterates JSON objects within an array string.
+/// Starting from pos, finds the next {...} object and returns it.
+/// Updates pos to point past the returned object.
+/// Returns empty string when no more objects are found.
+std::string GetNextJsonObject(const std::string& array_content, size_t& pos);
+
 }  // namespace utils
 }  // namespace orbfox
 

@@ -2,6 +2,7 @@
 
 #include "ToolbarWindow.h"
 #include "DesignSystem.h"
+#include "settings_storage.h"
 #include "tab_manager.h"
 
 #include <windowsx.h>
@@ -455,16 +456,7 @@ void ToolbarWindow::OnUrlSubmit() {
     std::string url = GetUrl();
     if (url.empty()) return;
 
-    // Add http:// if no protocol specified
-    if (url.find("://") == std::string::npos) {
-        // Check if it looks like a URL (has a dot)
-        if (url.find('.') != std::string::npos) {
-            url = "https://" + url;
-        } else {
-            // Treat as search query
-            url = "https://www.google.com/search?q=" + url;
-        }
-    }
+    url = SettingsStorage::GetInstance().ResolveAddressBarInput(url);
 
     if (on_url_submit_) {
         on_url_submit_(url);

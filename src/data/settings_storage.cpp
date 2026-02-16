@@ -99,10 +99,11 @@ void SettingsStorage::SetAskBeforeDownload(bool ask) {
     Save();
 }
 
-std::string SettingsStorage::GetSearchUrl(const std::string& query) {
-    // URL encode the query
+namespace {
+
+std::string UrlEncode(const std::string& str) {
     std::string encoded;
-    for (char c : query) {
+    for (char c : str) {
         if (std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.' || c == '~') {
             encoded += c;
         } else if (c == ' ') {
@@ -113,7 +114,59 @@ std::string SettingsStorage::GetSearchUrl(const std::string& query) {
             encoded += hex;
         }
     }
-    return "https://www.google.com/search?q=" + encoded;
+    return encoded;
+}
+
+}  // namespace
+
+std::string SettingsStorage::GetSearchUrl(const std::string& query) {
+    return "https://www.google.com/search?q=" + UrlEncode(query);
+}
+
+std::string SettingsStorage::ResolveAddressBarInput(const std::string& input) const {
+    if (input.empty()) return input;
+
+    // 1. Has scheme? Return as-is
+    if (input.find("://") != std::string::npos) {
+        return input;
+    }
+
+    // Also handle orbfox: scheme without //
+    if (input.find("orbfox:") == 0) {
+        return input;
+    }
+
+    // 2. Check for search shortcut: split on first space
+    size_t space_pos = input.find(' ');
+    if (space_pos != std::string::npos) {
+        std::string prefix = input.substr(0, space_pos);
+        std::string query = input.substr(space_pos + 1);
+
+        // Copy shortcuts under lock to avoid holding mutex during URL encoding
+        std::vector<SearchShortcut> shortcuts;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            shortcuts = settings_.search_shortcuts;
+        }
+        for (const auto& shortcut : shortcuts) {
+            if (shortcut.key == prefix) {
+                std::string url = shortcut.url_template;
+                size_t pos = url.find("%s");
+                if (pos != std::string::npos) {
+                    url.replace(pos, 2, UrlEncode(query));
+                }
+                return url;
+            }
+        }
+    }
+
+    // 3. URL-like? (has dot + no space)
+    if (input.find('.') != std::string::npos && input.find(' ') == std::string::npos) {
+        return "https://" + input;
+    }
+
+    // 4. Fallback to Google search
+    return GetSearchUrl(input);
 }
 
 std::string SettingsStorage::GetResolvedDownloadPath() const {
@@ -137,7 +190,14 @@ std::string SettingsStorage::ToJson() const {
     ss << "  \"gesture_back_enabled\": " << (settings_.gesture_back_enabled ? "true" : "false") << ",\n";
     ss << "  \"gesture_forward_enabled\": " << (settings_.gesture_forward_enabled ? "true" : "false") << ",\n";
     ss << "  \"gesture_close_tab_enabled\": " << (settings_.gesture_close_tab_enabled ? "true" : "false") << ",\n";
-    ss << "  \"gesture_reopen_tab_enabled\": " << (settings_.gesture_reopen_tab_enabled ? "true" : "false") << "\n";
+    ss << "  \"gesture_reopen_tab_enabled\": " << (settings_.gesture_reopen_tab_enabled ? "true" : "false") << ",\n";
+    ss << "  \"search_shortcuts\": [";
+    for (size_t i = 0; i < settings_.search_shortcuts.size(); ++i) {
+        if (i > 0) ss << ",";
+        ss << "\n    {\"key\": \"" << orbfox::utils::EscapeJsonString(settings_.search_shortcuts[i].key)
+           << "\", \"url_template\": \"" << orbfox::utils::EscapeJsonString(settings_.search_shortcuts[i].url_template) << "\"}";
+    }
+    ss << "\n  ]\n";
     ss << "}\n";
     return ss.str();
 }
@@ -163,6 +223,25 @@ bool SettingsStorage::FromJson(const std::string& json) {
     settings_.gesture_forward_enabled = orbfox::utils::GetJsonBool(json, "gesture_forward_enabled", settings_.gesture_forward_enabled);
     settings_.gesture_close_tab_enabled = orbfox::utils::GetJsonBool(json, "gesture_close_tab_enabled", settings_.gesture_close_tab_enabled);
     settings_.gesture_reopen_tab_enabled = orbfox::utils::GetJsonBool(json, "gesture_reopen_tab_enabled", settings_.gesture_reopen_tab_enabled);
+
+    // Parse search shortcuts (keep defaults if key is absent)
+    std::string arr = orbfox::utils::GetJsonArrayContent(json, "search_shortcuts");
+    if (!arr.empty()) {
+        std::vector<SearchShortcut> shortcuts;
+        size_t pos = 0;
+        std::string obj;
+        while (!(obj = orbfox::utils::GetNextJsonObject(arr, pos)).empty()) {
+            SearchShortcut s;
+            s.key = orbfox::utils::GetJsonString(obj, "key");
+            s.url_template = orbfox::utils::GetJsonString(obj, "url_template");
+            if (!s.key.empty() && !s.url_template.empty()) {
+                shortcuts.push_back(std::move(s));
+            }
+        }
+        if (!shortcuts.empty()) {
+            settings_.search_shortcuts = std::move(shortcuts);
+        }
+    }
 
     return true;
 }

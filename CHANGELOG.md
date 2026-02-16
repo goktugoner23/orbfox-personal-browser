@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Search Shortcuts** - Address bar shortcuts for quick searches
+  - Type a keyword + query to search specific sites (e.g. `y kitten vids` → YouTube)
+  - Ships with 3 defaults: `g` (Google), `y` (YouTube), `a` (Amazon)
+  - Manage shortcuts in orbfox://settings → Search section
+  - Add, edit, and delete custom shortcuts with key and URL template
+  - Validation: requires unique key and URL with `%s` placeholder
+  - Centralized `ResolveAddressBarInput()` replaces duplicated URL logic on both platforms
 - **Google Account & Sync** - Sign in with Google account for sync features
   - Account popover accessible from toolbar avatar button
   - User avatar display with sign-in status

@@ -530,3 +530,104 @@ TEST_F(SettingsStorageTest, EdgeCase_BooleanValueVariants) {
     EXPECT_TRUE(SettingsStorage::GetInstance().FromJson(json_false));
     EXPECT_FALSE(SettingsStorage::GetInstance().Get().restore_session);
 }
+
+// ============================================================================
+// Search Shortcuts Tests
+// ============================================================================
+
+TEST(SettingsTest, DefaultSearchShortcuts) {
+    Settings settings;
+    ASSERT_EQ(settings.search_shortcuts.size(), 3u);
+    EXPECT_EQ(settings.search_shortcuts[0].key, "g");
+    EXPECT_EQ(settings.search_shortcuts[1].key, "y");
+    EXPECT_EQ(settings.search_shortcuts[2].key, "a");
+}
+
+TEST_F(SettingsStorageTest, SearchShortcuts_ToJsonFromJson_Roundtrip) {
+    // Modify shortcuts
+    Settings custom;
+    custom.search_shortcuts = {
+        {"w", "https://en.wikipedia.org/w/index.php?search=%s"},
+        {"g", "https://www.google.com/search?q=%s"},
+    };
+    SettingsStorage::GetInstance().Set(custom);
+    std::string json = SettingsStorage::GetInstance().ToJson();
+
+    // Reset to defaults
+    Settings defaults;
+    SettingsStorage::GetInstance().Set(defaults);
+
+    // Parse saved JSON
+    EXPECT_TRUE(SettingsStorage::GetInstance().FromJson(json));
+    const auto& shortcuts = SettingsStorage::GetInstance().Get().search_shortcuts;
+    ASSERT_EQ(shortcuts.size(), 2u);
+    EXPECT_EQ(shortcuts[0].key, "w");
+    EXPECT_EQ(shortcuts[0].url_template, "https://en.wikipedia.org/w/index.php?search=%s");
+    EXPECT_EQ(shortcuts[1].key, "g");
+}
+
+TEST_F(SettingsStorageTest, SearchShortcuts_FromJsonWithoutKey_KeepsDefaults) {
+    // JSON without search_shortcuts key should keep defaults
+    std::string json = R"({"homepage_url": "https://test.com"})";
+    EXPECT_TRUE(SettingsStorage::GetInstance().FromJson(json));
+
+    const auto& shortcuts = SettingsStorage::GetInstance().Get().search_shortcuts;
+    ASSERT_EQ(shortcuts.size(), 3u);
+    EXPECT_EQ(shortcuts[0].key, "g");
+    EXPECT_EQ(shortcuts[1].key, "y");
+    EXPECT_EQ(shortcuts[2].key, "a");
+}
+
+// ============================================================================
+// ResolveAddressBarInput Tests
+// ============================================================================
+
+TEST_F(SettingsStorageTest, ResolveAddressBarInput_ShortcutMatch) {
+    std::string result = SettingsStorage::GetInstance().ResolveAddressBarInput("y kitten vids");
+    EXPECT_EQ(result, "https://www.youtube.com/results?search_query=kitten+vids");
+}
+
+TEST_F(SettingsStorageTest, ResolveAddressBarInput_GoogleFallback) {
+    std::string result = SettingsStorage::GetInstance().ResolveAddressBarInput("kitten vids");
+    EXPECT_EQ(result, "https://www.google.com/search?q=kitten+vids");
+}
+
+TEST_F(SettingsStorageTest, ResolveAddressBarInput_SchemePassthrough) {
+    EXPECT_EQ(SettingsStorage::GetInstance().ResolveAddressBarInput("https://example.com"),
+              "https://example.com");
+    EXPECT_EQ(SettingsStorage::GetInstance().ResolveAddressBarInput("http://example.com"),
+              "http://example.com");
+    EXPECT_EQ(SettingsStorage::GetInstance().ResolveAddressBarInput("orbfox://settings"),
+              "orbfox://settings");
+}
+
+TEST_F(SettingsStorageTest, ResolveAddressBarInput_UrlLikeAddsDot) {
+    EXPECT_EQ(SettingsStorage::GetInstance().ResolveAddressBarInput("example.com"),
+              "https://example.com");
+}
+
+TEST_F(SettingsStorageTest, ResolveAddressBarInput_ShortcutKeyAloneDoesNotMatch) {
+    // Just "y" with no space should NOT match shortcut — it's URL-like if it has no dot
+    std::string result = SettingsStorage::GetInstance().ResolveAddressBarInput("y");
+    EXPECT_EQ(result, "https://www.google.com/search?q=y");
+}
+
+TEST_F(SettingsStorageTest, ResolveAddressBarInput_GoogleShortcut) {
+    std::string result = SettingsStorage::GetInstance().ResolveAddressBarInput("g hello world");
+    EXPECT_EQ(result, "https://www.google.com/search?q=hello+world");
+}
+
+TEST_F(SettingsStorageTest, ResolveAddressBarInput_AmazonShortcut) {
+    std::string result = SettingsStorage::GetInstance().ResolveAddressBarInput("a wireless mouse");
+    EXPECT_EQ(result, "https://www.amazon.com/s?k=wireless+mouse");
+}
+
+TEST_F(SettingsStorageTest, ResolveAddressBarInput_UnknownPrefixWithSpace) {
+    // "z something" — z is not a shortcut, so falls through to Google search
+    std::string result = SettingsStorage::GetInstance().ResolveAddressBarInput("z something");
+    EXPECT_EQ(result, "https://www.google.com/search?q=z+something");
+}
+
+TEST_F(SettingsStorageTest, ResolveAddressBarInput_Empty) {
+    EXPECT_EQ(SettingsStorage::GetInstance().ResolveAddressBarInput(""), "");
+}

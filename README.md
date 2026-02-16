@@ -74,7 +74,7 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
   - Persistent favicon and title cache
   - Double-click to open, right-click for context menu
 - **Settings page** (orbfox://settings) - browser preferences
-  - General, Privacy, Downloads, About sections
+  - General, Search, Privacy, Downloads, Gestures, About sections
   - Gear icon in sidebar for quick access
   - Gear favicon for internal pages
 - **Collapsible sidebar** - click active panel icon to toggle
@@ -84,6 +84,9 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
 - **Find in Page** (Cmd+F) - search text within pages
   - Floating find bar with match count
   - Previous/Next navigation
+- **Search shortcuts** - Keyword shortcuts in address bar
+  - Type `y kitten vids` to search YouTube, `g query` for Google, `a item` for Amazon
+  - Add/edit/delete custom shortcuts in orbfox://settings → Search
 - **URL bar autocomplete** - suggestions from bookmarks and history
   - Domain-based filtering (shows only relevant domains)
   - Favicon display for each suggestion

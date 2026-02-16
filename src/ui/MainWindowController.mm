@@ -846,21 +846,8 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     Tab* tab = _tabManager->GetActiveTab();
     if (!tab || !tab->browser) return;
 
-    NSString* urlToLoad = url;
-
-    // Add https:// if no scheme specified
-    if (![url hasPrefix:@"http://"] && ![url hasPrefix:@"https://"] && ![url hasPrefix:@"file://"] && ![url hasPrefix:@"orbfox://"]) {
-        // Check if it looks like a URL or a search query
-        if ([url containsString:@"."] && ![url containsString:@" "]) {
-            urlToLoad = [@"https://" stringByAppendingString:url];
-        } else {
-            // Search query - use settings search URL
-            std::string searchUrl = SettingsStorage::GetSearchUrl([url UTF8String]);
-            urlToLoad = [NSString stringWithUTF8String:searchUrl.c_str()];
-        }
-    }
-
-    tab->browser->GetMainFrame()->LoadURL([urlToLoad UTF8String]);
+    std::string resolved = SettingsStorage::GetInstance().ResolveAddressBarInput([url UTF8String]);
+    tab->browser->GetMainFrame()->LoadURL(resolved);
 }
 
 - (void)goBack {

@@ -334,6 +334,146 @@ const char* kSettingsPageHtml = R"HTML(
             background: #38383d;
         }
 
+        /* Search shortcuts */
+        .shortcut-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .shortcut-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 12px;
+            background: #2e2e33;
+            border-radius: 6px;
+        }
+
+        .shortcut-key {
+            font-family: 'SF Mono', Menlo, monospace;
+            font-size: 12px;
+            font-weight: 600;
+            background: #007aff;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 4px;
+            min-width: 28px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .shortcut-url {
+            flex: 1;
+            font-size: 12px;
+            color: #999999;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .shortcut-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .shortcut-actions button {
+            background: none;
+            border: none;
+            color: #999999;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.15s ease;
+        }
+
+        .shortcut-actions button:hover {
+            background: #404045;
+            color: #e5e5e5;
+        }
+
+        .shortcut-actions button.delete:hover {
+            background: #5c2020;
+            color: #ff6b6b;
+        }
+
+        .shortcut-editor {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            padding: 12px;
+            background: #2e2e33;
+            border-radius: 6px;
+            border: 1px solid #007aff;
+        }
+
+        .shortcut-editor input[type="text"] {
+            background: #1c1c1e;
+            border: 1px solid #404045;
+            border-radius: 4px;
+            color: #e5e5e5;
+            padding: 6px 10px;
+            font-size: 13px;
+            font-family: inherit;
+        }
+
+        .shortcut-editor input[type="text"]:focus {
+            outline: none;
+            border-color: #007aff;
+        }
+
+        .shortcut-editor .key-input {
+            width: 60px;
+            font-family: 'SF Mono', Menlo, monospace;
+            text-align: center;
+        }
+
+        .shortcut-editor .url-input {
+            flex: 1;
+        }
+
+        .shortcut-editor-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .shortcut-editor-actions button {
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.15s ease;
+        }
+
+        .shortcut-editor-actions .save-btn {
+            background: #007aff;
+            color: white;
+        }
+
+        .shortcut-editor-actions .save-btn:hover {
+            background: #1a8cff;
+        }
+
+        .shortcut-editor-actions .cancel-btn {
+            background: #3a3a3c;
+            color: #e5e5e5;
+        }
+
+        .shortcut-editor-actions .cancel-btn:hover {
+            background: #48484a;
+        }
+
+        .shortcut-error {
+            color: #ff6b6b;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
         /* Toast notification */
         .toast {
             position: fixed;
@@ -400,6 +540,7 @@ const char* kSettingsPageHtml = R"HTML(
         <nav class="sidebar">
             <h1>Settings</h1>
             <a href="#general" class="active" data-section="general">General</a>
+            <a href="#search" data-section="search">Search</a>
             <a href="#privacy" data-section="privacy">Privacy</a>
             <a href="#downloads" data-section="downloads">Downloads</a>
             <a href="#gestures" data-section="gestures">Gestures</a>
@@ -460,6 +601,21 @@ const char* kSettingsPageHtml = R"HTML(
                             </div>
                         </div>
                     </div>
+                </div>
+            </section>
+
+            <!-- Search Section -->
+            <section id="search" class="section">
+                <h2>Search Shortcuts</h2>
+                <div class="setting-group">
+                    <p style="color: #999999; font-size: 13px; margin-bottom: 16px;">
+                        Type a shortcut key followed by your query in the address bar.<br>
+                        Example: <code style="background:#2e2e33;padding:2px 6px;border-radius:3px;color:#e5e5e5;">y kitten videos</code> searches YouTube for "kitten videos".
+                    </p>
+                    <div id="shortcut-list" class="shortcut-list"></div>
+                    <div id="shortcut-editor-container"></div>
+                    <div id="shortcut-error" class="shortcut-error" style="display:none;"></div>
+                    <button class="btn btn-primary" id="add_shortcut_btn" style="margin-top: 8px;">Add Shortcut</button>
                 </div>
             </section>
 
@@ -628,6 +784,108 @@ const char* kSettingsPageHtml = R"HTML(
             }
         }
 
+        // Ensure search_shortcuts defaults
+        function ensureShortcutsDefault() {
+            if (!settings.search_shortcuts || !Array.isArray(settings.search_shortcuts)) {
+                settings.search_shortcuts = [
+                    {key: 'g', url_template: 'https://www.google.com/search?q=%s'},
+                    {key: 'y', url_template: 'https://www.youtube.com/results?search_query=%s'},
+                    {key: 'a', url_template: 'https://www.amazon.com/s?k=%s'}
+                ];
+            }
+        }
+
+        // Render shortcut list
+        function renderShortcuts() {
+            ensureShortcutsDefault();
+            const list = document.getElementById('shortcut-list');
+            if (!settings.search_shortcuts.length) {
+                list.innerHTML = '<p style="color:#666;font-size:12px;">No shortcuts configured.</p>';
+                return;
+            }
+            list.innerHTML = settings.search_shortcuts.map((s, i) => `
+                <div class="shortcut-row">
+                    <span class="shortcut-key">${escapeAttr(s.key)}</span>
+                    <span class="shortcut-url">${escapeAttr(s.url_template)}</span>
+                    <div class="shortcut-actions">
+                        <button onclick="editShortcut(${i})">Edit</button>
+                        <button class="delete" onclick="deleteShortcut(${i})">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function escapeAttr(str) {
+            const el = document.createElement('span');
+            el.textContent = str;
+            return el.innerHTML;
+        }
+
+        function showShortcutEditor(index) {
+            const isEdit = index !== -1;
+            const s = isEdit ? settings.search_shortcuts[index] : {key: '', url_template: ''};
+            const container = document.getElementById('shortcut-editor-container');
+            container.innerHTML = `
+                <div class="shortcut-editor">
+                    <input type="text" class="key-input" id="editor-key" value="${escapeAttr(s.key)}" placeholder="key" maxlength="10">
+                    <input type="text" class="url-input" id="editor-url" value="${escapeAttr(s.url_template)}" placeholder="https://example.com/search?q=%s">
+                    <div class="shortcut-editor-actions">
+                        <button class="save-btn" onclick="saveShortcutEditor(${index})">Save</button>
+                        <button class="cancel-btn" onclick="hideShortcutEditor()">Cancel</button>
+                    </div>
+                </div>
+            `;
+            document.getElementById('add_shortcut_btn').style.display = 'none';
+            hideShortcutError();
+            document.getElementById('editor-key').focus();
+        }
+
+        function hideShortcutEditor() {
+            document.getElementById('shortcut-editor-container').innerHTML = '';
+            document.getElementById('add_shortcut_btn').style.display = '';
+            hideShortcutError();
+        }
+
+        function showShortcutError(msg) {
+            const el = document.getElementById('shortcut-error');
+            el.textContent = msg;
+            el.style.display = 'block';
+        }
+
+        function hideShortcutError() {
+            document.getElementById('shortcut-error').style.display = 'none';
+        }
+
+        function saveShortcutEditor(index) {
+            const key = document.getElementById('editor-key').value.trim().toLowerCase();
+            const url = document.getElementById('editor-url').value.trim();
+            if (!key) { showShortcutError('Shortcut key is required.'); return; }
+            if (!url) { showShortcutError('URL template is required.'); return; }
+            if (!url.includes('%s')) { showShortcutError('URL must contain %s placeholder.'); return; }
+            // Check for duplicate keys (excluding current index when editing)
+            const dup = settings.search_shortcuts.findIndex((s, i) => s.key === key && i !== index);
+            if (dup !== -1) { showShortcutError('A shortcut with key "' + key + '" already exists.'); return; }
+
+            if (index === -1) {
+                settings.search_shortcuts.push({key, url_template: url});
+            } else {
+                settings.search_shortcuts[index] = {key, url_template: url};
+            }
+            saveSettings();
+            hideShortcutEditor();
+            renderShortcuts();
+        }
+
+        function editShortcut(index) {
+            showShortcutEditor(index);
+        }
+
+        function deleteShortcut(index) {
+            settings.search_shortcuts.splice(index, 1);
+            saveSettings();
+            renderShortcuts();
+        }
+
         // Apply loaded settings to form elements
         function applySettingsToUI() {
             document.getElementById('homepage_url').value = settings.homepage_url || '';
@@ -650,6 +908,9 @@ const char* kSettingsPageHtml = R"HTML(
             document.getElementById('gesture_close_tab_enabled').checked = settings.gesture_close_tab_enabled !== false;
             document.getElementById('gesture_reopen_tab_enabled').checked = settings.gesture_reopen_tab_enabled !== false;
             updateGestureOptionsState();
+
+            // Search shortcuts
+            renderShortcuts();
         }
 
         // Enable/disable individual gesture options based on master toggle
@@ -789,6 +1050,11 @@ const char* kSettingsPageHtml = R"HTML(
         document.getElementById('gesture_reopen_tab_enabled').addEventListener('change', (e) => {
             settings.gesture_reopen_tab_enabled = e.target.checked;
             saveSettings();
+        });
+
+        // Add shortcut button
+        document.getElementById('add_shortcut_btn').addEventListener('click', () => {
+            showShortcutEditor(-1);
         });
 
         // Clear data button

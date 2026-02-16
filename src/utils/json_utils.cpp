@@ -118,5 +118,59 @@ std::string EscapeJsonString(const std::string& str) {
     return result;
 }
 
+std::string GetJsonArrayContent(const std::string& json, const std::string& key) {
+    size_t pos = FindKeyValue(json, key);
+    if (pos == std::string::npos || pos >= json.length() || json[pos] != '[') {
+        return "";
+    }
+    // Find matching ]
+    size_t start = pos + 1;
+    int depth = 1;
+    size_t i = start;
+    while (i < json.length() && depth > 0) {
+        if (json[i] == '[') ++depth;
+        else if (json[i] == ']') --depth;
+        else if (json[i] == '"') {
+            // Skip string contents
+            ++i;
+            while (i < json.length() && json[i] != '"') {
+                if (json[i] == '\\') ++i;  // Skip escaped char
+                ++i;
+            }
+        }
+        if (depth > 0) ++i;
+    }
+    if (depth != 0) return "";
+    return json.substr(start, i - start);
+}
+
+std::string GetNextJsonObject(const std::string& array_content, size_t& pos) {
+    // Find opening {
+    while (pos < array_content.length() && array_content[pos] != '{') {
+        ++pos;
+    }
+    if (pos >= array_content.length()) return "";
+
+    size_t start = pos;
+    int depth = 1;
+    ++pos;
+    while (pos < array_content.length() && depth > 0) {
+        if (array_content[pos] == '{') ++depth;
+        else if (array_content[pos] == '}') --depth;
+        else if (array_content[pos] == '"') {
+            // Skip string contents
+            ++pos;
+            while (pos < array_content.length() && array_content[pos] != '"') {
+                if (array_content[pos] == '\\') ++pos;
+                ++pos;
+            }
+        }
+        if (depth > 0) ++pos;
+    }
+    if (depth != 0) return "";
+    ++pos;  // Move past closing }
+    return array_content.substr(start, pos - start);
+}
+
 }  // namespace utils
 }  // namespace orbfox
