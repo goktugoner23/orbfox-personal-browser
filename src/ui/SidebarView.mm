@@ -1098,16 +1098,25 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         if (workspace->id == workspaceId) {
             for (const auto& tab : workspace->tabs) {
                 if (tab->browser) {
-                    // Remove the browser view from superview first
                     CefRefPtr<CefBrowserHost> host = tab->browser->GetHost();
                     if (host) {
-                        NSView* browserView = (__bridge NSView*)host->GetWindowHandle();
-                        if (browserView) {
-                            [browserView removeFromSuperview];
+                        // Validate the view is still in our hierarchy before using it.
+                        // GetWindowHandle() can return a stale pointer to a freed NSView.
+                        void* windowHandle = host->GetWindowHandle();
+                        if (windowHandle) {
+                            NSView* container = _windowController.browserContainer;
+                            for (NSView* subview in [container.subviews copy]) {
+                                if ((__bridge void*)subview == windowHandle) {
+                                    [subview removeFromSuperview];
+                                    break;
+                                }
+                            }
                         }
-                        // Now close the browser
                         host->CloseBrowser(true);
                     }
+                    // Null out immediately so no code path can use a stale browser reference
+                    tab->browser = nullptr;
+                    tab->client = nullptr;
                 }
             }
             break;

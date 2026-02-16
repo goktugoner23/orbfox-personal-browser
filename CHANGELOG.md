@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Tab Close Crash (SIGSEGV)** - Fixed `EXC_BAD_ACCESS` crash at `objc_retain` when closing tabs
+  - Root cause: `GetWindowHandle()` returned dangling `NSView*` pointer after CEF freed it
+  - Added `on_close_` callback to null `tab->browser` when browser is closed externally (JS `window.close()`, renderer crash)
+  - `BrowserCreatedCallback` now detects orphaned browsers (tab closed during async `CreateBrowser`) and cleans them up
+  - `performWorkspaceDeletion` now nulls `tab->browser`/`tab->client` after `CloseBrowser(true)`
+  - Defensive subview validation before using `GetWindowHandle()` in `removeBrowserView:`, `on_tab_hibernated`, and workspace deletion
+- **Auth Popup Sizing** - Fixed Google login and OAuth popups being too small and not centered
+  - Auth popups now enforce minimum 500x700 dimensions
+  - Popup centering uses the actual screen where the browser window is (multi-monitor aware)
+  - Replaced hardcoded `CGMainDisplayID()` / `GetSystemMetrics(SM_CXSCREEN)` with `PopupRectCallback` using `NSWindow.screen`
+
 ### Added
 - **Search Shortcuts** - Address bar shortcuts for quick searches
   - Type a keyword + query to search specific sites (e.g. `y kitten vids` → YouTube)

@@ -11,6 +11,11 @@
 
 #include <sstream>
 #include <filesystem>
+#include <algorithm>
+
+#if defined(PLATFORM_WIN)
+#include <windows.h>
+#endif
 
 // Callback for favicon download
 class FaviconDownloadCallback : public CefDownloadImageCallback {
@@ -111,7 +116,6 @@ bool BrowserClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
     (void)frame;
     (void)target_frame_name;
     (void)user_gesture;
-    (void)window_info;
     (void)client;
     (void)settings;
     (void)extra_info;
@@ -150,7 +154,29 @@ bool BrowserClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
         }
 
         if (isAuthPopup) {
-            // Allow the popup to open normally for authentication
+            // Ensure minimum popup dimensions so auth content isn't clipped
+            int popupWidth = 500;
+            int popupHeight = 700;
+            if (popup_features.widthSet && popup_features.width > popupWidth) {
+                popupWidth = popup_features.width;
+            }
+            if (popup_features.heightSet && popup_features.height > popupHeight) {
+                popupHeight = popup_features.height;
+            }
+
+            // Center on the screen where the browser window is
+            int screenX = 0, screenY = 0, screenW = 0, screenH = 0;
+            if (on_popup_rect_) {
+                on_popup_rect_(screenX, screenY, screenW, screenH);
+            }
+            if (screenW > 0 && screenH > 0) {
+                int x = screenX + (screenW - popupWidth) / 2;
+                int y = screenY + (screenH - popupHeight) / 2;
+                window_info.bounds = CefRect(x, y, popupWidth, popupHeight);
+            } else {
+                // Fallback: let OS position it
+                window_info.bounds = CefRect(0, 0, popupWidth, popupHeight);
+            }
             return false;  // Don't cancel - let CEF create the popup
         }
     }

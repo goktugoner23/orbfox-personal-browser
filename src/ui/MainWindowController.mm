@@ -230,13 +230,14 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         MainWindowController* strongSelf = weakSelf;
         if (!strongSelf || !tab) return;
 
-        // IMPORTANT: Capture browser reference BEFORE dispatch_async!
-        // The Tab* will be deleted immediately after this callback returns,
-        // so we must capture the ref-counted CefRefPtr here.
+        // Remove browser view synchronously — we're already on the main thread.
+        // Deferring via dispatch_async creates a race with on_tab_hibernated blocks
+        // that can close the browser and free the NSView before this block runs.
         CefRefPtr<CefBrowser> browser = tab->browser;
+        [strongSelf removeBrowserView:browser];
 
+        // Defer sidebar reload until after CloseTab finishes erasing the tab
         dispatch_async(dispatch_get_main_queue(), ^{
-            [strongSelf removeBrowserView:browser];
             [strongSelf.sidebarView reloadTabs];
         });
     };
@@ -324,26 +325,29 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         MainWindowController* strongSelf = weakSelf;
         if (!strongSelf || !tab) return;
 
-        // Capture browser reference before async
+        // Close the browser synchronously — we're already on the main thread.
+        // Deferring via dispatch_async caused UAF: the raw tab pointer captured in
+        // the block becomes dangling if the tab is closed before the block runs.
         CefRefPtr<CefBrowser> browser = tab->browser;
+        if (browser) {
+            CefRefPtr<CefBrowserHost> host = browser->GetHost();
+            if (host) {
+                void* windowHandle = host->GetWindowHandle();
+                if (windowHandle) {
+                    for (NSView* subview in [strongSelf->_browserContainer.subviews copy]) {
+                        if ((__bridge void*)subview == windowHandle) {
+                            [subview removeFromSuperview];
+                            break;
+                        }
+                    }
+                }
+                host->CloseBrowser(true);
+            }
+        }
+        tab->browser = nullptr;
+        tab->client = nullptr;
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            // Close the browser to free memory
-            if (browser) {
-                CefRefPtr<CefBrowserHost> host = browser->GetHost();
-                if (host) {
-                    NSView* browserView = (__bridge NSView*)host->GetWindowHandle();
-                    if (browserView) {
-                        [browserView removeFromSuperview];
-                    }
-                    host->CloseBrowser(true);
-                }
-            }
-            // Clear browser references (must be done on main thread after browser closes)
-            tab->browser = nullptr;
-            tab->client = nullptr;
-
-            // Update sidebar to show hibernation indicator
             [strongSelf.sidebarView reloadTabs];
         });
     };
@@ -387,27 +391,72 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         if (!strongSelf) return;
 
         Tab* tab = strongSelf.tabManager->GetTabById(tabId);
-        if (tab) {
-            tab->browser = browser;
-
-            dispatch_async(dispatch_get_main_queue(), ^{
-                // Configure the browser view
-                CefRefPtr<CefBrowserHost> host = browser->GetHost();
-                if (host) {
-                    NSView* browserView = (__bridge NSView*)host->GetWindowHandle();
-                    if (browserView) {
-                        browserView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-
-                        // Show this browser only if it's the active tab, otherwise hide it
-                        if (strongSelf.tabManager->GetActiveTab() == tab) {
-                            [strongSelf showBrowserForTab:tab];
-                        } else {
-                            // Hide the browser view for background tabs
-                            browserView.hidden = YES;
+        if (!tab) {
+            // Tab was closed while async CreateBrowser was in flight.
+            // Close the orphaned browser and remove its view.
+            CefRefPtr<CefBrowserHost> host = browser->GetHost();
+            if (host) {
+                void* windowHandle = host->GetWindowHandle();
+                if (windowHandle) {
+                    for (NSView* subview in [strongSelf->_browserContainer.subviews copy]) {
+                        if ((__bridge void*)subview == windowHandle) {
+                            [subview removeFromSuperview];
+                            break;
                         }
                     }
                 }
-            });
+                host->CloseBrowser(true);
+            }
+            return;
+        }
+
+        tab->browser = browser;
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // Configure the browser view
+            CefRefPtr<CefBrowserHost> host = browser->GetHost();
+            if (host) {
+                NSView* browserView = (__bridge NSView*)host->GetWindowHandle();
+                if (browserView) {
+                    browserView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+
+                    // Show this browser only if it's the active tab, otherwise hide it
+                    if (strongSelf.tabManager->GetActiveTab() == tab) {
+                        [strongSelf showBrowserForTab:tab];
+                    } else {
+                        // Hide the browser view for background tabs
+                        browserView.hidden = YES;
+                    }
+                }
+            }
+        });
+    });
+
+    // When browser is closed externally (JS window.close(), renderer crash, etc.),
+    // null out tab->browser so we never use a stale CefRefPtr whose native view is freed.
+    client->SetCloseCallback([weakSelf, tabId]() {
+        MainWindowController* strongSelf = weakSelf;
+        if (!strongSelf) return;
+
+        Tab* tab = strongSelf.tabManager->GetTabById(tabId);
+        if (tab) {
+            // Remove the view from container before it becomes dangling
+            if (tab->browser) {
+                CefRefPtr<CefBrowserHost> host = tab->browser->GetHost();
+                if (host) {
+                    void* windowHandle = host->GetWindowHandle();
+                    if (windowHandle) {
+                        for (NSView* subview in [strongSelf->_browserContainer.subviews copy]) {
+                            if ((__bridge void*)subview == windowHandle) {
+                                [subview removeFromSuperview];
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            tab->browser = nullptr;
+            tab->client = nullptr;
         }
     });
 
@@ -691,6 +740,18 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         });
     });
 
+    // Provide screen rect for popup centering (uses the window's current screen)
+    client->SetPopupRectCallback([weakSelf](int& x, int& y, int& w, int& h) {
+        MainWindowController* strongSelf = weakSelf;
+        NSScreen* screen = strongSelf ? strongSelf.window.screen : nil;
+        if (!screen) screen = [NSScreen mainScreen];
+        NSRect frame = screen.frame;
+        x = (int)frame.origin.x;
+        y = (int)frame.origin.y;
+        w = (int)frame.size.width;
+        h = (int)frame.size.height;
+    });
+
     // Create browser settings
     CefBrowserSettings settings;
 
@@ -707,28 +768,21 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     CefBrowserHost::CreateBrowser(window_info, client, url, settings, nullptr, nullptr);
 }
 
-- (void)removeBrowserForTab:(Tab*)tab {
-    if (!tab || !tab->browser) return;
-
-    CefRefPtr<CefBrowserHost> host = tab->browser->GetHost();
-    if (host) {
-        NSView* browserView = (__bridge NSView*)host->GetWindowHandle();
-        if (browserView) {
-            [browserView removeFromSuperview];
-        }
-        host->CloseBrowser(true);
-    }
-    tab->browser = nullptr;
-}
-
 - (void)removeBrowserView:(CefRefPtr<CefBrowser>)browser {
     if (!browser) return;
 
     CefRefPtr<CefBrowserHost> host = browser->GetHost();
     if (host) {
-        NSView* browserView = (__bridge NSView*)host->GetWindowHandle();
-        if (browserView) {
-            [browserView removeFromSuperview];
+        void* windowHandle = host->GetWindowHandle();
+        if (windowHandle) {
+            // Validate the view is still in our hierarchy before using it.
+            // GetWindowHandle() can return a stale pointer to a freed NSView.
+            for (NSView* subview in [_browserContainer.subviews copy]) {
+                if ((__bridge void*)subview == windowHandle) {
+                    [subview removeFromSuperview];
+                    break;
+                }
+            }
         }
         host->CloseBrowser(true);
     }
