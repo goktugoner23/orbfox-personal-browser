@@ -325,13 +325,30 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         MainWindowController* strongSelf = weakSelf;
         if (!strongSelf || !tab) return;
 
-        // Close the browser synchronously — we're already on the main thread.
-        // Deferring via dispatch_async caused UAF: the raw tab pointer captured in
-        // the block becomes dangling if the tab is closed before the block runs.
+        // We detach the view and null out tab pointers synchronously to avoid UAF
+        // (see previous comment about raw tab pointer in async blocks).
+        // But we delay CloseBrowser so the page can save state first.
         CefRefPtr<CefBrowser> browser = tab->browser;
         if (browser) {
             CefRefPtr<CefBrowserHost> host = browser->GetHost();
             if (host) {
+                // Notify the page it's being hidden so it can save state
+                // (e.g. YouTube saves video playback position on visibilitychange)
+                CefRefPtr<CefFrame> frame = browser->GetMainFrame();
+                if (frame) {
+                    frame->ExecuteJavaScript(
+                        "try {"
+                        "  Object.defineProperty(document, 'visibilityState', "
+                        "    {value: 'hidden', configurable: true});"
+                        "  Object.defineProperty(document, 'hidden', "
+                        "    {value: true, configurable: true});"
+                        "  document.dispatchEvent(new Event('visibilitychange'));"
+                        "  window.dispatchEvent(new PageTransitionEvent('pagehide', "
+                        "    {persisted: true}));"
+                        "} catch(e) {}",
+                        frame->GetURL(), 0);
+                }
+
                 void* windowHandle = host->GetWindowHandle();
                 if (windowHandle) {
                     for (NSView* subview in [strongSelf->_browserContainer.subviews copy]) {
@@ -341,7 +358,13 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
                         }
                     }
                 }
-                host->CloseBrowser(true);
+
+                // Delay browser close to let the page complete save operations
+                dispatch_after(
+                    dispatch_time(DISPATCH_TIME_NOW, (int64_t)(500 * NSEC_PER_MSEC)),
+                    dispatch_get_main_queue(), ^{
+                        host->CloseBrowser(true);
+                    });
             }
         }
         tab->browser = nullptr;

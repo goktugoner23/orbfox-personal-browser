@@ -18,6 +18,7 @@
 
 #include "include/cef_app.h"
 #include "include/cef_browser.h"
+#include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 
 #include <windowsx.h>
@@ -31,6 +32,20 @@
 // Defined in browser_app_win.cpp
 extern void SaveSession();
 extern BookmarkStorage* GetBookmarkStorage();
+
+namespace {
+// CefTask that closes a browser after a delay (used for hibernation)
+class DelayedBrowserClose : public CefTask {
+public:
+    explicit DelayedBrowserClose(CefRefPtr<CefBrowserHost> host) : host_(host) {}
+    void Execute() override {
+        if (host_) host_->CloseBrowser(true);
+    }
+private:
+    CefRefPtr<CefBrowserHost> host_;
+    IMPLEMENT_REFCOUNTING(DelayedBrowserClose);
+};
+}  // namespace
 
 bool MainWindow::class_registered_ = false;
 
@@ -529,11 +544,30 @@ void MainWindow::OnCreate() {
             if (tab->browser) {
                 CefRefPtr<CefBrowserHost> host = tab->browser->GetHost();
                 if (host) {
+                    // Notify the page it's being hidden so it can save state
+                    // (e.g. YouTube saves video playback position on visibilitychange)
+                    CefRefPtr<CefFrame> frame = tab->browser->GetMainFrame();
+                    if (frame) {
+                        frame->ExecuteJavaScript(
+                            "try {"
+                            "  Object.defineProperty(document, 'visibilityState', "
+                            "    {value: 'hidden', configurable: true});"
+                            "  Object.defineProperty(document, 'hidden', "
+                            "    {value: true, configurable: true});"
+                            "  document.dispatchEvent(new Event('visibilitychange'));"
+                            "  window.dispatchEvent(new PageTransitionEvent('pagehide', "
+                            "    {persisted: true}));"
+                            "} catch(e) {}",
+                            frame->GetURL(), 0);
+                    }
+
                     HWND browserHwnd = host->GetWindowHandle();
                     if (browserHwnd && IsWindow(browserHwnd)) {
                         ShowWindow(browserHwnd, SW_HIDE);
                     }
-                    host->CloseBrowser(true);
+
+                    // Delay browser close to let the page complete save operations
+                    CefPostDelayedTask(TID_UI, new DelayedBrowserClose(host), 500);
                 }
             }
             tab->browser = nullptr;
