@@ -1176,6 +1176,9 @@ void MainWindow::CreateNewTab(const std::string& url) {
             tab_manager_->SetActiveTab(tab->id);
         }
     }
+    if (toolbar_) {
+        toolbar_->FocusUrlBar();
+    }
 }
 
 void MainWindow::CloseCurrentTab() {

@@ -102,6 +102,9 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 
     // Shutdown state
     BOOL _isShuttingDown;
+
+    // Focus URL bar after async browser creation completes
+    BOOL _pendingURLBarFocus;
 }
 
 - (instancetype)initWithTabManager:(TabManager*)tabManager {
@@ -446,6 +449,10 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
                     // Show this browser only if it's the active tab, otherwise hide it
                     if (strongSelf.tabManager->GetActiveTab() == tab) {
                         [strongSelf showBrowserForTab:tab];
+                        if (strongSelf->_pendingURLBarFocus) {
+                            strongSelf->_pendingURLBarFocus = NO;
+                            [strongSelf.toolbarView focusURLField];
+                        }
                     } else {
                         // Hide the browser view for background tabs
                         browserView.hidden = YES;
@@ -846,6 +853,7 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 
 - (void)createNewTab:(NSString*)url {
     std::string urlStr = url ? [url UTF8String] : "";
+    _pendingURLBarFocus = YES;
     _tabManager->CreateTab(urlStr);
 }
 
