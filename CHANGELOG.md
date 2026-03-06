@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Title Cache Crash on Resize** - Fixed `EXC_BREAKPOINT` / `NSFastEnumerationMutationHandler` crash triggered during window resize
+  - `CacheTitle()` dispatched `[sTitleCache writeToFile:atomically:]` to a background queue while the main thread continued mutating the dictionary
+  - Dictionary mutation during enumeration caused uncaught `NSException` on dispatch queue, crashing the app
+  - Fix: take an immutable snapshot (`[sTitleCache copy]`) before dispatching to background queue
 - **Tab Close Crash (SIGSEGV)** - Fixed `EXC_BAD_ACCESS` crash at `objc_retain` when closing tabs
   - Root cause: `GetWindowHandle()` returned dangling `NSView*` pointer after CEF freed it
   - Added `on_close_` callback to null `tab->browser` when browser is closed externally (JS `window.close()`, renderer crash)

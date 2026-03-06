@@ -172,10 +172,11 @@ static void CacheTitle(NSString* urlString, NSString* title) {
 
     sTitleCache[domain] = title;
 
-    // Save to disk asynchronously
+    // Save snapshot to disk asynchronously (copy to avoid mutation during enumeration)
+    NSDictionary* snapshot = [sTitleCache copy];
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{
         NSString* path = GetTitleCachePath();
-        [sTitleCache writeToFile:path atomically:YES];
+        [snapshot writeToFile:path atomically:YES];
     });
 }
 
