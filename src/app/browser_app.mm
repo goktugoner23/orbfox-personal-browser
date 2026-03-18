@@ -87,7 +87,13 @@ void BrowserApp::OnBeforeCommandLineProcessing(
     // Disable FedCM - it's not fully supported and causes Google Sign-In to fail
     // This forces fallback to traditional iframe/popup OAuth flow
     command_line->AppendSwitchWithValue("disable-features",
-        "FedCm,FedCmAuthz,FedCmIdpSigninStatusApi,FedCmWithoutWellKnownEnforcement");
+        "FedCm,FedCmAuthz,FedCmIdpSigninStatusApi,FedCmWithoutWellKnownEnforcement,"
+        "WebBluetooth,FontationsBackend");
+
+    // Disable Bluetooth at the device layer to prevent CBCentralManager initialization.
+    // Without this, Chromium creates a CBCentralManager that registers KVO observers,
+    // and state change notifications can hit DCHECK assertions inside CEF.
+    command_line->AppendSwitch("disable-bluetooth");
 
     // Enable third-party cookie support for OAuth/authentication
     // Many sites still rely on third-party cookies for sign-in

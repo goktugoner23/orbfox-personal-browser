@@ -332,6 +332,7 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         // (see previous comment about raw tab pointer in async blocks).
         // But we delay CloseBrowser so the page can save state first.
         CefRefPtr<CefBrowser> browser = tab->browser;
+        CefRefPtr<BrowserClient> client = tab->client;
         if (browser) {
             CefRefPtr<CefBrowserHost> host = browser->GetHost();
             if (host) {
@@ -362,11 +363,21 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
                     }
                 }
 
-                // Delay browser close to let the page complete save operations
+                // Clear all callbacks on the client BEFORE the delayed close.
+                // CEF still fires callbacks (OnLoadingStateChange, OnTitleChange, etc.)
+                // during the close process — without clearing, those callbacks would
+                // try to update a tab whose browser pointer is already nullptr.
+                if (client) {
+                    client->ClearCallbacks();
+                }
+
+                // Delay browser close to let the page complete save operations.
+                // Capture client ref to keep BrowserClient alive until close completes.
                 dispatch_after(
                     dispatch_time(DISPATCH_TIME_NOW, (int64_t)(500 * NSEC_PER_MSEC)),
                     dispatch_get_main_queue(), ^{
                         host->CloseBrowser(true);
+                        (void)client;  // prevent block from releasing ref early
                     });
             }
         }

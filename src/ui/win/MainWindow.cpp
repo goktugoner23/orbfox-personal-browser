@@ -543,6 +543,7 @@ void MainWindow::OnCreate() {
             // Close browser to free memory
             if (tab->browser) {
                 CefRefPtr<CefBrowserHost> host = tab->browser->GetHost();
+                CefRefPtr<BrowserClient> client = tab->client;
                 if (host) {
                     // Notify the page it's being hidden so it can save state
                     // (e.g. YouTube saves video playback position on visibilitychange)
@@ -564,6 +565,14 @@ void MainWindow::OnCreate() {
                     HWND browserHwnd = host->GetWindowHandle();
                     if (browserHwnd && IsWindow(browserHwnd)) {
                         ShowWindow(browserHwnd, SW_HIDE);
+                    }
+
+                    // Clear all callbacks on the client BEFORE the delayed close.
+                    // CEF still fires callbacks (OnLoadingStateChange, OnTitleChange, etc.)
+                    // during the close process — without clearing, those callbacks would
+                    // try to update a tab whose browser pointer is already nullptr.
+                    if (client) {
+                        client->ClearCallbacks();
                     }
 
                     // Delay browser close to let the page complete save operations

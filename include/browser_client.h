@@ -98,6 +98,10 @@ public:
     void SetBookmarkActionCallback(BookmarkActionCallback callback) { on_bookmark_action_ = std::move(callback); }
     void SetPopupRectCallback(PopupRectCallback callback) { on_popup_rect_ = std::move(callback); }
 
+    // Clear all UI callbacks (used during hibernation to prevent callbacks from firing
+    // on a browser that is in the process of being closed)
+    void ClearCallbacks();
+
     // Update cached tracking protection setting (call from UI thread when settings change)
     void SetTrackingProtectionEnabled(bool enabled) { tracking_protection_enabled_ = enabled; }
 

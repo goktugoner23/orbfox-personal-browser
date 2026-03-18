@@ -65,6 +65,27 @@ bool IsContextMenuSuppressed() {
 
 BrowserClient::BrowserClient() = default;
 
+void BrowserClient::ClearCallbacks() {
+    on_browser_created_ = nullptr;
+    on_title_change_ = nullptr;
+    on_address_change_ = nullptr;
+    on_loading_state_change_ = nullptr;
+    on_navigation_start_ = nullptr;
+    on_close_ = nullptr;
+    on_popup_request_ = nullptr;
+    on_favicon_change_ = nullptr;
+    on_download_dialog_ = nullptr;
+    on_blocked_count_ = nullptr;
+    on_fullscreen_change_ = nullptr;
+    on_find_result_ = nullptr;
+    on_open_link_ = nullptr;
+    on_copy_to_clipboard_ = nullptr;
+    on_inspect_element_ = nullptr;
+    on_focus_url_bar_ = nullptr;
+    on_bookmark_action_ = nullptr;
+    on_popup_rect_ = nullptr;
+}
+
 // CefLifeSpanHandler methods
 
 void BrowserClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
