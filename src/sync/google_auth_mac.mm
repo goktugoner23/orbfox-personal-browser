@@ -94,6 +94,7 @@ std::string HttpPost(const std::string& url, const std::string& body,
 
         __block NSData* responseData = nil;
         __block NSError* error = nil;
+        __block NSInteger statusCode = 0;
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
         NSURLSessionDataTask* task = [[NSURLSession sharedSession]
@@ -101,12 +102,15 @@ std::string HttpPost(const std::string& url, const std::string& body,
             completionHandler:^(NSData* data, NSURLResponse* response, NSError* err) {
                 responseData = data;
                 error = err;
+                if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+                    statusCode = [(NSHTTPURLResponse*)response statusCode];
+                }
                 dispatch_semaphore_signal(sem);
             }];
         [task resume];
         dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
 
-        if (error || !responseData) {
+        if (error || !responseData || statusCode < 200 || statusCode >= 300) {
             return "";
         }
         return std::string(static_cast<const char*>(responseData.bytes), responseData.length);
@@ -126,6 +130,7 @@ std::string HttpGet(const std::string& url, const std::string& auth_token) {
 
         __block NSData* responseData = nil;
         __block NSError* error = nil;
+        __block NSInteger statusCode = 0;
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
         NSURLSessionDataTask* task = [[NSURLSession sharedSession]
@@ -133,12 +138,15 @@ std::string HttpGet(const std::string& url, const std::string& auth_token) {
             completionHandler:^(NSData* data, NSURLResponse* response, NSError* err) {
                 responseData = data;
                 error = err;
+                if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+                    statusCode = [(NSHTTPURLResponse*)response statusCode];
+                }
                 dispatch_semaphore_signal(sem);
             }];
         [task resume];
         dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
 
-        if (error || !responseData) {
+        if (error || !responseData || statusCode < 200 || statusCode >= 300) {
             return "";
         }
         return std::string(static_cast<const char*>(responseData.bytes), responseData.length);
@@ -391,21 +399,38 @@ void GoogleAuth::FetchUserProfile(AuthCallback callback) {
 }
 
 std::string GoogleAuth::GetFirebaseToken() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!is_signed_in_) return "";
+    bool needs_refresh = false;
+    bool needs_firebase_exchange = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!is_signed_in_) return "";
+        needs_refresh = tokens_.IsExpired();
+        needs_firebase_exchange = needs_refresh || tokens_.firebase_token.empty();
+    }
 
-    if (tokens_.IsExpired()) {
-        if (!RefreshAccessToken()) {
+    if (needs_refresh) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (tokens_.IsExpired() && !RefreshAccessToken()) {
             return "";
         }
     }
+
+    if (needs_firebase_exchange && !ExchangeGoogleTokenForFirebase()) {
+        return "";
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
     return tokens_.firebase_token;
 }
 
 bool GoogleAuth::ExchangeGoogleTokenForFirebase() {
     using namespace orbfox::utils;
 
-    std::string google_id_token = tokens_.id_token;
+    std::string google_id_token;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        google_id_token = tokens_.id_token;
+    }
     if (google_id_token.empty()) {
         return false;
     }
@@ -441,15 +466,18 @@ bool GoogleAuth::ExchangeGoogleTokenForFirebase() {
     }
 
     // Extract Firebase tokens
-    tokens_.firebase_token = GetJsonString(response, "idToken", "");
-    tokens_.firebase_user_id = GetJsonString(response, "localId", "");
-
-    if (tokens_.firebase_token.empty()) {
+    std::string firebase_token = GetJsonString(response, "idToken", "");
+    std::string firebase_user_id = GetJsonString(response, "localId", "");
+    if (firebase_token.empty()) {
         return false;
     }
 
-    // Update stored tokens
-    StoreTokens(tokens_);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        tokens_.firebase_token = firebase_token;
+        tokens_.firebase_user_id = firebase_user_id;
+        StoreTokens(tokens_);
+    }
     return true;
 }
 

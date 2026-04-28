@@ -80,13 +80,13 @@
 
     // Draw selection/hover background
     if (_isSelected) {
-        [[DSColors accent] colorWithAlphaComponent:0.2].set;
+        [[[DSColors accent] colorWithAlphaComponent:0.2] set];
         NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:self.bounds
                                                             xRadius:self.layer.cornerRadius
                                                             yRadius:self.layer.cornerRadius];
         [path fill];
     } else if (_isHovered) {
-        [[DSColors surface] colorWithAlphaComponent:0.5].set;
+        [[[DSColors surface] colorWithAlphaComponent:0.5] set];
         NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:self.bounds
                                                             xRadius:self.layer.cornerRadius
                                                             yRadius:self.layer.cornerRadius];

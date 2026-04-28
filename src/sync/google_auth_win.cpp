@@ -86,10 +86,13 @@ std::string HttpPost(const std::string& url, const std::string& body,
 
     wchar_t hostName[256] = {};
     wchar_t urlPath[1024] = {};
+    wchar_t extraInfo[1024] = {};
     urlComp.lpszHostName = hostName;
     urlComp.dwHostNameLength = 256;
     urlComp.lpszUrlPath = urlPath;
     urlComp.dwUrlPathLength = 1024;
+    urlComp.lpszExtraInfo = extraInfo;
+    urlComp.dwExtraInfoLength = 1024;
 
     if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &urlComp)) {
         return "";
@@ -108,7 +111,8 @@ std::string HttpPost(const std::string& url, const std::string& body,
     }
 
     DWORD flags = (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0;
-    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"POST", urlPath,
+    std::wstring pathAndQuery = std::wstring(urlPath) + extraInfo;
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"POST", pathAndQuery.c_str(),
                                             nullptr, WINHTTP_NO_REFERER,
                                             WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
     if (!hRequest) {
@@ -161,10 +165,13 @@ std::string HttpGet(const std::string& url, const std::string& auth_token) {
 
     wchar_t hostName[256] = {};
     wchar_t urlPath[1024] = {};
+    wchar_t extraInfo[1024] = {};
     urlComp.lpszHostName = hostName;
     urlComp.dwHostNameLength = 256;
     urlComp.lpszUrlPath = urlPath;
     urlComp.dwUrlPathLength = 1024;
+    urlComp.lpszExtraInfo = extraInfo;
+    urlComp.dwExtraInfoLength = 1024;
 
     if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &urlComp)) {
         return "";
@@ -183,7 +190,8 @@ std::string HttpGet(const std::string& url, const std::string& auth_token) {
     }
 
     DWORD flags = (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0;
-    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", urlPath,
+    std::wstring pathAndQuery = std::wstring(urlPath) + extraInfo;
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", pathAndQuery.c_str(),
                                             nullptr, WINHTTP_NO_REFERER,
                                             WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
     if (!hRequest) {
@@ -235,6 +243,8 @@ std::string TokensToJson(const AuthTokens& tokens) {
     ss << "\"access_token\":\"" << EscapeJsonString(tokens.access_token) << "\",";
     ss << "\"refresh_token\":\"" << EscapeJsonString(tokens.refresh_token) << "\",";
     ss << "\"id_token\":\"" << EscapeJsonString(tokens.id_token) << "\",";
+    ss << "\"firebase_token\":\"" << EscapeJsonString(tokens.firebase_token) << "\",";
+    ss << "\"firebase_user_id\":\"" << EscapeJsonString(tokens.firebase_user_id) << "\",";
     ss << "\"expires_at\":" << tokens.expires_at;
     ss << "}";
     return ss.str();
@@ -246,6 +256,8 @@ AuthTokens TokensFromJson(const std::string& json) {
     tokens.access_token = GetJsonString(json, "access_token", "");
     tokens.refresh_token = GetJsonString(json, "refresh_token", "");
     tokens.id_token = GetJsonString(json, "id_token", "");
+    tokens.firebase_token = GetJsonString(json, "firebase_token", "");
+    tokens.firebase_user_id = GetJsonString(json, "firebase_user_id", "");
     tokens.expires_at = static_cast<std::time_t>(GetJsonInt(json, "expires_at", 0));
     return tokens;
 }
@@ -429,7 +441,16 @@ void GoogleAuth::FetchUserProfile(AuthCallback callback) {
         StoreUserProfile(profile_);
 
         is_signed_in_ = true;
+    }
 
+    // Exchange Google token for Firebase token (for database access).
+    if (!ExchangeGoogleTokenForFirebase()) {
+        // Firebase exchange failed, but Google auth succeeded.
+        // Sync won't work until GetFirebaseToken can refresh the Firebase token.
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
         result.success = true;
         result.profile = profile_;
         result.tokens = tokens_;
@@ -440,6 +461,83 @@ void GoogleAuth::FetchUserProfile(AuthCallback callback) {
     }
 
     callback(result);
+}
+
+std::string GoogleAuth::GetFirebaseToken() {
+    bool needs_refresh = false;
+    bool needs_firebase_exchange = false;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!is_signed_in_) return "";
+        needs_refresh = tokens_.IsExpired();
+        needs_firebase_exchange = needs_refresh || tokens_.firebase_token.empty();
+    }
+
+    if (needs_refresh) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (tokens_.IsExpired() && !RefreshAccessToken()) {
+            return "";
+        }
+    }
+
+    if (needs_firebase_exchange && !ExchangeGoogleTokenForFirebase()) {
+        return "";
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    return tokens_.firebase_token;
+}
+
+bool GoogleAuth::ExchangeGoogleTokenForFirebase() {
+    using namespace orbfox::utils;
+
+    std::string google_id_token;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        google_id_token = tokens_.id_token;
+    }
+    if (google_id_token.empty()) {
+        return false;
+    }
+
+    std::string api_key = OAuthConfig::GetFirebaseApiKey();
+    if (api_key.empty()) {
+        return false;
+    }
+
+    std::string url = std::string(OAuthConfig::FIREBASE_AUTH_ENDPOINT) + "?key=" + api_key;
+
+    std::ostringstream body;
+    body << "{";
+    body << "\"postBody\":\"id_token=" << UrlEncode(google_id_token) << "&providerId=google.com\",";
+    body << "\"requestUri\":\"http://localhost\",";
+    body << "\"returnIdpCredential\":true,";
+    body << "\"returnSecureToken\":true";
+    body << "}";
+
+    std::string response = HttpPost(url, body.str(), "application/json");
+    if (response.empty()) {
+        return false;
+    }
+
+    std::string error = GetJsonString(response, "error", "");
+    if (!error.empty()) {
+        return false;
+    }
+
+    std::string firebase_token = GetJsonString(response, "idToken", "");
+    std::string firebase_user_id = GetJsonString(response, "localId", "");
+    if (firebase_token.empty()) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        tokens_.firebase_token = firebase_token;
+        tokens_.firebase_user_id = firebase_user_id;
+        StoreTokens(tokens_);
+    }
+    return true;
 }
 
 #endif // _WIN32

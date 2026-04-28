@@ -15,6 +15,7 @@
 #include <cstring>
 #include <fstream>
 #include <vector>
+#include <utility>
 
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
@@ -171,6 +172,22 @@ std::string UrlDecode(const std::string& value) {
         }
     }
     return result;
+}
+
+std::string EscapeHtml(const std::string& value) {
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (char c : value) {
+        switch (c) {
+            case '&': escaped += "&amp;"; break;
+            case '<': escaped += "&lt;"; break;
+            case '>': escaped += "&gt;"; break;
+            case '"': escaped += "&quot;"; break;
+            case '\'': escaped += "&#39;"; break;
+            default: escaped.push_back(c); break;
+        }
+    }
+    return escaped;
 }
 
 // Base64 URL encode (for PKCE)
@@ -502,6 +519,7 @@ p { color: #888; }
 </html>
 )";
         } else {
+            std::string escaped_error = EscapeHtml(error.empty() ? "Unknown error" : error);
             response_body = R"(
 <!DOCTYPE html>
 <html>
@@ -518,7 +536,7 @@ p { color: #888; }
 <body>
 <div class="container">
 <h1>Sign In Failed</h1>
-<p>)" + error + R"(</p>
+<p>)" + escaped_error + R"(</p>
 <p>Please close this window and try again.</p>
 </div>
 </body>
@@ -575,6 +593,9 @@ GoogleAuth::GoogleAuth() : server_(std::make_unique<LocalServer>()) {
 
 GoogleAuth::~GoogleAuth() {
     StopLocalServer();
+    if (auth_thread_.joinable()) {
+        auth_thread_.join();
+    }
 }
 
 std::string GoogleAuth::GenerateCodeVerifier() {
@@ -632,6 +653,17 @@ std::string GoogleAuth::BuildAuthUrl(int port, const std::string& state,
 }
 
 void GoogleAuth::StartSignIn(AuthCallback callback) {
+    if (auth_thread_.joinable()) {
+        if (auth_flow_active_.load()) {
+            AuthResult result;
+            result.success = false;
+            result.error_message = "Sign-in already in progress";
+            callback(result);
+            return;
+        }
+        auth_thread_.join();
+    }
+
     if (OAuthConfig::GetClientId().empty()) {
         AuthResult result;
         result.success = false;
@@ -651,16 +683,22 @@ void GoogleAuth::StartSignIn(AuthCallback callback) {
     }
 
     // Generate PKCE values
-    pending_code_verifier_ = GenerateCodeVerifier();
-    pending_state_ = GenerateState();
-    std::string code_challenge = GenerateCodeChallenge(pending_code_verifier_);
+    std::string code_verifier = GenerateCodeVerifier();
+    std::string state = GenerateState();
+    std::string code_challenge = GenerateCodeChallenge(code_verifier);
 
     // Build auth URL and open in browser
-    std::string auth_url = BuildAuthUrl(port, pending_state_, code_challenge);
+    std::string auth_url = BuildAuthUrl(port, state, code_challenge);
 
     // Use custom URL opener if set (opens in OrbFox), otherwise use system default
-    if (url_opener_) {
-        url_opener_(auth_url);
+    std::function<void(const std::string&)> url_opener;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        url_opener = url_opener_;
+    }
+
+    if (url_opener) {
+        url_opener(auth_url);
     } else {
 #ifdef _WIN32
         ShellExecuteA(nullptr, "open", auth_url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -674,9 +712,12 @@ void GoogleAuth::StartSignIn(AuthCallback callback) {
     }
 
     // Wait for callback in background thread
-    std::thread([this, port, callback]() {
+    auth_flow_active_ = true;
+    auth_thread_ = std::thread([this, port, callback = std::move(callback),
+                                state = std::move(state),
+                                code_verifier = std::move(code_verifier)]() mutable {
         std::string error;
-        std::string code = server_->WaitForCallback(pending_state_, error);
+        std::string code = server_->WaitForCallback(state, error);
         StopLocalServer();
 
         if (code.empty()) {
@@ -684,12 +725,14 @@ void GoogleAuth::StartSignIn(AuthCallback callback) {
             result.success = false;
             result.error_message = error.empty() ? "No authorization code received" : error;
             callback(result);
+            auth_flow_active_ = false;
             return;
         }
 
         // Exchange code for tokens
-        ExchangeCodeForTokens(code, pending_code_verifier_, port, callback);
-    }).detach();
+        ExchangeCodeForTokens(code, code_verifier, port, callback);
+        auth_flow_active_ = false;
+    });
 }
 
 void GoogleAuth::SignOut() {

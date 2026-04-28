@@ -234,13 +234,27 @@ bool AtomicWriteFile(const std::string& path, const std::string& content) {
         std::remove(temp_path.c_str());
         return false;
     }
-    // On Windows, rename fails if target exists — remove first
-    std::remove(path.c_str());
+#ifdef PLATFORM_WIN
+    if (ReplaceFileA(path.c_str(), temp_path.c_str(), nullptr, REPLACEFILE_WRITE_THROUGH, nullptr, nullptr)) {
+        return true;
+    }
+
+    DWORD replace_error = GetLastError();
+    if (replace_error == ERROR_FILE_NOT_FOUND || replace_error == ERROR_PATH_NOT_FOUND) {
+        if (MoveFileExA(temp_path.c_str(), path.c_str(), MOVEFILE_WRITE_THROUGH)) {
+            return true;
+        }
+    }
+
+    std::remove(temp_path.c_str());
+    return false;
+#else
     if (std::rename(temp_path.c_str(), path.c_str()) != 0) {
         std::remove(temp_path.c_str());
         return false;
     }
     return true;
+#endif
 #endif
 }
 

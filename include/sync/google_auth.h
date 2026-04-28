@@ -5,6 +5,8 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <atomic>
+#include <thread>
 
 // Google OAuth 2.0 authentication for desktop applications
 // Uses loopback redirect (localhost) for OAuth callback
@@ -86,8 +88,8 @@ private:
     // OAuth server state
     class LocalServer;
     std::unique_ptr<LocalServer> server_;
-    std::string pending_code_verifier_;
-    std::string pending_state_;
+    std::thread auth_thread_;
+    std::atomic<bool> auth_flow_active_{false};
 };
 
 // OAuth configuration - loaded from google_oauth_credentials.json (not committed to git)

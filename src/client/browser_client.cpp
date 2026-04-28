@@ -17,6 +17,43 @@
 #include <windows.h>
 #endif
 
+namespace {
+
+int HexDigitValue(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+bool DecodeQueryComponent(const std::string& encoded, std::string& decoded) {
+    decoded.clear();
+    decoded.reserve(encoded.size());
+
+    for (size_t i = 0; i < encoded.size(); ++i) {
+        if (encoded[i] == '%') {
+            if (i + 2 >= encoded.size()) {
+                return false;
+            }
+            int high = HexDigitValue(encoded[i + 1]);
+            int low = HexDigitValue(encoded[i + 2]);
+            if (high < 0 || low < 0) {
+                return false;
+            }
+            decoded.push_back(static_cast<char>((high << 4) | low));
+            i += 2;
+        } else if (encoded[i] == '+') {
+            decoded.push_back(' ');
+        } else {
+            decoded.push_back(encoded[i]);
+        }
+    }
+
+    return true;
+}
+
+}  // namespace
+
 // Callback for favicon download
 class FaviconDownloadCallback : public CefDownloadImageCallback {
 public:
@@ -25,7 +62,7 @@ public:
     FaviconDownloadCallback(std::string url, Callback callback)
         : url_(std::move(url)), callback_(std::move(callback)) {}
 
-    void OnDownloadImageFinished(const CefString& image_url,
+    void OnDownloadImageFinished(const CefString&,
                                  int http_status_code,
                                  CefRefPtr<CefImage> image) override {
         if (http_status_code == 200 && image && !image->IsEmpty()) {
@@ -97,7 +134,7 @@ void BrowserClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
     }
 }
 
-bool BrowserClient::DoClose(CefRefPtr<CefBrowser> browser) {
+bool BrowserClient::DoClose(CefRefPtr<CefBrowser>) {
     CEF_REQUIRE_UI_THREAD();
     // Allow the close
     return false;
@@ -223,7 +260,7 @@ bool BrowserClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
 
 // CefLoadHandler methods
 
-void BrowserClient::OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
+void BrowserClient::OnLoadingStateChange(CefRefPtr<CefBrowser>,
                                           bool isLoading,
                                           bool canGoBack,
                                           bool canGoForward) {
@@ -247,7 +284,7 @@ void BrowserClient::OnLoadStart(CefRefPtr<CefBrowser> browser,
     }
 }
 
-void BrowserClient::OnLoadError(CefRefPtr<CefBrowser> browser,
+void BrowserClient::OnLoadError(CefRefPtr<CefBrowser>,
                                  CefRefPtr<CefFrame> frame,
                                  ErrorCode errorCode,
                                  const CefString& errorText,
@@ -288,7 +325,7 @@ void BrowserClient::OnLoadError(CefRefPtr<CefBrowser> browser,
 
 // CefDisplayHandler methods
 
-void BrowserClient::OnTitleChange(CefRefPtr<CefBrowser> browser,
+void BrowserClient::OnTitleChange(CefRefPtr<CefBrowser>,
                                    const CefString& title) {
     CEF_REQUIRE_UI_THREAD();
 
@@ -297,7 +334,7 @@ void BrowserClient::OnTitleChange(CefRefPtr<CefBrowser> browser,
     }
 }
 
-void BrowserClient::OnAddressChange(CefRefPtr<CefBrowser> browser,
+void BrowserClient::OnAddressChange(CefRefPtr<CefBrowser>,
                                      CefRefPtr<CefFrame> frame,
                                      const CefString& url) {
     CEF_REQUIRE_UI_THREAD();
@@ -331,7 +368,7 @@ void BrowserClient::OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
     );
 }
 
-void BrowserClient::OnFullscreenModeChange(CefRefPtr<CefBrowser> browser,
+void BrowserClient::OnFullscreenModeChange(CefRefPtr<CefBrowser>,
                                            bool fullscreen) {
     CEF_REQUIRE_UI_THREAD();
 
@@ -342,11 +379,11 @@ void BrowserClient::OnFullscreenModeChange(CefRefPtr<CefBrowser> browser,
 
 // CefRequestHandler methods
 
-bool BrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
+bool BrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser>,
                                     CefRefPtr<CefFrame> frame,
                                     CefRefPtr<CefRequest> request,
-                                    bool user_gesture,
-                                    bool is_redirect) {
+                                    bool,
+                                    bool) {
     CEF_REQUIRE_UI_THREAD();
 
     std::string url = request->GetURL().ToString();
@@ -364,18 +401,9 @@ bool BrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
         } else if (action.find("open-new-tab?url=") == 0) {
             // Open URL in new tab
             std::string encoded_url = action.substr(17);  // After "open-new-tab?url="
-            // URL decode
             std::string decoded_url;
-            for (size_t i = 0; i < encoded_url.length(); ++i) {
-                if (encoded_url[i] == '%' && i + 2 < encoded_url.length()) {
-                    int hex = std::stoi(encoded_url.substr(i + 1, 2), nullptr, 16);
-                    decoded_url += static_cast<char>(hex);
-                    i += 2;
-                } else if (encoded_url[i] == '+') {
-                    decoded_url += ' ';
-                } else {
-                    decoded_url += encoded_url[i];
-                }
+            if (!DecodeQueryComponent(encoded_url, decoded_url)) {
+                return true;  // Cancel malformed internal navigation
             }
             if (on_open_link_) {
                 on_open_link_(decoded_url, false);
@@ -384,18 +412,9 @@ bool BrowserClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
         } else if (action.find("open-background?url=") == 0) {
             // Open URL in background tab
             std::string encoded_url = action.substr(20);  // After "open-background?url="
-            // URL decode
             std::string decoded_url;
-            for (size_t i = 0; i < encoded_url.length(); ++i) {
-                if (encoded_url[i] == '%' && i + 2 < encoded_url.length()) {
-                    int hex = std::stoi(encoded_url.substr(i + 1, 2), nullptr, 16);
-                    decoded_url += static_cast<char>(hex);
-                    i += 2;
-                } else if (encoded_url[i] == '+') {
-                    decoded_url += ' ';
-                } else {
-                    decoded_url += encoded_url[i];
-                }
+            if (!DecodeQueryComponent(encoded_url, decoded_url)) {
+                return true;  // Cancel malformed internal navigation
             }
             if (on_open_link_) {
                 on_open_link_(decoded_url, true);
@@ -569,13 +588,13 @@ static bool IsDomainBlocked(const std::string& domain, const std::set<std::strin
 }
 
 CefRefPtr<CefResourceRequestHandler> BrowserClient::GetResourceRequestHandler(
-    CefRefPtr<CefBrowser> browser,
-    CefRefPtr<CefFrame> frame,
-    CefRefPtr<CefRequest> request,
-    bool is_navigation,
-    bool is_download,
-    const CefString& request_initiator,
-    bool& disable_default_handling) {
+    CefRefPtr<CefBrowser>,
+    CefRefPtr<CefFrame>,
+    CefRefPtr<CefRequest>,
+    bool,
+    bool,
+    const CefString&,
+    bool&) {
     // Note: This method can be called on any thread (UI thread for navigations,
     // IO thread for sub-resources). No thread assertion here intentionally.
     // Return this to handle resource requests
@@ -583,10 +602,10 @@ CefRefPtr<CefResourceRequestHandler> BrowserClient::GetResourceRequestHandler(
 }
 
 CefResourceRequestHandler::ReturnValue BrowserClient::OnBeforeResourceLoad(
-    CefRefPtr<CefBrowser> browser,
-    CefRefPtr<CefFrame> frame,
+    CefRefPtr<CefBrowser>,
+    CefRefPtr<CefFrame>,
     CefRefPtr<CefRequest> request,
-    CefRefPtr<CefCallback> callback) {
+    CefRefPtr<CefCallback>) {
     CEF_REQUIRE_IO_THREAD();
 
     // Read tracking protection setting directly from SettingsStorage (now thread-safe)
@@ -794,7 +813,7 @@ bool BrowserClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
 
 bool BrowserClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
                                    const CefKeyEvent& event,
-                                   CefEventHandle os_event,
+                                   CefEventHandle,
                                    bool* is_keyboard_shortcut) {
     CEF_REQUIRE_UI_THREAD();
 
@@ -844,7 +863,6 @@ bool BrowserClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
         bool is_cmd = (event.modifiers & EVENTFLAG_COMMAND_DOWN) != 0;
         bool is_ctrl = (event.modifiers & EVENTFLAG_CONTROL_DOWN) != 0;
         bool is_shift = (event.modifiers & EVENTFLAG_SHIFT_DOWN) != 0;
-        bool is_alt = (event.modifiers & EVENTFLAG_ALT_DOWN) != 0;
         bool is_modifier = is_cmd || is_ctrl;
 
         if (is_modifier) {

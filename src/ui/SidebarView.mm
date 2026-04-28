@@ -1232,8 +1232,9 @@ static NSColor* NSColorFromHex(const std::string& hex) {
 
     int addedCount = 0;
     for (Tab* tab : tabs) {
-        bookmarks->AddBookmark(tab->url, tab->title, [folderName UTF8String]);
-        addedCount++;
+        if (bookmarks->AddBookmark(tab->url, tab->title, [folderName UTF8String]) > 0) {
+            addedCount++;
+        }
     }
 
     // Show confirmation
@@ -1867,6 +1868,7 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     NSString* titleCopy = title;
     NSString* folderCopy = folderStr;
     int64_t bookmarkId = entry.id;
+    __weak DSRow* weakRow = row;
 
     // Associate bookmark ID and URL with row for later lookup
     objc_setAssociatedObject(row, "bookmarkId", @(bookmarkId), OBJC_ASSOCIATION_RETAIN);
@@ -1892,13 +1894,14 @@ static NSColor* NSColorFromHex(const std::string& hex) {
     // Right click = context menu
     row.onRightClick = ^(NSEvent* event) {
         SidebarView* strongSelf = weakSelf;
-        if (!strongSelf) return;
+        DSRow* strongRow = weakRow;
+        if (!strongSelf || !strongRow) return;
         [strongSelf selectBookmark:bookmarkId];
         NSMenu* menu = [strongSelf createBookmarkContextMenu:bookmarkId
                                                          url:urlCopy
                                                        title:titleCopy
                                                       folder:folderCopy];
-        [NSMenu popUpContextMenu:menu withEvent:event forView:row];
+        [NSMenu popUpContextMenu:menu withEvent:event forView:strongRow];
     };
 
     // Middle click = open in background tab
@@ -2584,15 +2587,17 @@ static NSColor* NSColorFromHex(const std::string& hex) {
         }
 
         __weak SidebarView* weakSelf = self;
+        __weak DSHistoryRow* weakRow = row;
         NSString* urlCopy = row.url;
         int64_t entryId = entry.id;
 
         // Single click = just select/highlight (don't open)
         row.onClick = ^{
             SidebarView* strongSelf = weakSelf;
-            if (!strongSelf) return;
+            DSHistoryRow* strongRow = weakRow;
+            if (!strongSelf || !strongRow) return;
             // Just select this row visually - don't navigate
-            row.isSelected = YES;
+            strongRow.isSelected = YES;
         };
 
         // Double click = open in background tab
@@ -2604,9 +2609,10 @@ static NSColor* NSColorFromHex(const std::string& hex) {
 
         row.onRightClick = ^(NSEvent* event) {
             SidebarView* strongSelf = weakSelf;
-            if (!strongSelf) return;
+            DSHistoryRow* strongRow = weakRow;
+            if (!strongSelf || !strongRow) return;
             NSMenu* menu = [strongSelf createHistoryContextMenu:urlCopy entryId:entryId];
-            [NSMenu popUpContextMenu:menu withEvent:event forView:row];
+            [NSMenu popUpContextMenu:menu withEvent:event forView:strongRow];
         };
 
         // Middle click = open in background tab

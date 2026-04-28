@@ -18,4 +18,8 @@ struct WindowSettings {
 
     // Get the settings file path
     static std::string GetSettingsPath();
+
+    // Test-only path override to keep persistence tests out of app data.
+    static void SetStorageDirectoryForTesting(const std::string& directory);
+    static void ClearStorageDirectoryForTesting();
 };

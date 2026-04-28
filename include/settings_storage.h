@@ -74,6 +74,9 @@ private:
     SettingsStorage& operator=(const SettingsStorage&) = delete;
 
     std::string GetSettingsPath() const;
+    std::string ToJsonLocked() const;
+    [[nodiscard]] bool FromJsonLocked(const std::string& json);
+    void SaveLocked() const;
 
     mutable std::mutex mutex_;
     Settings settings_;

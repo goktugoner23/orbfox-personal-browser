@@ -17,6 +17,8 @@
 #include "session_storage.h"
 #include "DevToolsClient.h"
 
+#include <limits>
+
 // Defined in browser_app.mm
 extern void SaveSession();
 
@@ -31,6 +33,29 @@ static const CGFloat kDevToolsDefaultWidth = 420.0;
 static const CGFloat kDevToolsMinWidth = 280.0;
 static const CGFloat kDevToolsMaxWidth = 800.0;
 
+static bool ParsePositiveInt64(const std::string& text, int64_t& value) {
+    if (text.empty()) {
+        return false;
+    }
+
+    int64_t parsed = 0;
+    for (char c : text) {
+        if (c < '0' || c > '9') {
+            return false;
+        }
+        int digit = c - '0';
+        if (parsed > (std::numeric_limits<int64_t>::max() - digit) / 10) {
+            return false;
+        }
+        parsed = parsed * 10 + digit;
+    }
+
+    if (parsed <= 0) {
+        return false;
+    }
+    value = parsed;
+    return true;
+}
 
 @interface MainWindowController ()
 @property (nonatomic, readwrite) TabManager* tabManager;
@@ -55,6 +80,7 @@ static const CGFloat kDevToolsMaxWidth = 800.0;
 // Forward declare resizeDevToolsToWidth: for DevToolsDividerView
 @interface MainWindowController ()
 - (void)resizeDevToolsToWidth:(CGFloat)newWidth;
+- (NSString*)resolvedDownloadDirectory;
 @end
 
 // Implement DevToolsDividerView mouseDragged after MainWindowController is defined
@@ -448,6 +474,10 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         }
 
         tab->browser = browser;
+        CefRefPtr<CefBrowserHost> createdHost = browser->GetHost();
+        if (createdHost) {
+            createdHost->SetAudioMuted(tab->is_muted);
+        }
 
         dispatch_async(dispatch_get_main_queue(), ^{
             // Configure the browser view
@@ -719,8 +749,10 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
                 [strongSelf.sidebarView showAddBookmarkSheetWithUrl:nsUrl title:nsTitle];
             } else if (actionCopy == "edit") {
                 // Edit bookmark - show edit dialog with bookmark ID
-                int64_t bookmarkId = std::stoll(paramCopy);
-                [strongSelf.sidebarView showEditBookmarkDialog:bookmarkId];
+                int64_t bookmarkId = 0;
+                if (ParsePositiveInt64(paramCopy, bookmarkId)) {
+                    [strongSelf.sidebarView showEditBookmarkDialog:bookmarkId];
+                }
             }
         });
     });
@@ -1135,9 +1167,6 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     _devToolsWidth = kDevToolsDefaultWidth;
 
     NSView* contentView = self.window.contentView;
-    CGFloat titleBarHeight = kTitleBarHeight;
-    CGFloat browserHeight = contentView.bounds.size.height - titleBarHeight - kToolbarHeight;
-    CGFloat sidebarWidth = _sidebarView.frame.size.width;
 
     // Create divider if needed
     if (!_devToolsDivider) {
@@ -1719,7 +1748,7 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     if (bookmarks->IsBookmarked(activeTab->url)) {
         bookmarks->DeleteBookmarkByUrl(activeTab->url);
     } else {
-        bookmarks->AddBookmark(activeTab->url, activeTab->title);
+        (void)bookmarks->AddBookmark(activeTab->url, activeTab->title);
     }
 
     [_sidebarView reloadBookmarks];
@@ -1771,11 +1800,12 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         }
 
         // Create the folder
-        bookmarks->CreateFolder([folderName UTF8String]);
-        [_sidebarView reloadBookmarks];
+        if (bookmarks->CreateFolder([folderName UTF8String])) {
+            [_sidebarView reloadBookmarks];
 
-        // Show bookmarks panel to see the new folder
-        [_sidebarView showPanel:SidebarPanelFavorites];
+            // Show bookmarks panel to see the new folder
+            [_sidebarView showPanel:SidebarPanelFavorites];
+        }
     }
 }
 
@@ -1823,6 +1853,8 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         safeName = @"download";
     }
 
+    Settings downloadSettings = SettingsStorage::GetInstance().Get();
+
     // Check if this is a restart (resuming a stopped download)
     bool isRestart = DownloadManager::GetInstance().GetAndClearIsRestart();
     if (isRestart) {
@@ -1838,6 +1870,11 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
             return;
         }
         // No saved preference, fall through to show dialog
+    }
+
+    if (!downloadSettings.ask_before_download) {
+        [self saveDownloadToDefaultLocation:safeName callback:callback];
+        return;
     }
 
     // Show the dialog for new downloads or when no preference saved
@@ -1874,7 +1911,7 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 }
 
 - (void)saveDownloadToDefaultLocation:(NSString*)filename callback:(CefRefPtr<CefBeforeDownloadCallback>)callback {
-    NSString* downloadsPath = [NSHomeDirectory() stringByAppendingPathComponent:@"Downloads"];
+    NSString* downloadsPath = [self resolvedDownloadDirectory];
     NSString* fullPath = [downloadsPath stringByAppendingPathComponent:filename];
 
     // Check if file exists and add number suffix if needed
@@ -1898,13 +1935,36 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     callback->Continue([fullPath UTF8String], false);
 }
 
+- (NSString*)resolvedDownloadDirectory {
+    std::string resolvedPath = SettingsStorage::GetInstance().GetResolvedDownloadPath();
+    NSString* downloadsPath = [NSString stringWithUTF8String:resolvedPath.c_str()];
+
+    NSFileManager* fm = [NSFileManager defaultManager];
+    BOOL isDirectory = NO;
+    if (![fm fileExistsAtPath:downloadsPath isDirectory:&isDirectory] || !isDirectory) {
+        NSError* error = nil;
+        if (![fm createDirectoryAtPath:downloadsPath
+           withIntermediateDirectories:YES
+                            attributes:nil
+                                 error:&error]) {
+            downloadsPath = [NSHomeDirectory() stringByAppendingPathComponent:@"Downloads"];
+            [fm createDirectoryAtPath:downloadsPath
+           withIntermediateDirectories:YES
+                            attributes:nil
+                                 error:nil];
+        }
+    }
+
+    return downloadsPath;
+}
+
 - (void)showSavePanelForFile:(NSString*)filename
                     callback:(CefRefPtr<CefBeforeDownloadCallback>)callback
               rememberChoice:(BOOL)remember {
     (void)remember;
     NSSavePanel* savePanel = [NSSavePanel savePanel];
     savePanel.nameFieldStringValue = filename;
-    savePanel.directoryURL = [NSURL fileURLWithPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Downloads"]];
+    savePanel.directoryURL = [NSURL fileURLWithPath:[self resolvedDownloadDirectory]];
 
     [savePanel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse panelResponse) {
         if (panelResponse == NSModalResponseOK && savePanel.URL) {

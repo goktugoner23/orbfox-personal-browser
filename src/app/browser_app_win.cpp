@@ -65,6 +65,7 @@ void SaveSession() {
             savedTab.url = tab->url;
             savedTab.title = tab->title;
             savedTab.is_pinned = tab->is_pinned;
+            savedTab.is_muted = tab->is_muted;
             savedWs.tabs.push_back(savedTab);
         }
 
@@ -204,6 +205,13 @@ void BrowserApp::OnContextInitialized() {
                     if (tab) {
                         tab->title = savedTab.title;
                         tab->is_pinned = savedTab.is_pinned;
+                        tab->is_muted = savedTab.is_muted;
+                        if (tab->browser) {
+                            CefRefPtr<CefBrowserHost> host = tab->browser->GetHost();
+                            if (host) {
+                                host->SetAudioMuted(tab->is_muted);
+                            }
+                        }
                     }
 
                     g_tab_manager->SetActiveWorkspace(currentWsId);

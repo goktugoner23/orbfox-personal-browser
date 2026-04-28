@@ -6,8 +6,25 @@
 #include "utils/filesystem_utils.h"
 #include "utils/json_utils.h"
 
+namespace {
+
+std::string& StorageDirectoryOverride() {
+    static std::string directory;
+    return directory;
+}
+
+std::string GetStorageDirectory() {
+    const std::string& override_directory = StorageDirectoryOverride();
+    if (!override_directory.empty()) {
+        return override_directory;
+    }
+    return orbfox::utils::GetAppSupportPath();
+}
+
+}  // namespace
+
 std::string WindowSettings::GetSettingsPath() {
-    return orbfox::utils::GetAppSupportPath() + "/window.json";
+    return GetStorageDirectory() + "/window.json";
 }
 
 WindowSettings WindowSettings::Load() {
@@ -49,4 +66,15 @@ void WindowSettings::Save() const {
 
     // Intentionally ignore return - Save() is best-effort
     (void)orbfox::utils::AtomicWriteFile(GetSettingsPath(), ss.str());
+}
+
+void WindowSettings::SetStorageDirectoryForTesting(const std::string& directory) {
+    StorageDirectoryOverride() = directory;
+    if (!directory.empty()) {
+        orbfox::utils::EnsureDirectoryExists(directory);
+    }
+}
+
+void WindowSettings::ClearStorageDirectoryForTesting() {
+    StorageDirectoryOverride().clear();
 }

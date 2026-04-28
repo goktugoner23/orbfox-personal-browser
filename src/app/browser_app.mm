@@ -58,6 +58,7 @@ void SaveSession() {
             savedTab.url = tab->url;
             savedTab.title = tab->title;
             savedTab.is_pinned = tab->is_pinned;
+            savedTab.is_muted = tab->is_muted;
             savedWs.tabs.push_back(savedTab);
         }
 
@@ -118,11 +119,15 @@ void BrowserApp::OnContextInitialized() {
 
     // Initialize history storage
     g_history_storage = std::make_unique<HistoryStorage>();
-    g_history_storage->Initialize();
+    if (!g_history_storage->Initialize()) {
+        NSLog(@"Failed to initialize history storage");
+    }
 
     // Initialize bookmark storage
     g_bookmark_storage = std::make_unique<BookmarkStorage>();
-    g_bookmark_storage->Initialize();
+    if (!g_bookmark_storage->Initialize()) {
+        NSLog(@"Failed to initialize bookmark storage");
+    }
 
     // Initialize session storage
     g_session_storage = std::make_unique<SessionStorage>();
@@ -200,6 +205,13 @@ void BrowserApp::OnContextInitialized() {
                     if (tab) {
                         tab->title = savedTab.title;
                         tab->is_pinned = savedTab.is_pinned;
+                        tab->is_muted = savedTab.is_muted;
+                        if (tab->browser) {
+                            CefRefPtr<CefBrowserHost> host = tab->browser->GetHost();
+                            if (host) {
+                                host->SetAudioMuted(tab->is_muted);
+                            }
+                        }
                     }
 
                     g_tab_manager->SetActiveWorkspace(currentWsId);

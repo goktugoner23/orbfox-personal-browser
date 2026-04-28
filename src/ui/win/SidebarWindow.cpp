@@ -1185,6 +1185,12 @@ void SidebarWindow::OnContextMenuCommand(int cmd_id) {
         case CMD_MUTE_TAB:
             // Toggle mute state
             tab->is_muted = !tab->is_muted;
+            if (tab->browser) {
+                CefRefPtr<CefBrowserHost> host = tab->browser->GetHost();
+                if (host) {
+                    host->SetAudioMuted(tab->is_muted);
+                }
+            }
             InvalidateRect(hwnd_, nullptr, FALSE);
             break;
 

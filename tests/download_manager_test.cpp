@@ -1004,6 +1004,29 @@ TEST_F(DownloadManagerPersistenceTest, LoadFromDisk_EmptyFile_ClearsDownloads) {
     EXPECT_EQ(manager_->GetDownloads().size(), 0u);
 }
 
+TEST_F(DownloadManagerPersistenceTest, LoadFromDisk_MalformedNumbers_DoesNotThrow) {
+    std::ofstream file(test_file_);
+    file << R"([
+  {
+    "id": 999999999999999999999999999999,
+    "url": "https://test.google.com/bad.zip",
+    "original_url": "https://test.google.com/bad.zip",
+    "filename": "bad.zip",
+    "full_path": "/Users/test/Downloads/bad.zip",
+    "mime_type": "application/zip",
+    "total_bytes": --1,
+    "received_bytes": 0,
+    "percent_complete": 100,
+    "state": 1,
+    "start_time": 0,
+    "end_time": 0
+  }
+])";
+    file.close();
+
+    EXPECT_NO_THROW(manager_->LoadFromDisk(test_file_));
+}
+
 TEST_F(DownloadManagerPersistenceTest, SaveLoadRoundtrip_PreservesData) {
     // Create multiple downloads with different states
     auto item1 = CreateCompletedDownload(1);

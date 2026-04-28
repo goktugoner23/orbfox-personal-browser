@@ -2,9 +2,11 @@
 #include "utils/filesystem_utils.h"
 
 #include <algorithm>
+#include <cctype>
 #include <ctime>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -83,10 +85,19 @@ int64_t ExtractJsonInt64(const std::string& json, const std::string& key) {
     while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t')) ++pos;
     // Read number
     std::string num;
-    while (pos < json.size() && (isdigit(json[pos]) || json[pos] == '-')) {
+    while (pos < json.size() && (std::isdigit(static_cast<unsigned char>(json[pos])) || json[pos] == '-')) {
         num += json[pos++];
     }
-    return num.empty() ? 0 : std::stoll(num);
+    if (num.empty() || num == "-") {
+        return 0;
+    }
+    try {
+        size_t parsed = 0;
+        int64_t value = std::stoll(num, &parsed);
+        return parsed == num.size() ? value : 0;
+    } catch (const std::exception&) {
+        return 0;
+    }
 }
 
 }  // namespace

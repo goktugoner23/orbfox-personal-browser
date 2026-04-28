@@ -9,8 +9,47 @@
 #include "settings_storage.h"
 #include "utils/json_utils.h"
 
+#include <functional>
 #include <sstream>
 #include <thread>
+
+namespace {
+
+std::string RunStringOnMainThread(const std::function<std::string()>& work) {
+    if ([NSThread isMainThread]) {
+        return work();
+    }
+
+    __block std::string result;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        result = work();
+    });
+    return result;
+}
+
+bool RunBoolOnMainThread(const std::function<bool()>& work) {
+    if ([NSThread isMainThread]) {
+        return work();
+    }
+
+    __block bool result = false;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        result = work();
+    });
+    return result;
+}
+
+void SetBearerToken(NSMutableURLRequest* request, const std::string& token) {
+    if (token.empty()) {
+        return;
+    }
+
+    std::string auth_header = "Bearer " + token;
+    [request setValue:[NSString stringWithUTF8String:auth_header.c_str()]
+   forHTTPHeaderField:@"Authorization"];
+}
+
+}  // namespace
 
 SyncService& SyncService::GetInstance() {
     static SyncService instance;
@@ -118,7 +157,9 @@ bool SyncService::ImportBookmarksFromJson(const std::string& json) {
         std::string folder = GetJsonString(obj, "folder", "");
 
         if (!url.empty() && !storage->IsBookmarked(url)) {
-            storage->AddBookmark(url, title, folder);
+            if (storage->AddBookmark(url, title, folder) <= 0) {
+                return false;
+            }
         }
 
         pos = end + 1;
@@ -141,7 +182,9 @@ bool SyncService::ImportBookmarksFromJson(const std::string& json) {
                 std::string name = GetJsonString(obj, "name", "");
 
                 if (!name.empty() && !storage->FolderExists(name)) {
-                    storage->CreateFolder(name);
+                    if (!storage->CreateFolder(name)) {
+                        return false;
+                    }
                 }
 
                 pos = end + 1;
@@ -192,9 +235,11 @@ std::string SyncService::HttpPut(const std::string& url, const std::string& body
         request.HTTPMethod = @"PUT";
         request.HTTPBody = [NSData dataWithBytes:body.c_str() length:body.size()];
         [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+        SetBearerToken(request, token);
 
         __block NSData* responseData = nil;
         __block NSError* error = nil;
+        __block NSInteger statusCode = 0;
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
         NSURLSessionDataTask* task = [[NSURLSession sharedSession]
@@ -202,12 +247,15 @@ std::string SyncService::HttpPut(const std::string& url, const std::string& body
             completionHandler:^(NSData* data, NSURLResponse* response, NSError* err) {
                 responseData = data;
                 error = err;
+                if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+                    statusCode = [(NSHTTPURLResponse*)response statusCode];
+                }
                 dispatch_semaphore_signal(sem);
             }];
         [task resume];
         dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
 
-        if (error || !responseData) {
+        if (error || !responseData || statusCode < 200 || statusCode >= 300) {
             return "";
         }
         return std::string(static_cast<const char*>(responseData.bytes), responseData.length);
@@ -219,9 +267,11 @@ std::string SyncService::HttpGet(const std::string& url, const std::string& toke
         NSURL* nsUrl = [NSURL URLWithString:[NSString stringWithUTF8String:url.c_str()]];
         NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:nsUrl];
         request.HTTPMethod = @"GET";
+        SetBearerToken(request, token);
 
         __block NSData* responseData = nil;
         __block NSError* error = nil;
+        __block NSInteger statusCode = 0;
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
         NSURLSessionDataTask* task = [[NSURLSession sharedSession]
@@ -229,12 +279,15 @@ std::string SyncService::HttpGet(const std::string& url, const std::string& toke
             completionHandler:^(NSData* data, NSURLResponse* response, NSError* err) {
                 responseData = data;
                 error = err;
+                if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+                    statusCode = [(NSHTTPURLResponse*)response statusCode];
+                }
                 dispatch_semaphore_signal(sem);
             }];
         [task resume];
         dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC));
 
-        if (error || !responseData) {
+        if (error || !responseData || statusCode < 200 || statusCode >= 300) {
             return "";
         }
         return std::string(static_cast<const char*>(responseData.bytes), responseData.length);
@@ -263,15 +316,16 @@ void SyncService::Upload(SyncCallback callback) {
             return;
         }
 
-        // Use Firebase Realtime Database
-        // URL format: https://PROJECT_ID.firebasedatabase.app/users/USER_ID/DATA.json?auth=FIREBASE_TOKEN
+        // Use Firebase Realtime Database with Authorization header auth.
         std::string baseUrl = firebase_url_.empty()
             ? OAuthConfig::GetFirebaseDatabaseUrl()
             : firebase_url_;
 
         // Upload bookmarks
-        std::string bookmarksJson = ExportBookmarksToJson();
-        std::string bookmarksUrl = baseUrl + "/users/" + userId + "/bookmarks.json?auth=" + firebaseToken;
+        std::string bookmarksJson = RunStringOnMainThread([this]() {
+            return ExportBookmarksToJson();
+        });
+        std::string bookmarksUrl = baseUrl + "/users/" + userId + "/bookmarks.json";
         std::string bookmarksResp = HttpPut(bookmarksUrl, bookmarksJson, firebaseToken);
 
         if (!bookmarksResp.empty() && bookmarksResp.find("error") == std::string::npos) {
@@ -279,8 +333,10 @@ void SyncService::Upload(SyncCallback callback) {
         }
 
         // Upload history
-        std::string historyJson = ExportHistoryToJson();
-        std::string historyUrl = baseUrl + "/users/" + userId + "/history.json?auth=" + firebaseToken;
+        std::string historyJson = RunStringOnMainThread([this]() {
+            return ExportHistoryToJson();
+        });
+        std::string historyUrl = baseUrl + "/users/" + userId + "/history.json";
         std::string historyResp = HttpPut(historyUrl, historyJson, firebaseToken);
 
         if (!historyResp.empty() && historyResp.find("error") == std::string::npos) {
@@ -288,8 +344,10 @@ void SyncService::Upload(SyncCallback callback) {
         }
 
         // Upload settings
-        std::string settingsJson = ExportSettingsToJson();
-        std::string settingsUrl = baseUrl + "/users/" + userId + "/settings.json?auth=" + firebaseToken;
+        std::string settingsJson = RunStringOnMainThread([this]() {
+            return ExportSettingsToJson();
+        });
+        std::string settingsUrl = baseUrl + "/users/" + userId + "/settings.json";
         std::string settingsResp = HttpPut(settingsUrl, settingsJson, firebaseToken);
 
         if (!settingsResp.empty() && settingsResp.find("error") == std::string::npos) {
@@ -334,31 +392,37 @@ void SyncService::Download(SyncCallback callback) {
             : firebase_url_;
 
         // Download and import bookmarks
-        std::string bookmarksUrl = baseUrl + "/users/" + userId + "/bookmarks.json?auth=" + firebaseToken;
+        std::string bookmarksUrl = baseUrl + "/users/" + userId + "/bookmarks.json";
         std::string bookmarksJson = HttpGet(bookmarksUrl, firebaseToken);
 
         if (!bookmarksJson.empty() && bookmarksJson != "null") {
-            if (ImportBookmarksFromJson(bookmarksJson)) {
+            if (RunBoolOnMainThread([this, bookmarksJson]() {
+                    return ImportBookmarksFromJson(bookmarksJson);
+                })) {
                 result.bookmarks_synced = 1;
             }
         }
 
         // Download and import history
-        std::string historyUrl = baseUrl + "/users/" + userId + "/history.json?auth=" + firebaseToken;
+        std::string historyUrl = baseUrl + "/users/" + userId + "/history.json";
         std::string historyJson = HttpGet(historyUrl, firebaseToken);
 
         if (!historyJson.empty() && historyJson != "null") {
-            if (ImportHistoryFromJson(historyJson)) {
+            if (RunBoolOnMainThread([this, historyJson]() {
+                    return ImportHistoryFromJson(historyJson);
+                })) {
                 result.history_synced = 1;
             }
         }
 
         // Download and import settings
-        std::string settingsUrl = baseUrl + "/users/" + userId + "/settings.json?auth=" + firebaseToken;
+        std::string settingsUrl = baseUrl + "/users/" + userId + "/settings.json";
         std::string settingsJson = HttpGet(settingsUrl, firebaseToken);
 
         if (!settingsJson.empty() && settingsJson != "null") {
-            if (ImportSettingsFromJson(settingsJson)) {
+            if (RunBoolOnMainThread([this, settingsJson]() {
+                    return ImportSettingsFromJson(settingsJson);
+                })) {
                 result.settings_synced = true;
             }
         }

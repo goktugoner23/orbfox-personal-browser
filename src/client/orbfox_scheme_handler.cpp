@@ -10,9 +10,49 @@
 
 #include "include/cef_parser.h"
 
+#include <cctype>
+#include <limits>
 #include <sstream>
 
 namespace {
+
+std::string GetQueryValue(const std::string& query, const std::string& key) {
+    size_t pos = 0;
+    while (pos <= query.size()) {
+        size_t next = query.find('&', pos);
+        std::string param = query.substr(pos, next == std::string::npos ? std::string::npos : next - pos);
+        size_t equals = param.find('=');
+        if (equals != std::string::npos && param.substr(0, equals) == key) {
+            return param.substr(equals + 1);
+        }
+        if (next == std::string::npos) {
+            break;
+        }
+        pos = next + 1;
+    }
+    return "";
+}
+
+bool TryParseNonNegativeInt64(const std::string& value, int64_t& parsed_value) {
+    if (value.empty()) {
+        return false;
+    }
+
+    int64_t result = 0;
+    for (char c : value) {
+        if (!std::isdigit(static_cast<unsigned char>(c))) {
+            return false;
+        }
+        int digit = c - '0';
+        if (result > (std::numeric_limits<int64_t>::max() - digit) / 10) {
+            return false;
+        }
+        result = result * 10 + digit;
+    }
+
+    parsed_value = result;
+    return true;
+}
 
 // Settings page HTML - matches OrbFox dark theme
 const char* kSettingsPageHtml = R"HTML(
@@ -1476,10 +1516,10 @@ const char* kBookmarksPageHtml = R"HTML(
 }  // namespace
 
 CefRefPtr<CefResourceHandler> OrbfoxSchemeHandlerFactory::Create(
-    CefRefPtr<CefBrowser> browser,
-    CefRefPtr<CefFrame> frame,
-    const CefString& scheme_name,
-    CefRefPtr<CefRequest> request) {
+    CefRefPtr<CefBrowser>,
+    CefRefPtr<CefFrame>,
+    const CefString&,
+    CefRefPtr<CefRequest>) {
     return new OrbfoxResourceHandler();
 }
 
@@ -1487,7 +1527,7 @@ OrbfoxResourceHandler::OrbfoxResourceHandler() = default;
 
 bool OrbfoxResourceHandler::Open(CefRefPtr<CefRequest> request,
                                   bool& handle_request,
-                                  CefRefPtr<CefCallback> callback) {
+                                  CefRefPtr<CefCallback>) {
     handle_request = true;
 
     std::string url = request->GetURL().ToString();
@@ -1502,8 +1542,10 @@ bool OrbfoxResourceHandler::Open(CefRefPtr<CefRequest> request,
     }
 
     // Remove query string if present
+    std::string query;
     size_t query_pos = path.find('?');
     if (query_pos != std::string::npos) {
+        query = path.substr(query_pos + 1);
         path = path.substr(0, query_pos);
     }
 
@@ -1582,10 +1624,8 @@ bool OrbfoxResourceHandler::Open(CefRefPtr<CefRequest> request,
         HandleBookmarksApiList();
     } else if (path.find("bookmarks/action/delete") == 0) {
         // Handle delete action
-        size_t id_pos = path.find("id=");
-        if (id_pos != std::string::npos) {
-            std::string id_str = path.substr(id_pos + 3);
-            int64_t bookmark_id = std::stoll(id_str);
+        int64_t bookmark_id = 0;
+        if (TryParseNonNegativeInt64(GetQueryValue(query, "id"), bookmark_id) && bookmark_id > 0) {
             BookmarkStorage* storage = GetBookmarkStorage();
             if (storage) {
                 storage->DeleteBookmark(bookmark_id);
@@ -1610,7 +1650,7 @@ bool OrbfoxResourceHandler::Open(CefRefPtr<CefRequest> request,
 
 void OrbfoxResourceHandler::GetResponseHeaders(CefRefPtr<CefResponse> response,
                                                 int64_t& response_length,
-                                                CefString& redirectUrl) {
+                                                CefString&) {
     response->SetMimeType(mime_type_);
     response->SetStatus(status_code_);
 
@@ -1623,7 +1663,7 @@ void OrbfoxResourceHandler::GetResponseHeaders(CefRefPtr<CefResponse> response,
 bool OrbfoxResourceHandler::Read(void* data_out,
                                   int bytes_to_read,
                                   int& bytes_read,
-                                  CefRefPtr<CefResourceReadCallback> callback) {
+                                  CefRefPtr<CefResourceReadCallback>) {
     if (offset_ >= data_.size()) {
         bytes_read = 0;
         return false;

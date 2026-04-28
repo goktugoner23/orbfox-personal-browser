@@ -974,6 +974,10 @@ void MainWindow::CreateBrowserForTab(int tab_id, const std::string& url) {
             Tab* t = tab_manager_->GetTabById(tab_id);
             if (t) {
                 t->browser = browser;
+                CefRefPtr<CefBrowserHost> host = browser->GetHost();
+                if (host) {
+                    host->SetAudioMuted(t->is_muted);
+                }
             }
         }
         if (on_browser_created_) {
@@ -1047,7 +1051,7 @@ void MainWindow::CreateBrowserForTab(int tab_id, const std::string& url) {
             if (active) {
                 BookmarkStorage* storage = GetBookmarkStorage();
                 if (storage) {
-                    storage->AddBookmark(active->title, active->url, 0);
+                    storage->AddBookmark(active->url, active->title);
                     if (sidebar_) {
                         sidebar_->RefreshTabList();
                     }
@@ -1060,7 +1064,7 @@ void MainWindow::CreateBrowserForTab(int tab_id, const std::string& url) {
             std::string title = (tabPos != std::string::npos) ? param.substr(tabPos + 1) : url;
             BookmarkStorage* storage = GetBookmarkStorage();
             if (storage) {
-                storage->AddBookmark(title, url, 0);
+                storage->AddBookmark(url, title);
             }
         }
     });

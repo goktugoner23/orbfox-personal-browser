@@ -57,6 +57,10 @@ public:
     // Auto-save session periodically (call from timer)
     void AutoSave(const SavedSession& session);
 
+    // Test-only path override to keep persistence tests out of app data.
+    static void SetStorageDirectoryForTesting(const std::string& directory);
+    static void ClearStorageDirectoryForTesting();
+
 private:
     static std::string GetSessionPath();
     static std::string GetCrashLockPath();

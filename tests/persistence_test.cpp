@@ -6,11 +6,32 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <string>
 #ifdef _WIN32
 #include <process.h>
 #else
 #include <unistd.h>
 #endif
+
+namespace {
+
+std::string MakeUniqueTestDirectory(const std::string& prefix) {
+#ifdef _WIN32
+    std::filesystem::path base_dir = std::filesystem::temp_directory_path();
+    const int process_id = _getpid();
+#else
+    std::filesystem::path base_dir = "/tmp";
+    const int process_id = getpid();
+#endif
+
+    std::filesystem::path test_dir =
+        base_dir / (prefix + std::to_string(process_id) + "_" +
+                    std::to_string(std::chrono::system_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(test_dir);
+    return test_dir.string();
+}
+
+}  // namespace
 
 // ============================================================================
 // HistoryStorage Tests
@@ -249,14 +270,19 @@ TEST_F(HistoryStorageTest, ClearHistoryBefore_ZeroCutoff_NoEffect) {
 class SessionStorageTest : public ::testing::Test {
 protected:
     void SetUp() override {
+        test_dir_ = MakeUniqueTestDirectory("orbfox_test_session_");
+        SessionStorage::SetStorageDirectoryForTesting(test_dir_);
         storage_ = std::make_unique<SessionStorage>();
     }
 
     void TearDown() override {
         storage_.reset();
+        SessionStorage::ClearStorageDirectoryForTesting();
+        std::filesystem::remove_all(test_dir_);
     }
 
     std::unique_ptr<SessionStorage> storage_;
+    std::string test_dir_;
 };
 
 TEST(SavedTabTest, DefaultValues) {
@@ -441,7 +467,22 @@ TEST_F(SessionStorageTest, Save_WithSpecialCharacters) {
 // WindowSettings Tests
 // ============================================================================
 
-TEST(WindowSettingsTest, DefaultValues) {
+class WindowSettingsTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        test_dir_ = MakeUniqueTestDirectory("orbfox_test_window_");
+        WindowSettings::SetStorageDirectoryForTesting(test_dir_);
+    }
+
+    void TearDown() override {
+        WindowSettings::ClearStorageDirectoryForTesting();
+        std::filesystem::remove_all(test_dir_);
+    }
+
+    std::string test_dir_;
+};
+
+TEST_F(WindowSettingsTest, DefaultValues) {
     WindowSettings settings;
 
     // Check default values (from header: window_settings.h)
@@ -452,7 +493,7 @@ TEST(WindowSettingsTest, DefaultValues) {
     EXPECT_FALSE(settings.maximized);
 }
 
-TEST(WindowSettingsTest, LoadSave_Roundtrip) {
+TEST_F(WindowSettingsTest, LoadSave_Roundtrip) {
     WindowSettings original;
     original.x = 200;
     original.y = 150;
@@ -470,7 +511,7 @@ TEST(WindowSettingsTest, LoadSave_Roundtrip) {
     EXPECT_EQ(loaded.maximized, original.maximized);
 }
 
-TEST(WindowSettingsTest, Load_SanitizesSmallWidth) {
+TEST_F(WindowSettingsTest, Load_SanitizesSmallWidth) {
     // Create settings file with invalid values
     std::ofstream file(WindowSettings::GetSettingsPath());
     file << R"({"x":0,"y":0,"width":100,"height":600,"maximized":false})";
@@ -482,7 +523,7 @@ TEST(WindowSettingsTest, Load_SanitizesSmallWidth) {
     EXPECT_EQ(loaded.width, 400);
 }
 
-TEST(WindowSettingsTest, Load_SanitizesSmallHeight) {
+TEST_F(WindowSettingsTest, Load_SanitizesSmallHeight) {
     std::ofstream file(WindowSettings::GetSettingsPath());
     file << R"({"x":0,"y":0,"width":800,"height":100,"maximized":false})";
     file.close();
@@ -493,7 +534,7 @@ TEST(WindowSettingsTest, Load_SanitizesSmallHeight) {
     EXPECT_EQ(loaded.height, 300);
 }
 
-TEST(WindowSettingsTest, Load_SanitizesLargeWidth) {
+TEST_F(WindowSettingsTest, Load_SanitizesLargeWidth) {
     std::ofstream file(WindowSettings::GetSettingsPath());
     file << R"({"x":0,"y":0,"width":10000,"height":600,"maximized":false})";
     file.close();
@@ -504,7 +545,7 @@ TEST(WindowSettingsTest, Load_SanitizesLargeWidth) {
     EXPECT_EQ(loaded.width, 4096);
 }
 
-TEST(WindowSettingsTest, Load_SanitizesLargeHeight) {
+TEST_F(WindowSettingsTest, Load_SanitizesLargeHeight) {
     std::ofstream file(WindowSettings::GetSettingsPath());
     file << R"({"x":0,"y":0,"width":800,"height":10000,"maximized":false})";
     file.close();
@@ -515,7 +556,7 @@ TEST(WindowSettingsTest, Load_SanitizesLargeHeight) {
     EXPECT_EQ(loaded.height, 4096);
 }
 
-TEST(WindowSettingsTest, Load_MissingFile_ReturnsDefaults) {
+TEST_F(WindowSettingsTest, Load_MissingFile_ReturnsDefaults) {
     // Remove the settings file if it exists
     std::filesystem::remove(WindowSettings::GetSettingsPath());
 
@@ -526,7 +567,7 @@ TEST(WindowSettingsTest, Load_MissingFile_ReturnsDefaults) {
     EXPECT_EQ(loaded.height, 800);
 }
 
-TEST(WindowSettingsTest, Load_MalformedJson_ReturnsDefaults) {
+TEST_F(WindowSettingsTest, Load_MalformedJson_ReturnsDefaults) {
     std::ofstream file(WindowSettings::GetSettingsPath());
     file << "not valid json {{{";
     file.close();
@@ -538,7 +579,7 @@ TEST(WindowSettingsTest, Load_MalformedJson_ReturnsDefaults) {
     EXPECT_EQ(loaded.height, 800);
 }
 
-TEST(WindowSettingsTest, Load_PartialJson_UsesDefaults) {
+TEST_F(WindowSettingsTest, Load_PartialJson_UsesDefaults) {
     std::ofstream file(WindowSettings::GetSettingsPath());
     file << R"({"x":500,"y":300})";  // Missing width/height
     file.close();
@@ -552,7 +593,7 @@ TEST(WindowSettingsTest, Load_PartialJson_UsesDefaults) {
     EXPECT_EQ(loaded.height, 800);
 }
 
-TEST(WindowSettingsTest, Load_NegativePosition_Allowed) {
+TEST_F(WindowSettingsTest, Load_NegativePosition_Allowed) {
     std::ofstream file(WindowSettings::GetSettingsPath());
     file << R"({"x":-100,"y":-50,"width":800,"height":600,"maximized":false})";
     file.close();
@@ -568,7 +609,24 @@ TEST(WindowSettingsTest, Load_NegativePosition_Allowed) {
 // Integration: Multiple Persistence Systems
 // ============================================================================
 
-TEST(PersistenceIntegrationTest, WindowSettingsRoundtrip) {
+class PersistenceIntegrationTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        test_dir_ = MakeUniqueTestDirectory("orbfox_test_persistence_");
+        SessionStorage::SetStorageDirectoryForTesting(test_dir_);
+        WindowSettings::SetStorageDirectoryForTesting(test_dir_);
+    }
+
+    void TearDown() override {
+        SessionStorage::ClearStorageDirectoryForTesting();
+        WindowSettings::ClearStorageDirectoryForTesting();
+        std::filesystem::remove_all(test_dir_);
+    }
+
+    std::string test_dir_;
+};
+
+TEST_F(PersistenceIntegrationTest, WindowSettingsRoundtrip) {
     // Test that WindowSettings save/load works
     WindowSettings ws;
     ws.x = 999;
@@ -585,7 +643,7 @@ TEST(PersistenceIntegrationTest, WindowSettingsRoundtrip) {
 }
 
 // Test that all persistence systems work independently
-TEST(PersistenceIntegrationTest, AllSystemsIndependent) {
+TEST_F(PersistenceIntegrationTest, AllSystemsIndependent) {
     // Test that WindowSettings, SessionStorage, and HistoryStorage
     // can all be used together without interference
 

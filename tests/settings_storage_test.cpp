@@ -247,7 +247,7 @@ TEST_F(SettingsStorageTest, ToJson_EscapesBackslash) {
 
     std::string json = SettingsStorage::GetInstance().ToJson();
 
-    // Backslashes should be escaped as \\
+    // Backslashes should be escaped in the JSON output.
     EXPECT_TRUE(json.find("\\\\") != std::string::npos);
 }
 

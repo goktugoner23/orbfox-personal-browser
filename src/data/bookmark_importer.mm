@@ -237,8 +237,11 @@ static void ParseChromeBookmarkNode(const std::string& json, size_t& pos,
                 if (storage->IsBookmarked(url)) {
                     skipped++;
                 } else {
-                    storage->AddBookmark(url, name, folder_name);
-                    imported++;
+                    if (storage->AddBookmark(url, name, folder_name) > 0) {
+                        imported++;
+                    } else {
+                        skipped++;
+                    }
                 }
             }
 
@@ -272,7 +275,10 @@ ImportResult BookmarkImporter::ParseChromeBookmarks(const std::string& path, con
 
     // Create folder if it doesn't exist
     if (!folder_name.empty() && !storage->FolderExists(folder_name)) {
-        storage->CreateFolder(folder_name);
+        if (!storage->CreateFolder(folder_name)) {
+            result.error_message = "Could not create import folder";
+            return result;
+        }
     }
 
     size_t pos = 0;
@@ -302,7 +308,10 @@ ImportResult BookmarkImporter::ParseSafariBookmarks(const std::string& path, con
 
         // Create folder if needed
         if (!folder_name.empty() && !storage->FolderExists(folder_name)) {
-            storage->CreateFolder(folder_name);
+            if (!storage->CreateFolder(folder_name)) {
+                result.error_message = "Could not create import folder";
+                return result;
+            }
         }
 
         // Safari bookmarks are nested under "Children" arrays
@@ -330,8 +339,11 @@ ImportResult BookmarkImporter::ParseSafariBookmarks(const std::string& path, con
                         if (storage->IsBookmarked(url)) {
                             result.skipped_count++;
                         } else {
-                            storage->AddBookmark(url, name, folder_name);
-                            result.imported_count++;
+                            if (storage->AddBookmark(url, name, folder_name) > 0) {
+                                result.imported_count++;
+                            } else {
+                                result.skipped_count++;
+                            }
                         }
                     }
                 } else if ([type isEqualToString:@"WebBookmarkTypeList"]) {
@@ -383,7 +395,12 @@ ImportResult BookmarkImporter::ParseFirefoxBookmarks(const std::string& path, co
 
     // Create folder if needed
     if (!folder_name.empty() && !storage->FolderExists(folder_name)) {
-        storage->CreateFolder(folder_name);
+        if (!storage->CreateFolder(folder_name)) {
+            sqlite3_close(db);
+            fs::remove(temp_db);
+            result.error_message = "Could not create import folder";
+            return result;
+        }
     }
 
     // Query bookmarks from Firefox places database
@@ -416,8 +433,11 @@ ImportResult BookmarkImporter::ParseFirefoxBookmarks(const std::string& path, co
             if (storage->IsBookmarked(url_str)) {
                 result.skipped_count++;
             } else {
-                storage->AddBookmark(url_str, title_str, folder_name);
-                result.imported_count++;
+                if (storage->AddBookmark(url_str, title_str, folder_name) > 0) {
+                    result.imported_count++;
+                } else {
+                    result.skipped_count++;
+                }
             }
         }
     }

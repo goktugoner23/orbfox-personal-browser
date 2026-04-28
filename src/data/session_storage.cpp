@@ -9,8 +9,25 @@
 #include "utils/filesystem_utils.h"
 #include "utils/json_utils.h"
 
+namespace {
+
+std::string& StorageDirectoryOverride() {
+    static std::string directory;
+    return directory;
+}
+
+std::string GetStorageDirectory() {
+    const std::string& override_directory = StorageDirectoryOverride();
+    if (!override_directory.empty()) {
+        return override_directory;
+    }
+    return orbfox::utils::GetAppSupportPath();
+}
+
+}  // namespace
+
 std::string SessionStorage::GetSessionPath() {
-    return orbfox::utils::GetAppSupportPath() + "/session.json";
+    return GetStorageDirectory() + "/session.json";
 }
 
 void SessionStorage::Save(const SavedSession& session) {
@@ -137,7 +154,7 @@ void SessionStorage::Clear() {
 }
 
 std::string SessionStorage::GetCrashLockPath() {
-    return orbfox::utils::GetAppSupportPath() + "/running.lock";
+    return GetStorageDirectory() + "/running.lock";
 }
 
 void SessionStorage::MarkRunning() {
@@ -166,7 +183,7 @@ void SessionStorage::AutoSave(const SavedSession& session) {
 }
 
 std::string SessionStorage::GetCrashReportPath() {
-    return orbfox::utils::GetAppSupportPath() + "/crash_report.txt";
+    return GetStorageDirectory() + "/crash_report.txt";
 }
 
 void SessionStorage::WriteCrashReport(const SavedSession& session) {
@@ -223,4 +240,15 @@ std::string SessionStorage::GetLastCrashReport() {
 
 void SessionStorage::ClearCrashReports() {
     std::remove(GetCrashReportPath().c_str());
+}
+
+void SessionStorage::SetStorageDirectoryForTesting(const std::string& directory) {
+    StorageDirectoryOverride() = directory;
+    if (!directory.empty()) {
+        orbfox::utils::EnsureDirectoryExists(directory);
+    }
+}
+
+void SessionStorage::ClearStorageDirectoryForTesting() {
+    StorageDirectoryOverride().clear();
 }
