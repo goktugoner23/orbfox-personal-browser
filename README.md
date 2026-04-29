@@ -135,7 +135,8 @@ The Chromium Embedded Framework (CEF) binaries are **not included** in this repo
 |-----------|---------|
 | CEF | `144.0.11+ge135be2+chromium-144.0.7559.97` |
 | Chromium | `144.0.7559.97` |
-| Branch | `144` |
+| CEF source branch | `7559` |
+| CEF major | `144` |
 
 Both macOS and Windows builds **must** use the same CEF version for consistency.
 
@@ -151,6 +152,47 @@ Both macOS and Windows builds **must** use the same CEF version for consistency.
    tar -xjf cef_binary_144.0.11*.tar.bz2
    mv cef_binary_144.0.11* cef
    ```
+
+#### Proprietary-codec build
+
+The official standard CEF downloads do not enable proprietary codecs such as H.264/AAC. Sites that serve MP4/HLS media, including X/Twitter video previews, can show generic media playback failures with that build.
+
+For a macOS CEF build that matches this repo's pinned CEF commit and enables those codecs:
+
+```bash
+scripts/build-cef-proprietary-macos.sh
+```
+
+The script uses CEF branch `7559` and the exact CEF commit from the current `cef/README.txt`, with:
+
+```bash
+GN_DEFINES="is_official_build=true proprietary_codecs=true ffmpeg_branding=Chrome symbol_level=0 blink_symbol_level=0 v8_symbol_level=0"
+```
+
+Chromium/CEF source builds are large. Use an external drive with at least 200 GiB free and a path with no spaces:
+
+```bash
+BUILD_ROOT=/Volumes/OrbFoxCEF/orbfox-cef-proprietary scripts/build-cef-proprietary-macos.sh
+```
+
+If the external drive is formatted as ExFAT, do not build directly on it. Chromium has many small files, and large ExFAT allocation blocks can consume far more space than expected. Create a case-sensitive APFS sparsebundle on the external drive, mount it at a path without spaces, and build inside that mount:
+
+```bash
+mkdir -p "/Volumes/Extreme SSD/orbfoxcef"
+hdiutil create -size 300g -type SPARSEBUNDLE -fs "Case-sensitive APFS" -volname orbfoxcef "/Volumes/Extreme SSD/orbfoxcef/orbfoxcef.sparsebundle"
+hdiutil attach "/Volumes/Extreme SSD/orbfoxcef/orbfoxcef.sparsebundle" -mountpoint /Volumes/orbfoxcef
+BUILD_ROOT=/Volumes/orbfoxcef/build scripts/build-cef-proprietary-macos.sh
+```
+
+The script writes outside the repo and leaves the existing `cef/` directory untouched until you explicitly replace it with the generated distribution.
+
+After the build completes, use the generated archive from:
+
+```bash
+$BUILD_ROOT/chromium_git/chromium/src/cef/binary_distrib/
+```
+
+Then replace the repo-local `cef/` directory with the extracted proprietary-codec distribution before rebuilding OrbFox. Enabling and distributing proprietary codecs may require separate patent/license clearance.
 
 ### Windows (x64)
 
