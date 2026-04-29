@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -46,6 +47,9 @@ public:
 
     Settings Get() const;  // Returns a copy for thread safety
     void Set(const Settings& settings);
+    bool IsTrackingProtectionEnabled() const {
+        return tracking_protection_enabled_.load(std::memory_order_relaxed);
+    }
 
     // Individual setters
     void SetHomepage(const std::string& url);
@@ -80,4 +84,5 @@ private:
 
     mutable std::mutex mutex_;
     Settings settings_;
+    std::atomic<bool> tracking_protection_enabled_{true};
 };

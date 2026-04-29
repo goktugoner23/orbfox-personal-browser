@@ -6,7 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Session Restore Memory Usage** - Restored sessions now lazy-load inactive tabs
+  - Saved tabs are recreated as hibernated placeholders instead of immediately creating a CEF browser for every tab
+  - Only the selected tab is woken on startup, reducing renderer process count and startup RSS for multi-tab sessions
+  - Background tabs now receive activity timestamps so they become eligible for automatic hibernation
+- **Favicon Cache Memory Usage** - Sidebar favicons are now loaded lazily into a bounded `NSCache`
+  - Avoids eagerly decoding every cached PNG at startup
+  - Caps in-memory favicon storage to prevent unbounded growth across long browsing sessions
+
 ### Fixed
+- **Download Callback Retention** - Completed, canceled, and interrupted downloads now release stored CEF cancel callbacks
+- **Tracking Protection Request Overhead** - Resource filtering now reads an atomic tracking-protection flag instead of copying full settings on every request
+- **Closed Tab State Cleanup** - Closing tabs now clears stale loading-state dictionaries keyed by tab ID
 - **Title Cache Crash on Resize** - Fixed `EXC_BREAKPOINT` / `NSFastEnumerationMutationHandler` crash triggered during window resize
   - `CacheTitle()` dispatched `[sTitleCache writeToFile:atomically:]` to a background queue while the main thread continued mutating the dictionary
   - Dictionary mutation during enumeration caused uncaught `NSException` on dispatch queue, crashing the app

@@ -250,7 +250,9 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         if (!strongSelf || !tab) return;
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            [strongSelf createBrowserForTab:tab];
+            if (!tab->is_hibernated) {
+                [strongSelf createBrowserForTab:tab];
+            }
             [strongSelf.sidebarView reloadTabs];
         });
     };
@@ -262,6 +264,11 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         // Remove browser view synchronously — we're already on the main thread.
         // Deferring via dispatch_async creates a race with on_tab_hibernated blocks
         // that can close the browser and free the NSView before this block runs.
+        NSNumber* tabKey = @(tab->id);
+        [strongSelf->_tabRealNavigationFlags removeObjectForKey:tabKey];
+        [strongSelf->_tabLoadingStartTimes removeObjectForKey:tabKey];
+        [strongSelf->_tabLoadingGeneration removeObjectForKey:tabKey];
+
         CefRefPtr<CefBrowser> browser = tab->browser;
         [strongSelf removeBrowserView:browser];
 
@@ -439,6 +446,7 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 
 - (void)createBrowserForTab:(Tab*)tab {
     if (!tab) return;
+    if (tab->is_hibernated) return;
 
     // Create browser client for this tab
     CefRefPtr<BrowserClient> client = new BrowserClient();

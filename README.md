@@ -65,6 +65,7 @@ A custom web browser built with C++ and Chromium Embedded Framework (CEF), featu
   - Resizable via drag divider
   - "Inspect Element" from context menu
 - **Session persistence** - restore workspaces and tabs on restart (Vivaldi-style)
+  - Inactive restored tabs stay unloaded until selected to reduce startup memory use
 - **Crash recovery** - automatic session restore after unexpected shutdown
 - **Crash reporting** - detailed crash reports saved to disk
 - **Async browser lifecycle safety** - handles async CEF browser creation/destruction races gracefully

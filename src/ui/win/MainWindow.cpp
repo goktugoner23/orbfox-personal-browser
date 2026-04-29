@@ -502,7 +502,7 @@ void MainWindow::OnCreate() {
         };
 
         callbacks.on_tab_created = [this](Tab* tab) {
-            if (tab && !tab->browser) {
+            if (tab && !tab->is_hibernated && !tab->browser) {
                 CreateBrowserForTab(tab->id, tab->url);
             }
             if (sidebar_) {
@@ -930,6 +930,7 @@ void MainWindow::CreateBrowserForTab(int tab_id, const std::string& url) {
 
     Tab* tab = tab_manager_ ? tab_manager_->GetTabById(tab_id) : nullptr;
     if (!tab) return;
+    if (tab->is_hibernated) return;
 
     // Create browser client with callbacks
     CefRefPtr<BrowserClient> client = new BrowserClient();

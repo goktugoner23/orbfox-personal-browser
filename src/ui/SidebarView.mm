@@ -24,7 +24,7 @@ static const CGFloat kNewTabButtonHeight = 44.0;
 // Stored in ~/Library/Application Support/OrbFox/cache/
 // ============================================================================
 
-static NSMutableDictionary<NSString*, NSImage*>* sFaviconCache = nil;
+static NSCache<NSString*, NSImage*>* sFaviconCache = nil;
 static NSMutableDictionary<NSString*, NSString*>* sTitleCache = nil;
 static BOOL sCacheInitialized = NO;
 
@@ -60,28 +60,36 @@ static NSString* GetDomainFromURL(NSString* urlString) {
     return host;
 }
 
+static NSUInteger FaviconCacheCost(NSImage* image) {
+    if (!image) return 0;
+
+    NSUInteger pixels = 0;
+    for (NSImageRep* rep in image.representations) {
+        NSInteger width = rep.pixelsWide > 0 ? rep.pixelsWide : (NSInteger)image.size.width;
+        NSInteger height = rep.pixelsHigh > 0 ? rep.pixelsHigh : (NSInteger)image.size.height;
+        if (width > 0 && height > 0) {
+            pixels = MAX(pixels, (NSUInteger)(width * height));
+        }
+    }
+
+    if (pixels == 0 && image.size.width > 0 && image.size.height > 0) {
+        pixels = (NSUInteger)(image.size.width * image.size.height);
+    }
+
+    return MAX((NSUInteger)1, pixels * 4);
+}
+
 static void LoadCachedFaviconsAndTitles() {
     if (sCacheInitialized) return;
     sCacheInitialized = YES;
 
-    sFaviconCache = [NSMutableDictionary dictionary];
+    sFaviconCache = [[NSCache alloc] init];
+    sFaviconCache.countLimit = 128;
+    sFaviconCache.totalCostLimit = 4 * 1024 * 1024;
     sTitleCache = [NSMutableDictionary dictionary];
 
     NSString* cacheDir = GetCacheDirectory();
     NSFileManager* fm = [NSFileManager defaultManager];
-
-    // Load favicons
-    NSArray* files = [fm contentsOfDirectoryAtPath:cacheDir error:nil];
-    for (NSString* file in files) {
-        if ([file.pathExtension isEqualToString:@"png"]) {
-            NSString* domain = [file stringByDeletingPathExtension];
-            NSString* path = [cacheDir stringByAppendingPathComponent:file];
-            NSImage* favicon = [[NSImage alloc] initWithContentsOfFile:path];
-            if (favicon) {
-                sFaviconCache[domain] = favicon;
-            }
-        }
-    }
 
     // Load titles
     NSString* titlesPath = GetTitleCachePath();
@@ -97,7 +105,16 @@ NSImage* GetCachedFavicon(NSString* urlString) {
     LoadCachedFaviconsAndTitles();
     NSString* domain = GetDomainFromURL(urlString);
     if (!domain) return nil;
-    return sFaviconCache[domain];
+
+    NSImage* cached = [sFaviconCache objectForKey:domain];
+    if (cached) return cached;
+
+    NSString* path = GetFaviconPath(domain);
+    NSImage* favicon = [[NSImage alloc] initWithContentsOfFile:path];
+    if (favicon) {
+        [sFaviconCache setObject:favicon forKey:domain cost:FaviconCacheCost(favicon)];
+    }
+    return favicon;
 }
 
 static void CacheFavicon(NSString* urlString, NSImage* favicon) {
@@ -108,7 +125,7 @@ static void CacheFavicon(NSString* urlString, NSImage* favicon) {
     if (!domain) return;
 
     // Always update the cache - allows correcting stale/wrong favicons
-    sFaviconCache[domain] = favicon;
+    [sFaviconCache setObject:favicon forKey:domain cost:FaviconCacheCost(favicon)];
 
     // Save to disk asynchronously
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_LOW, 0), ^{

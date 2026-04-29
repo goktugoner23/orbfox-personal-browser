@@ -180,6 +180,46 @@ TEST_F(TabManagerTest, CreateTab_WithUrl) {
     EXPECT_EQ(tab->url, "https://google.com");
 }
 
+TEST_F(TabManagerTest, CreateTabInBackground_SetsActivityTime) {
+    auto* active = manager_->CreateTab("https://active.example");
+    auto* background = manager_->CreateTabInBackground("https://background.example");
+
+    ASSERT_NE(active, nullptr);
+    ASSERT_NE(background, nullptr);
+    EXPECT_EQ(manager_->GetActiveTab(), active);
+    EXPECT_GT(background->last_active_time, 0);
+}
+
+TEST_F(TabManagerTest, CreateRestoredTab_CreatesHibernatedPlaceholder) {
+    int created_count = 0;
+    TabManagerCallbacks callbacks;
+    callbacks.on_tab_created = [&created_count](Tab*) {
+        created_count++;
+    };
+    manager_->SetCallbacks(callbacks);
+
+    auto* tab = manager_->CreateRestoredTab("https://restored.example", true);
+
+    ASSERT_NE(tab, nullptr);
+    EXPECT_EQ(created_count, 1);
+    EXPECT_TRUE(tab->is_hibernated);
+    EXPECT_GT(tab->last_active_time, 0);
+    EXPECT_EQ(manager_->GetActiveTab(), nullptr);
+}
+
+TEST_F(TabManagerTest, HibernateInactiveTabs_HibernatesZeroTimestampBackgroundTabs) {
+    auto* active = manager_->CreateTab("https://active.example");
+    auto* background = manager_->CreateTabInBackground("https://background.example");
+    ASSERT_NE(active, nullptr);
+    ASSERT_NE(background, nullptr);
+
+    background->last_active_time = 0;
+    manager_->HibernateInactiveTabs(300);
+
+    EXPECT_FALSE(active->is_hibernated);
+    EXPECT_TRUE(background->is_hibernated);
+}
+
 // ============================================================================
 // Tab Closing Tests
 // ============================================================================

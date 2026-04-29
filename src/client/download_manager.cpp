@@ -174,6 +174,11 @@ void DownloadManager::SetCancelCallback(uint32_t id, DownloadCancelCallback call
     cancel_callbacks_[id] = std::move(callback);
 }
 
+void DownloadManager::RemoveCancelCallback(uint32_t id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    cancel_callbacks_.erase(id);
+}
+
 void DownloadManager::CancelDownload(uint32_t id) {
     DownloadCancelCallback cancel_callback;
     DownloadUpdateCallback update_callback;

@@ -608,9 +608,7 @@ CefResourceRequestHandler::ReturnValue BrowserClient::OnBeforeResourceLoad(
     CefRefPtr<CefCallback>) {
     CEF_REQUIRE_IO_THREAD();
 
-    // Read tracking protection setting directly from SettingsStorage (now thread-safe)
-    // This ensures live updates when settings change
-    if (!SettingsStorage::GetInstance().Get().tracking_protection) {
+    if (!SettingsStorage::GetInstance().IsTrackingProtectionEnabled()) {
         return RV_CONTINUE;  // Tracking protection disabled, allow all
     }
 
@@ -1132,15 +1130,18 @@ void BrowserClient::OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
         item.state = DownloadState::Complete;
         item.end_time = std::time(nullptr);
         download_callbacks_.erase(download_id);  // No longer need callback
+        DownloadManager::GetInstance().RemoveCancelCallback(download_id);
         should_save = true;
     } else if (download_item->IsCanceled()) {
         item.state = DownloadState::Canceled;
         item.end_time = std::time(nullptr);
         download_callbacks_.erase(download_id);
+        DownloadManager::GetInstance().RemoveCancelCallback(download_id);
         should_save = true;
     } else if (download_item->IsInterrupted()) {
         item.state = DownloadState::Interrupted;
         download_callbacks_.erase(download_id);  // Clean up callback for interrupted downloads
+        DownloadManager::GetInstance().RemoveCancelCallback(download_id);
         should_save = true;
     } else if (download_item->IsPaused()) {
         item.state = DownloadState::Paused;

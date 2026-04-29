@@ -5,6 +5,11 @@
 
 namespace {
 
+int64_t GetCurrentTimestamp() {
+    auto now = std::chrono::system_clock::now();
+    return std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+}
+
 // Extract domain from URL for comparison
 // Returns empty string if URL is invalid or has no host
 std::string ExtractDomain(const std::string& url) {
@@ -130,6 +135,7 @@ Tab* TabManager::CreateTab(const std::string& url) {
 
     auto tab = std::make_unique<Tab>(next_tab_id_++);
     tab->url = url;
+    tab->last_active_time = GetCurrentTimestamp();
     Tab* ptr = tab.get();
 
     workspace->tabs.push_back(std::move(tab));
@@ -153,6 +159,7 @@ Tab* TabManager::CreateTabInBackground(const std::string& url) {
 
     auto tab = std::make_unique<Tab>(next_tab_id_++);
     tab->url = url;
+    tab->last_active_time = GetCurrentTimestamp();
     Tab* ptr = tab.get();
 
     workspace->tabs.push_back(std::move(tab));
@@ -162,6 +169,27 @@ Tab* TabManager::CreateTabInBackground(const std::string& url) {
         callbacks_.on_tab_created(ptr);
     }
     // Don't call on_tab_activated - the new tab stays in background
+
+    return ptr;
+}
+
+Tab* TabManager::CreateRestoredTab(const std::string& url, bool hibernated) {
+    Workspace* workspace = GetActiveWorkspace();
+    if (!workspace) {
+        return nullptr;
+    }
+
+    auto tab = std::make_unique<Tab>(next_tab_id_++);
+    tab->url = url;
+    tab->is_hibernated = hibernated;
+    tab->last_active_time = GetCurrentTimestamp();
+    Tab* ptr = tab.get();
+
+    workspace->tabs.push_back(std::move(tab));
+
+    if (callbacks_.on_tab_created) {
+        callbacks_.on_tab_created(ptr);
+    }
 
     return ptr;
 }
@@ -531,11 +559,6 @@ bool TabManager::ReorderWorkspace(int workspace_id, int new_index) {
 
 // Tab hibernation methods
 
-static int64_t GetCurrentTimestamp() {
-    auto now = std::chrono::system_clock::now();
-    return std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
-}
-
 bool TabManager::HibernateTab(int tab_id) {
     Tab* tab = GetTabById(tab_id);
     if (!tab) return false;
@@ -584,7 +607,7 @@ void TabManager::HibernateInactiveTabs(int64_t inactive_seconds) {
                 tab.get() == workspace->GetActiveTab()) continue;
 
             // Hibernate if inactive for too long
-            if (tab->last_active_time > 0 && tab->last_active_time < threshold) {
+            if (tab->last_active_time == 0 || tab->last_active_time < threshold) {
                 HibernateTab(tab->id);
             }
         }

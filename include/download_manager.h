@@ -54,6 +54,7 @@ public:
 
     // Set cancel callback for a download
     void SetCancelCallback(uint32_t id, DownloadCancelCallback callback);
+    void RemoveCancelCallback(uint32_t id);
 
     // Cancel a download
     void CancelDownload(uint32_t id);

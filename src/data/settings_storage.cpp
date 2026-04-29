@@ -55,6 +55,7 @@ Settings SettingsStorage::Get() const {
 void SettingsStorage::Set(const Settings& settings) {
     std::lock_guard<std::mutex> lock(mutex_);
     settings_ = settings;
+    tracking_protection_enabled_.store(settings_.tracking_protection, std::memory_order_relaxed);
     SaveLocked();
 }
 
@@ -79,6 +80,7 @@ void SettingsStorage::SetRestoreSession(bool restore) {
 void SettingsStorage::SetTrackingProtection(bool enabled) {
     std::lock_guard<std::mutex> lock(mutex_);
     settings_.tracking_protection = enabled;
+    tracking_protection_enabled_.store(enabled, std::memory_order_relaxed);
     SaveLocked();
 }
 
@@ -216,6 +218,7 @@ bool SettingsStorage::FromJsonLocked(const std::string& json) {
     settings_.new_tab_url = orbfox::utils::GetJsonString(json, "new_tab_url", settings_.new_tab_url);
     settings_.restore_session = orbfox::utils::GetJsonBool(json, "restore_session", settings_.restore_session);
     settings_.tracking_protection = orbfox::utils::GetJsonBool(json, "tracking_protection", settings_.tracking_protection);
+    tracking_protection_enabled_.store(settings_.tracking_protection, std::memory_order_relaxed);
 
     // Validate download path before accepting
     std::string download_path = orbfox::utils::GetJsonString(json, "download_path", settings_.download_path);

@@ -196,22 +196,17 @@ void BrowserApp::OnContextInitialized() {
                     g_tab_manager->SetActiveWorkspace(ws->id);
                 }
 
-                // Create tabs in this workspace
+                // Create restored tabs as hibernated placeholders. The saved active tab
+                // is woken after the active workspace/index is restored.
                 for (const auto& savedTab : savedWs.tabs) {
                     int currentWsId = g_tab_manager->GetActiveWorkspace() ? g_tab_manager->GetActiveWorkspace()->id : ws->id;
                     g_tab_manager->SetActiveWorkspace(ws->id);
 
-                    Tab* tab = g_tab_manager->CreateTab(savedTab.url);
+                    Tab* tab = g_tab_manager->CreateRestoredTab(savedTab.url, true);
                     if (tab) {
                         tab->title = savedTab.title;
                         tab->is_pinned = savedTab.is_pinned;
                         tab->is_muted = savedTab.is_muted;
-                        if (tab->browser) {
-                            CefRefPtr<CefBrowserHost> host = tab->browser->GetHost();
-                            if (host) {
-                                host->SetAudioMuted(tab->is_muted);
-                            }
-                        }
                     }
 
                     g_tab_manager->SetActiveWorkspace(currentWsId);
@@ -220,6 +215,8 @@ void BrowserApp::OnContextInitialized() {
                 // Set active tab index
                 if (savedWs.active_tab_index >= 0 && savedWs.active_tab_index < static_cast<int>(ws->tabs.size())) {
                     ws->active_tab_index = savedWs.active_tab_index;
+                } else if (!ws->tabs.empty()) {
+                    ws->active_tab_index = 0;
                 }
             }
 
@@ -243,6 +240,11 @@ void BrowserApp::OnContextInitialized() {
                 session.active_workspace_index < static_cast<int>(g_tab_manager->GetWorkspaces().size())) {
                 g_tab_manager->SetActiveWorkspace(
                     g_tab_manager->GetWorkspaces()[session.active_workspace_index]->id);
+            }
+
+            // Wake only the visible tab; other restored tabs stay unloaded until selected.
+            if (Tab* activeTab = g_tab_manager->GetActiveTab()) {
+                g_tab_manager->WakeTab(activeTab->id);
             }
 
             sessionRestored = true;
