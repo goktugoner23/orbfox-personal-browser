@@ -58,6 +58,10 @@ public:
     // Returns screen rect (x, y, width, height) for centering popups on the correct monitor
     using PopupRectCallback = std::function<void(int& x, int& y, int& width, int& height)>;
 
+    // Popup browser created callback — called when an auth popup browser is ready
+    // Receives the popup browser so the UI can fix the browser view sizing
+    using PopupBrowserCreatedCallback = std::function<void(CefRefPtr<CefBrowser>)>;
+
     // Permission callbacks
     using MediaAccessCallback = std::function<void(
         const std::string& origin,
@@ -111,6 +115,7 @@ public:
     void SetPopupRectCallback(PopupRectCallback callback) { on_popup_rect_ = std::move(callback); }
     void SetMediaAccessCallback(MediaAccessCallback callback) { on_media_access_ = std::move(callback); }
     void SetPermissionPromptCallback(PermissionPromptCallback callback) { on_permission_prompt_ = std::move(callback); }
+    void SetPopupBrowserCreatedCallback(PopupBrowserCreatedCallback callback) { on_popup_browser_created_ = std::move(callback); }
 
     // Clear all UI callbacks (used during hibernation to prevent callbacks from firing
     // on a browser that is in the process of being closed)
@@ -284,6 +289,7 @@ private:
     PopupRectCallback on_popup_rect_;
     MediaAccessCallback on_media_access_;
     PermissionPromptCallback on_permission_prompt_;
+    PopupBrowserCreatedCallback on_popup_browser_created_;
 
     // Download callbacks (keyed by download ID)
     std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> download_callbacks_;

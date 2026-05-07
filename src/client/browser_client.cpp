@@ -123,6 +123,7 @@ void BrowserClient::ClearCallbacks() {
     on_popup_rect_ = nullptr;
     on_media_access_ = nullptr;
     on_permission_prompt_ = nullptr;
+    on_popup_browser_created_ = nullptr;
 }
 
 // CefLifeSpanHandler methods
@@ -237,6 +238,15 @@ bool BrowserClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
                 // Fallback: let OS position it
                 window_info.bounds = CefRect(0, 0, popupWidth, popupHeight);
             }
+
+            // Give the popup its own client so it doesn't share callbacks
+            // with the parent (which would corrupt the parent's browser_ ref)
+            CefRefPtr<BrowserClient> popupClient = new BrowserClient();
+            if (on_popup_browser_created_) {
+                popupClient->SetBrowserCreatedCallback(on_popup_browser_created_);
+            }
+            client = popupClient;
+
             return false;  // Don't cancel - let CEF create the popup
         }
     }

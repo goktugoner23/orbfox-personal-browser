@@ -833,6 +833,23 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         h = (int)frame.size.height;
     });
 
+    // Fix popup browser view sizing after creation
+    // CEF creates popup windows but the browser view may not fill the window properly
+    client->SetPopupBrowserCreatedCallback([](CefRefPtr<CefBrowser> browser) {
+        CefRefPtr<CefBrowserHost> host = browser->GetHost();
+        if (!host) return;
+
+        void* handle = host->GetWindowHandle();
+        if (!handle) return;
+
+        NSView* browserView = (__bridge NSView*)handle;
+        NSWindow* popupWindow = browserView.window;
+        if (popupWindow) {
+            browserView.frame = popupWindow.contentView.bounds;
+            browserView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+        }
+    });
+
     // Handle media access permission requests (mic/camera)
     client->SetMediaAccessCallback([weakSelf, tabId](const std::string& origin,
                                                uint32_t requested_permissions,
