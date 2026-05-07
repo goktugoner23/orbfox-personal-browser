@@ -121,6 +121,8 @@ void BrowserClient::ClearCallbacks() {
     on_focus_url_bar_ = nullptr;
     on_bookmark_action_ = nullptr;
     on_popup_rect_ = nullptr;
+    on_media_access_ = nullptr;
+    on_permission_prompt_ = nullptr;
 }
 
 // CefLifeSpanHandler methods
@@ -213,8 +215,8 @@ bool BrowserClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
 
         if (isAuthPopup) {
             // Ensure minimum popup dimensions so auth content isn't clipped
-            int popupWidth = 500;
-            int popupHeight = 700;
+            int popupWidth = 600;
+            int popupHeight = 800;
             if (popup_features.widthSet && popup_features.width > popupWidth) {
                 popupWidth = popup_features.width;
             }
@@ -1155,6 +1157,55 @@ void BrowserClient::OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
     if (should_save) {
         DownloadManager::GetInstance().SaveToDisk();
     }
+}
+
+// CefPermissionHandler methods
+
+bool BrowserClient::OnRequestMediaAccessPermission(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    const CefString& requesting_origin,
+    uint32_t requested_permissions,
+    CefRefPtr<CefMediaAccessCallback> callback) {
+    CEF_REQUIRE_UI_THREAD();
+    (void)browser;
+    (void)frame;
+
+    if (on_media_access_) {
+        on_media_access_(requesting_origin.ToString(), requested_permissions, callback);
+        return true;
+    }
+
+    // No callback set — deny by default (Alloy style)
+    callback->Cancel();
+    return true;
+}
+
+bool BrowserClient::OnShowPermissionPrompt(
+    CefRefPtr<CefBrowser> browser,
+    uint64_t prompt_id,
+    const CefString& requesting_origin,
+    uint32_t requested_permissions,
+    CefRefPtr<CefPermissionPromptCallback> callback) {
+    CEF_REQUIRE_UI_THREAD();
+    (void)browser;
+    (void)prompt_id;
+
+    if (on_permission_prompt_) {
+        on_permission_prompt_(requesting_origin.ToString(), requested_permissions, callback);
+        return true;
+    }
+
+    // No callback set — ignore (Alloy default)
+    callback->Continue(CEF_PERMISSION_RESULT_IGNORE);
+    return true;
+}
+
+void BrowserClient::OnDismissPermissionPrompt(
+    CefRefPtr<CefBrowser>,
+    uint64_t,
+    cef_permission_request_result_t) {
+    // No-op
 }
 
 // CefFindHandler implementation

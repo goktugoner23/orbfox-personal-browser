@@ -833,6 +833,113 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         h = (int)frame.size.height;
     });
 
+    // Handle media access permission requests (mic/camera)
+    client->SetMediaAccessCallback([weakSelf, tabId](const std::string& origin,
+                                               uint32_t requested_permissions,
+                                               CefRefPtr<CefMediaAccessCallback> callback) {
+        std::string originCopy = origin;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MainWindowController* strongSelf = weakSelf;
+            if (!strongSelf) {
+                callback->Cancel();
+                return;
+            }
+
+            // Only show dialog if this tab is active — deny background tab requests
+            Tab* activeTab = strongSelf.tabManager->GetActiveTab();
+            if (!activeTab || activeTab->id != tabId) {
+                callback->Cancel();
+                return;
+            }
+
+            // Build permission description
+            bool wantsMic = (requested_permissions & CEF_MEDIA_PERMISSION_DEVICE_AUDIO_CAPTURE) != 0;
+            bool wantsCam = (requested_permissions & CEF_MEDIA_PERMISSION_DEVICE_VIDEO_CAPTURE) != 0;
+            NSString* permDesc;
+            if (wantsMic && wantsCam) {
+                permDesc = @"microphone and camera";
+            } else if (wantsMic) {
+                permDesc = @"microphone";
+            } else if (wantsCam) {
+                permDesc = @"camera";
+            } else {
+                permDesc = @"media devices";
+            }
+
+            NSAlert* alert = [[NSAlert alloc] init];
+            alert.alertStyle = NSAlertStyleInformational;
+            alert.messageText = [NSString stringWithFormat:@"%s wants to access your %@",
+                                 originCopy.c_str(), permDesc];
+            alert.informativeText = @"You can change this decision in site settings.";
+            [alert addButtonWithTitle:@"Allow"];
+            [alert addButtonWithTitle:@"Don't Allow"];
+
+            [alert beginSheetModalForWindow:strongSelf.window completionHandler:^(NSModalResponse response) {
+                if (response == NSAlertFirstButtonReturn) {
+                    callback->Continue(requested_permissions);
+                } else {
+                    callback->Cancel();
+                }
+            }];
+        });
+    });
+
+    // Handle general permission prompts (bluetooth, notifications, etc.)
+    client->SetPermissionPromptCallback([weakSelf, tabId](const std::string& origin,
+                                                    uint32_t requested_permissions,
+                                                    CefRefPtr<CefPermissionPromptCallback> callback) {
+        std::string originCopy = origin;
+        uint32_t perms = requested_permissions;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MainWindowController* strongSelf = weakSelf;
+            if (!strongSelf) {
+                callback->Continue(CEF_PERMISSION_RESULT_DENY);
+                return;
+            }
+
+            // Only show dialog if this tab is active — deny background tab requests
+            Tab* activeTab = strongSelf.tabManager->GetActiveTab();
+            if (!activeTab || activeTab->id != tabId) {
+                callback->Continue(CEF_PERMISSION_RESULT_DENY);
+                return;
+            }
+
+            // Build permission type description
+            NSMutableArray* permNames = [NSMutableArray array];
+            if (perms & CEF_PERMISSION_TYPE_GEOLOCATION) [permNames addObject:@"location"];
+            if (perms & CEF_PERMISSION_TYPE_NOTIFICATIONS) [permNames addObject:@"notifications"];
+            if (perms & CEF_PERMISSION_TYPE_MIC_STREAM) [permNames addObject:@"microphone"];
+            if (perms & CEF_PERMISSION_TYPE_CAMERA_STREAM) [permNames addObject:@"camera"];
+            if (perms & CEF_PERMISSION_TYPE_MIDI_SYSEX) [permNames addObject:@"MIDI"];
+            if (perms & CEF_PERMISSION_TYPE_CLIPBOARD) [permNames addObject:@"clipboard"];
+            if (perms & CEF_PERMISSION_TYPE_MULTIPLE_DOWNLOADS) [permNames addObject:@"multiple downloads"];
+
+            NSString* permDesc;
+            if (permNames.count > 0) {
+                permDesc = [permNames componentsJoinedByString:@", "];
+            } else {
+                // Fallback for types we don't name explicitly (bluetooth, etc.)
+                permDesc = @"a device or feature";
+            }
+
+            NSAlert* alert = [[NSAlert alloc] init];
+            alert.alertStyle = NSAlertStyleInformational;
+            alert.messageText = [NSString stringWithFormat:@"%s wants to access %@",
+                                 originCopy.c_str(), permDesc];
+            alert.informativeText = @"You can change this decision in site settings.";
+            [alert addButtonWithTitle:@"Allow"];
+            [alert addButtonWithTitle:@"Don't Allow"];
+
+            [alert beginSheetModalForWindow:strongSelf.window completionHandler:^(NSModalResponse response) {
+                if (response == NSAlertFirstButtonReturn) {
+                    callback->Continue(CEF_PERMISSION_RESULT_ACCEPT);
+                } else {
+                    callback->Continue(CEF_PERMISSION_RESULT_DENY);
+                }
+            }];
+        });
+    });
+
     // Create browser settings
     CefBrowserSettings settings;
 

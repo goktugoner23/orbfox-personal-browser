@@ -10,6 +10,7 @@
 #include "include/cef_keyboard_handler.h"
 #include "include/cef_download_handler.h"
 #include "include/cef_find_handler.h"
+#include "include/cef_permission_handler.h"
 
 #include <functional>
 #include <string>
@@ -34,7 +35,8 @@ class BrowserClient : public CefClient,
                       public CefContextMenuHandler,
                       public CefKeyboardHandler,
                       public CefDownloadHandler,
-                      public CefFindHandler {
+                      public CefFindHandler,
+                      public CefPermissionHandler {
 public:
     // Callback types for UI updates
     using BrowserCreatedCallback = std::function<void(CefRefPtr<CefBrowser>)>;
@@ -55,6 +57,16 @@ public:
     using BookmarkActionCallback = std::function<void(const std::string& action, const std::string& param)>;
     // Returns screen rect (x, y, width, height) for centering popups on the correct monitor
     using PopupRectCallback = std::function<void(int& x, int& y, int& width, int& height)>;
+
+    // Permission callbacks
+    using MediaAccessCallback = std::function<void(
+        const std::string& origin,
+        uint32_t requested_permissions,
+        CefRefPtr<CefMediaAccessCallback> callback)>;
+    using PermissionPromptCallback = std::function<void(
+        const std::string& origin,
+        uint32_t requested_permissions,
+        CefRefPtr<CefPermissionPromptCallback> callback)>;
 
     // Download dialog callback: filename, size, callback to continue with path (empty = cancel)
     using DownloadDialogCallback = std::function<void(
@@ -97,6 +109,8 @@ public:
     void SetFocusUrlBarCallback(FocusUrlBarCallback callback) { on_focus_url_bar_ = std::move(callback); }
     void SetBookmarkActionCallback(BookmarkActionCallback callback) { on_bookmark_action_ = std::move(callback); }
     void SetPopupRectCallback(PopupRectCallback callback) { on_popup_rect_ = std::move(callback); }
+    void SetMediaAccessCallback(MediaAccessCallback callback) { on_media_access_ = std::move(callback); }
+    void SetPermissionPromptCallback(PermissionPromptCallback callback) { on_permission_prompt_ = std::move(callback); }
 
     // Clear all UI callbacks (used during hibernation to prevent callbacks from firing
     // on a browser that is in the process of being closed)
@@ -118,6 +132,7 @@ public:
     CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
     CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
     CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
+    CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
 
     // CefLifeSpanHandler methods
     void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
@@ -224,6 +239,24 @@ public:
                       int activeMatchOrdinal,
                       bool finalUpdate) override;
 
+    // CefPermissionHandler methods
+    bool OnRequestMediaAccessPermission(
+        CefRefPtr<CefBrowser> browser,
+        CefRefPtr<CefFrame> frame,
+        const CefString& requesting_origin,
+        uint32_t requested_permissions,
+        CefRefPtr<CefMediaAccessCallback> callback) override;
+    bool OnShowPermissionPrompt(
+        CefRefPtr<CefBrowser> browser,
+        uint64_t prompt_id,
+        const CefString& requesting_origin,
+        uint32_t requested_permissions,
+        CefRefPtr<CefPermissionPromptCallback> callback) override;
+    void OnDismissPermissionPrompt(
+        CefRefPtr<CefBrowser> browser,
+        uint64_t prompt_id,
+        cef_permission_request_result_t result) override;
+
     // Get the browser instance
     CefRefPtr<CefBrowser> GetBrowser() const { return browser_; }
 
@@ -249,6 +282,8 @@ private:
     FocusUrlBarCallback on_focus_url_bar_;
     BookmarkActionCallback on_bookmark_action_;
     PopupRectCallback on_popup_rect_;
+    MediaAccessCallback on_media_access_;
+    PermissionPromptCallback on_permission_prompt_;
 
     // Download callbacks (keyed by download ID)
     std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> download_callbacks_;
