@@ -51,6 +51,9 @@
 - (void)mouseUp:(NSEvent*)event {
     if (event.clickCount == 2) {
         [self handleDoubleClick];
+    } else if (event.clickCount == 1 && _isComplete && !_isFileMissing && _downloadPath) {
+        // Completed file present on disk: open it, never re-download
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:_downloadPath]];
     }
     [super mouseUp:event];
 }
