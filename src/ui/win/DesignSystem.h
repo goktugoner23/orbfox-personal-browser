@@ -105,11 +105,6 @@ inline int GetInputHeight() { return 36; }
 // Helper functions
 // ============================================================
 
-// Create a solid brush from COLORREF
-inline HBRUSH CreateBrush(COLORREF color) {
-    return CreateSolidBrush(color);
-}
-
 // Draw rounded rectangle
 inline void DrawRoundedRect(HDC hdc, const RECT& rect, int radius, COLORREF fillColor, COLORREF borderColor = 0) {
     HBRUSH brush = CreateSolidBrush(fillColor);

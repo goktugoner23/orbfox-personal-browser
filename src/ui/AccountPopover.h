@@ -8,7 +8,6 @@
 @interface AccountPopoverController : NSViewController
 
 @property (nonatomic, weak) MainWindowController* windowController;
-@property (nonatomic, copy) void (^onDismiss)(void);
 @property (nonatomic, copy) void (^onSignIn)(void);
 @property (nonatomic, copy) void (^onSignOut)(void);
 @property (nonatomic, copy) void (^onSyncNow)(void);

@@ -118,9 +118,6 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 
     // Content fullscreen state (HTML5 Fullscreen API)
     BOOL _isContentFullscreen;
-    NSRect _savedBrowserContainerFrame;
-    NSRect _savedSidebarFrame;
-    NSRect _savedToolbarFrame;
 
     // Tab hibernation timer
     NSTimer* _hibernationTimer;
@@ -1179,11 +1176,6 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         if (browserClient) {
             browserClient->SetContentFullscreen(true);
         }
-
-        // Save current frames
-        _savedBrowserContainerFrame = _browserContainer.frame;
-        _savedSidebarFrame = _sidebarView.frame;
-        _savedToolbarFrame = _toolbarView.frame;
 
         // Close DevTools if open
         if (_devToolsOpen) {
