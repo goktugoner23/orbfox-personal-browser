@@ -28,6 +28,8 @@
     (void)notification;
     // CEF is initialized in main(), browser is created in OnContextInitialized
     [self setupMenuBar];
+    // Clear any stale dock badge (e.g. left over from a web-notification count)
+    [NSApp dockTile].badgeLabel = nil;
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)sender {

@@ -873,6 +873,7 @@ bool BrowserClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
         bool is_cmd = (event.modifiers & EVENTFLAG_COMMAND_DOWN) != 0;
         bool is_ctrl = (event.modifiers & EVENTFLAG_CONTROL_DOWN) != 0;
         bool is_shift = (event.modifiers & EVENTFLAG_SHIFT_DOWN) != 0;
+        bool is_alt = (event.modifiers & EVENTFLAG_ALT_DOWN) != 0;
         bool is_modifier = is_cmd || is_ctrl;
 
         if (is_modifier) {

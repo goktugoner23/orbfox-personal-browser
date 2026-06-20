@@ -1,5 +1,6 @@
 #include "download_manager.h"
 #include "utils/filesystem_utils.h"
+#include "utils/json_utils.h"
 
 #include <algorithm>
 #include <cctype>
@@ -15,67 +16,8 @@ std::string GetDownloadsFilePath() {
     return orbfox::utils::GetAppSupportPath() + "/downloads.json";
 }
 
-// Simple JSON escape
-std::string EscapeJson(const std::string& s) {
-    std::ostringstream o;
-    for (char c : s) {
-        switch (c) {
-            case '"': o << "\\\""; break;
-            case '\\': o << "\\\\"; break;
-            case '\b': o << "\\b"; break;
-            case '\f': o << "\\f"; break;
-            case '\n': o << "\\n"; break;
-            case '\r': o << "\\r"; break;
-            case '\t': o << "\\t"; break;
-            default: o << c; break;
-        }
-    }
-    return o.str();
-}
-
-// Simple JSON unescape
-std::string UnescapeJson(const std::string& s) {
-    std::string result;
-    for (size_t i = 0; i < s.size(); ++i) {
-        if (s[i] == '\\' && i + 1 < s.size()) {
-            switch (s[i + 1]) {
-                case '"': result += '"'; ++i; break;
-                case '\\': result += '\\'; ++i; break;
-                case 'b': result += '\b'; ++i; break;
-                case 'f': result += '\f'; ++i; break;
-                case 'n': result += '\n'; ++i; break;
-                case 'r': result += '\r'; ++i; break;
-                case 't': result += '\t'; ++i; break;
-                default: result += s[i]; break;
-            }
-        } else {
-            result += s[i];
-        }
-    }
-    return result;
-}
-
-// Extract string value from JSON key
-std::string ExtractJsonString(const std::string& json, const std::string& key) {
-    // Try with space after colon first (matches our SaveToDisk format)
-    std::string pattern = "\"" + key + "\": \"";
-    size_t pos = json.find(pattern);
-    if (pos == std::string::npos) {
-        // Fallback to no space
-        pattern = "\"" + key + "\":\"";
-        pos = json.find(pattern);
-        if (pos == std::string::npos) return "";
-    }
-    pos += pattern.size();
-    size_t end = json.find("\"", pos);
-    while (end != std::string::npos && end > 0 && json[end - 1] == '\\') {
-        end = json.find("\"", end + 1);
-    }
-    if (end == std::string::npos) return "";
-    return UnescapeJson(json.substr(pos, end - pos));
-}
-
 // Extract int64 value from JSON key
+// Kept local (not orbfox::utils::GetJsonInt) because download sizes exceed int range.
 int64_t ExtractJsonInt64(const std::string& json, const std::string& key) {
     std::string pattern = "\"" + key + "\":";
     size_t pos = json.find(pattern);
@@ -381,15 +323,15 @@ void DownloadManager::LoadFromDisk(const std::string& custom_path) {
 
         DownloadItem item;
         item.id = static_cast<uint32_t>(ExtractJsonInt64(obj, "id"));
-        item.url = ExtractJsonString(obj, "url");
-        item.original_url = ExtractJsonString(obj, "original_url");
+        item.url = orbfox::utils::GetJsonString(obj,"url");
+        item.original_url = orbfox::utils::GetJsonString(obj,"original_url");
         // Fallback: if original_url is empty, use url
         if (item.original_url.empty()) {
             item.original_url = item.url;
         }
-        item.filename = ExtractJsonString(obj, "filename");
-        item.full_path = ExtractJsonString(obj, "full_path");
-        item.mime_type = ExtractJsonString(obj, "mime_type");
+        item.filename = orbfox::utils::GetJsonString(obj,"filename");
+        item.full_path = orbfox::utils::GetJsonString(obj,"full_path");
+        item.mime_type = orbfox::utils::GetJsonString(obj,"mime_type");
         item.total_bytes = ExtractJsonInt64(obj, "total_bytes");
         item.received_bytes = ExtractJsonInt64(obj, "received_bytes");
         item.percent_complete = static_cast<int>(ExtractJsonInt64(obj, "percent_complete"));
@@ -435,11 +377,11 @@ void DownloadManager::SaveToDisk(const std::string& custom_path) {
 
         json << "  {\n";
         json << "    \"id\": " << d.id << ",\n";
-        json << "    \"url\": \"" << EscapeJson(d.url) << "\",\n";
-        json << "    \"original_url\": \"" << EscapeJson(d.original_url) << "\",\n";
-        json << "    \"filename\": \"" << EscapeJson(d.filename) << "\",\n";
-        json << "    \"full_path\": \"" << EscapeJson(d.full_path) << "\",\n";
-        json << "    \"mime_type\": \"" << EscapeJson(d.mime_type) << "\",\n";
+        json << "    \"url\": \"" << orbfox::utils::EscapeJsonString(d.url) << "\",\n";
+        json << "    \"original_url\": \"" << orbfox::utils::EscapeJsonString(d.original_url) << "\",\n";
+        json << "    \"filename\": \"" << orbfox::utils::EscapeJsonString(d.filename) << "\",\n";
+        json << "    \"full_path\": \"" << orbfox::utils::EscapeJsonString(d.full_path) << "\",\n";
+        json << "    \"mime_type\": \"" << orbfox::utils::EscapeJsonString(d.mime_type) << "\",\n";
         json << "    \"total_bytes\": " << d.total_bytes << ",\n";
         json << "    \"received_bytes\": " << d.received_bytes << ",\n";
         json << "    \"percent_complete\": " << d.percent_complete << ",\n";
