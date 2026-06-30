@@ -144,6 +144,20 @@ SavedSession SessionStorage::Load() {
     return session;
 }
 
+std::string SessionStorage::ReadRawJson() {
+    std::ifstream file(GetSessionPath());
+    if (!file.is_open()) return "";
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
+}
+
+bool SessionStorage::WriteRawJson(const std::string& json) {
+    if (json.empty()) return false;
+    return orbfox::utils::AtomicWriteFile(GetSessionPath(), json);
+}
+
 bool SessionStorage::HasSavedSession() {
     std::ifstream file(GetSessionPath());
     return file.good();

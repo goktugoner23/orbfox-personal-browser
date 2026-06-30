@@ -37,6 +37,11 @@ public:
     // Load session from disk
     SavedSession Load();
 
+    // Raw JSON passthrough for cloud sync (lossless round-trip of session.json).
+    // ReadRawJson returns "" if no session is saved.
+    std::string ReadRawJson();
+    bool WriteRawJson(const std::string& json);
+
     // Check if a saved session exists
     [[nodiscard]] bool HasSavedSession();
 

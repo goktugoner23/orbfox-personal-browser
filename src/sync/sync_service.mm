@@ -7,6 +7,7 @@
 #include "bookmark_storage.h"
 #include "history_storage.h"
 #include "settings_storage.h"
+#include "session_storage.h"
 #include "utils/json_utils.h"
 
 #include <functional>
@@ -39,14 +40,14 @@ bool RunBoolOnMainThread(const std::function<bool()>& work) {
     return result;
 }
 
-void SetBearerToken(NSMutableURLRequest* request, const std::string& token) {
+// Firebase RTDB REST accepts an ID token only via the ?auth= query param,
+// not the Authorization: Bearer header (that's for OAuth2 access tokens).
+std::string WithAuth(const std::string& url, const std::string& token) {
     if (token.empty()) {
-        return;
+        return url;
     }
-
-    std::string auth_header = "Bearer " + token;
-    [request setValue:[NSString stringWithUTF8String:auth_header.c_str()]
-   forHTTPHeaderField:@"Authorization"];
+    char sep = url.find('?') == std::string::npos ? '?' : '&';
+    return url + sep + "auth=" + token;
 }
 
 }  // namespace
@@ -125,6 +126,10 @@ std::string SyncService::ExportHistoryToJson() {
 
 std::string SyncService::ExportSettingsToJson() {
     return SettingsStorage::GetInstance().ToJson();
+}
+
+std::string SyncService::ExportSessionToJson() {
+    return SessionStorage().ReadRawJson();
 }
 
 // JSON import helpers
@@ -227,15 +232,20 @@ bool SyncService::ImportSettingsFromJson(const std::string& json) {
     return SettingsStorage::GetInstance().FromJson(json);
 }
 
+bool SyncService::ImportSessionFromJson(const std::string& json) {
+    // Written to disk; applied on next launch (live tabs are not torn down).
+    return SessionStorage().WriteRawJson(json);
+}
+
 // HTTP helpers using NSURLSession
 std::string SyncService::HttpPut(const std::string& url, const std::string& body, const std::string& token) {
     @autoreleasepool {
-        NSURL* nsUrl = [NSURL URLWithString:[NSString stringWithUTF8String:url.c_str()]];
+        std::string authUrl = WithAuth(url, token);
+        NSURL* nsUrl = [NSURL URLWithString:[NSString stringWithUTF8String:authUrl.c_str()]];
         NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:nsUrl];
         request.HTTPMethod = @"PUT";
         request.HTTPBody = [NSData dataWithBytes:body.c_str() length:body.size()];
         [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-        SetBearerToken(request, token);
 
         __block NSData* responseData = nil;
         __block NSError* error = nil;
@@ -264,10 +274,10 @@ std::string SyncService::HttpPut(const std::string& url, const std::string& body
 
 std::string SyncService::HttpGet(const std::string& url, const std::string& token) {
     @autoreleasepool {
-        NSURL* nsUrl = [NSURL URLWithString:[NSString stringWithUTF8String:url.c_str()]];
+        std::string authUrl = WithAuth(url, token);
+        NSURL* nsUrl = [NSURL URLWithString:[NSString stringWithUTF8String:authUrl.c_str()]];
         NSMutableURLRequest* request = [NSMutableURLRequest requestWithURL:nsUrl];
         request.HTTPMethod = @"GET";
-        SetBearerToken(request, token);
 
         __block NSData* responseData = nil;
         __block NSError* error = nil;
@@ -354,7 +364,20 @@ void SyncService::Upload(SyncCallback callback) {
             result.settings_synced = true;
         }
 
-        result.success = (result.bookmarks_synced > 0 || result.history_synced > 0 || result.settings_synced);
+        // Upload session (workspaces + pinned/open tabs)
+        std::string sessionJson = RunStringOnMainThread([this]() {
+            return ExportSessionToJson();
+        });
+        if (!sessionJson.empty()) {
+            std::string sessionUrl = baseUrl + "/users/" + userId + "/session.json";
+            std::string sessionResp = HttpPut(sessionUrl, sessionJson, firebaseToken);
+            if (!sessionResp.empty() && sessionResp.find("error") == std::string::npos) {
+                result.session_synced = true;
+            }
+        }
+
+        result.success = (result.bookmarks_synced > 0 || result.history_synced > 0 ||
+                          result.settings_synced || result.session_synced);
         if (!result.success) {
             result.error_message = "Failed to upload data to cloud";
         } else {
@@ -424,6 +447,18 @@ void SyncService::Download(SyncCallback callback) {
                     return ImportSettingsFromJson(settingsJson);
                 })) {
                 result.settings_synced = true;
+            }
+        }
+
+        // Download and import session (applied on next launch)
+        std::string sessionUrl = baseUrl + "/users/" + userId + "/session.json";
+        std::string sessionJson = HttpGet(sessionUrl, firebaseToken);
+
+        if (!sessionJson.empty() && sessionJson != "null") {
+            if (RunBoolOnMainThread([this, sessionJson]() {
+                    return ImportSessionFromJson(sessionJson);
+                })) {
+                result.session_synced = true;
             }
         }
 

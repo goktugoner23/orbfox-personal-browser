@@ -12,6 +12,7 @@ struct SyncResult {
     int bookmarks_synced = 0;
     int history_synced = 0;
     bool settings_synced = false;
+    bool session_synced = false;  // workspaces + pinned/open tabs
 };
 
 using SyncCallback = std::function<void(const SyncResult&)>;
@@ -45,11 +46,13 @@ private:
     std::string ExportBookmarksToJson();
     std::string ExportHistoryToJson();
     std::string ExportSettingsToJson();
+    std::string ExportSessionToJson();
 
     // Import data from JSON
     bool ImportBookmarksFromJson(const std::string& json);
     bool ImportHistoryFromJson(const std::string& json);
     bool ImportSettingsFromJson(const std::string& json);
+    bool ImportSessionFromJson(const std::string& json);
 
     // Firebase REST API helpers
     std::string HttpPut(const std::string& url, const std::string& body, const std::string& token);

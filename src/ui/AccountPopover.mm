@@ -5,6 +5,10 @@
 #include "sync/google_auth.h"
 #include "sync/sync_service.h"
 
+// Flushes the live session (workspaces + pinned/open tabs) to session.json.
+// Defined in browser_app.mm; session.json is otherwise only written on close.
+extern void SaveSession();
+
 @implementation AccountPopoverController {
     NSPopover* _popover;
 
@@ -440,6 +444,10 @@
 - (void)syncNowClicked:(id)sender {
     (void)sender;
 
+    // Flush current tabs/workspaces to disk so we upload live state, not the
+    // last-saved-on-close snapshot.
+    SaveSession();
+
     // Update UI to show syncing
     _syncNowButton.enabled = NO;
     _syncNowButton.title = @"Syncing...";
@@ -453,6 +461,7 @@
         int bookmarks = result.bookmarks_synced;
         int history = result.history_synced;
         bool settings = result.settings_synced;
+        bool session = result.session_synced;
 
         dispatch_async(dispatch_get_main_queue(), ^{
             NSMutableDictionary* userInfo = [NSMutableDictionary dictionary];
@@ -463,6 +472,7 @@
             userInfo[@"bookmarks"] = @(bookmarks);
             userInfo[@"history"] = @(history);
             userInfo[@"settings"] = @(settings);
+            userInfo[@"session"] = @(session);
 
             [[NSNotificationCenter defaultCenter] postNotificationName:@"OrbFoxSyncCompleted"
                                                                 object:nil
@@ -482,11 +492,13 @@
         int bookmarks = [info[@"bookmarks"] intValue];
         int history = [info[@"history"] intValue];
         BOOL settings = [info[@"settings"] boolValue];
+        BOOL session = [info[@"session"] boolValue];
 
         NSMutableArray* parts = [NSMutableArray array];
         if (bookmarks > 0) [parts addObject:@"bookmarks"];
         if (history > 0) [parts addObject:@"history"];
         if (settings) [parts addObject:@"settings"];
+        if (session) [parts addObject:@"tabs"];
 
         if (parts.count > 0) {
             _syncStatusLabel.stringValue = [NSString stringWithFormat:@"Synced %@",
