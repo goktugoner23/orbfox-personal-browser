@@ -32,6 +32,12 @@ BookmarkStorage* GetBookmarkStorage() {
     return g_bookmark_storage.get();
 }
 
+// Set when a session is imported from a file this run, so the quit handler
+// leaves the imported session.json alone instead of overwriting it with the
+// current live tabs (which would discard the import before the next launch).
+static bool g_session_imported_this_run = false;
+void MarkSessionImported() { g_session_imported_this_run = true; }
+
 // Save current session
 void SaveSession() {
     if (!g_tab_manager || !g_session_storage) return;
@@ -318,7 +324,10 @@ void BrowserApp::OnContextInitialized() {
                                                        queue:nil
                                                   usingBlock:^(NSNotification* note) {
         (void)note;
-        SaveSession();
+        // Don't overwrite an imported session.json with the current live tabs.
+        if (!g_session_imported_this_run) {
+            SaveSession();
+        }
         // Mark clean shutdown so we know we didn't crash
         SessionStorage::MarkCleanShutdown();
     }];

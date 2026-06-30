@@ -9,10 +9,19 @@
 #include "settings_storage.h"
 #include "session_storage.h"
 #include "utils/json_utils.h"
+#include "utils/filesystem_utils.h"
 
+#include <cctype>
 #include <functional>
+#include <fstream>
 #include <sstream>
 #include <thread>
+
+// Defined in browser_app.mm. SaveSession() flushes live tabs to session.json;
+// MarkSessionImported() tells the close handler not to overwrite an imported
+// session.json on quit (so imported tabs survive to the next launch).
+extern void SaveSession();
+extern void MarkSessionImported();
 
 namespace {
 
@@ -48,6 +57,39 @@ std::string WithAuth(const std::string& url, const std::string& token) {
     }
     char sep = url.find('?') == std::string::npos ? '?' : '&';
     return url + sep + "auth=" + token;
+}
+
+// Extracts the raw JSON value (object or array) for a top-level key, brace/
+// bracket-balanced and string-aware. The combined export file nests four
+// already-serialized blobs, which GetJsonString can't pull back out.
+std::string ExtractJsonValue(const std::string& json, const std::string& key) {
+    std::string needle = "\"" + key + "\":";
+    size_t k = json.find(needle);
+    if (k == std::string::npos) return "";
+    size_t i = k + needle.size();
+    while (i < json.size() && std::isspace(static_cast<unsigned char>(json[i]))) i++;
+    if (i >= json.size()) return "";
+    char open = json[i];
+    char close = open == '{' ? '}' : (open == '[' ? ']' : 0);
+    if (!close) return "";  // only object/array values are extracted
+    size_t start = i;
+    int depth = 0;
+    bool inStr = false, esc = false;
+    for (; i < json.size(); ++i) {
+        char c = json[i];
+        if (inStr) {
+            if (esc) esc = false;
+            else if (c == '\\') esc = true;
+            else if (c == '"') inStr = false;
+        } else if (c == '"') {
+            inStr = true;
+        } else if (c == open) {
+            depth++;
+        } else if (c == close) {
+            if (--depth == 0) return json.substr(start, i - start + 1);
+        }
+    }
+    return "";
 }
 
 }  // namespace
@@ -490,4 +532,49 @@ void SyncService::SyncNow(SyncCallback callback) {
             if (callback) callback(finalResult);
         });
     });
+}
+
+bool SyncService::ExportAllToFile(const std::string& path) {
+    SaveSession();  // flush live tabs/workspaces so the export is current
+
+    std::string session = ExportSessionToJson();
+    if (session.empty()) session = "{}";
+
+    std::ostringstream ss;
+    ss << "{\"version\":1,"
+       << "\"bookmarks\":" << ExportBookmarksToJson() << ","
+       << "\"history\":"   << ExportHistoryToJson()   << ","
+       << "\"settings\":"  << ExportSettingsToJson()  << ","
+       << "\"session\":"   << session                 << "}";
+
+    return orbfox::utils::AtomicWriteFile(path, ss.str());
+}
+
+bool SyncService::ImportAllFromFile(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) return false;
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string json = buffer.str();
+    if (json.empty()) return false;
+
+    std::string bookmarks = ExtractJsonValue(json, "bookmarks");
+    std::string history   = ExtractJsonValue(json, "history");
+    std::string settings  = ExtractJsonValue(json, "settings");
+    std::string session   = ExtractJsonValue(json, "session");
+
+    if (!bookmarks.empty()) ImportBookmarksFromJson(bookmarks);
+    if (!history.empty())   ImportHistoryFromJson(history);
+    if (!settings.empty())  ImportSettingsFromJson(settings);
+
+    if (!session.empty() && session != "{}") {
+        ImportSessionFromJson(session);
+        // Force restore on so the imported tabs come back, and stop the quit
+        // handler from clobbering the imported session.json with live tabs.
+        SettingsStorage::GetInstance().SetRestoreSession(true);
+        MarkSessionImported();
+    }
+
+    return true;
 }

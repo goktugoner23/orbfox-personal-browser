@@ -33,7 +33,7 @@ extern void SaveSession();
 
 - (void)loadView {
     CGFloat width = 280;
-    CGFloat height = 200;
+    CGFloat height = 248;
 
     NSView* contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
     contentView.wantsLayer = YES;
@@ -208,6 +208,24 @@ extern void SaveSession();
     _signOutButton.target = self;
     _signOutButton.action = @selector(signOutClicked:);
     [_signedInView addSubview:_signOutButton];
+
+    // Export / Import row (manual file transfer between machines)
+    y -= buttonHeight + buttonSpacing;
+    CGFloat exportX = (width - totalButtonWidth) / 2;
+
+    NSButton* exportButton = [[NSButton alloc] initWithFrame:NSMakeRect(exportX, y, buttonWidth, buttonHeight)];
+    exportButton.title = @"Export…";
+    exportButton.bezelStyle = NSBezelStyleRounded;
+    exportButton.target = self;
+    exportButton.action = @selector(exportDataClicked:);
+    [_signedInView addSubview:exportButton];
+
+    NSButton* importButton = [[NSButton alloc] initWithFrame:NSMakeRect(exportX + buttonWidth + buttonSpacing, y, buttonWidth, buttonHeight)];
+    importButton.title = @"Import…";
+    importButton.bezelStyle = NSBezelStyleRounded;
+    importButton.target = self;
+    importButton.action = @selector(importDataClicked:);
+    [_signedInView addSubview:importButton];
 
     [parent addSubview:_signedInView];
 }
@@ -479,6 +497,53 @@ extern void SaveSession();
                                                               userInfo:userInfo];
         });
     });
+}
+
+- (void)exportDataClicked:(id)sender {
+    (void)sender;
+
+    NSSavePanel* panel = [NSSavePanel savePanel];
+    panel.nameFieldStringValue = @"orbfox-data.json";
+    panel.allowedFileTypes = @[@"json"];
+
+    [panel beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response) {
+        if (response != NSModalResponseOK || !panel.URL) return;
+
+        bool ok = SyncService::GetInstance().ExportAllToFile([panel.URL.path UTF8String]);
+
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = ok ? @"Export Complete" : @"Export Failed";
+        alert.informativeText = ok
+            ? @"Your bookmarks, history, settings, and tabs were saved. Import this file on your other Mac."
+            : @"Could not write the export file.";
+        alert.alertStyle = ok ? NSAlertStyleInformational : NSAlertStyleWarning;
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+    }];
+}
+
+- (void)importDataClicked:(id)sender {
+    (void)sender;
+
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    panel.allowedFileTypes = @[@"json"];
+    panel.allowsMultipleSelection = NO;
+    panel.canChooseDirectories = NO;
+
+    [panel beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse response) {
+        if (response != NSModalResponseOK || !panel.URL) return;
+
+        bool ok = SyncService::GetInstance().ImportAllFromFile([panel.URL.path UTF8String]);
+
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = ok ? @"Import Complete" : @"Import Failed";
+        alert.informativeText = ok
+            ? @"Bookmarks, history, and settings are applied now. Relaunch OrbFox to restore your tabs and workspaces."
+            : @"Could not read the import file.";
+        alert.alertStyle = ok ? NSAlertStyleInformational : NSAlertStyleWarning;
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+    }];
 }
 
 - (void)handleSyncCompleted:(NSNotification*)notification {

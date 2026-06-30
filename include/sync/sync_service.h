@@ -37,6 +37,12 @@ public:
     // Set Firebase database URL (must be called before syncing)
     void SetFirebaseUrl(const std::string& url) { firebase_url_ = url; }
 
+    // Export/import everything (bookmarks, history, settings, session) as one
+    // JSON file for manual transfer between machines. Must be called on the
+    // main thread (touches storage). Returns false on file/parse failure.
+    bool ExportAllToFile(const std::string& path);
+    bool ImportAllFromFile(const std::string& path);
+
 private:
     SyncService() = default;
     SyncService(const SyncService&) = delete;
