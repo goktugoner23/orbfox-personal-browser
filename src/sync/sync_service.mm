@@ -470,15 +470,22 @@ void SyncService::Download(SyncCallback callback) {
 }
 
 void SyncService::SyncNow(SyncCallback callback) {
-    // First upload local data, then download and merge remote data
-    Upload([this, callback](const SyncResult& uploadResult) {
-        if (!uploadResult.success) {
-            if (callback) callback(uploadResult);
-            return;
-        }
-
-        Download([callback](const SyncResult& downloadResult) {
-            SyncResult finalResult = downloadResult;
+    // Download (merge remote into local) first, THEN upload the merged result.
+    // Uploading first would PUT this machine's state over the cloud before we
+    // ever read it, so a fresh/second machine would clobber remote data and
+    // then download its own empty state ("nothing came").
+    Download([this, callback](const SyncResult& downloadResult) {
+        Upload([callback, downloadResult](const SyncResult& uploadResult) {
+            // Report whichever direction moved data; merged set is now in cloud.
+            SyncResult finalResult = uploadResult;
+            finalResult.bookmarks_synced =
+                downloadResult.bookmarks_synced + uploadResult.bookmarks_synced;
+            finalResult.history_synced =
+                downloadResult.history_synced + uploadResult.history_synced;
+            finalResult.settings_synced =
+                downloadResult.settings_synced || uploadResult.settings_synced;
+            finalResult.session_synced =
+                downloadResult.session_synced || uploadResult.session_synced;
             finalResult.success = true;
             if (callback) callback(finalResult);
         });
