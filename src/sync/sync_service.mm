@@ -498,7 +498,12 @@ void SyncService::Download(SyncCallback callback) {
 
         if (!sessionJson.empty() && sessionJson != "null") {
             if (RunBoolOnMainThread([this, sessionJson]() {
-                    return ImportSessionFromJson(sessionJson);
+                    if (!ImportSessionFromJson(sessionJson)) return false;
+                    // Same as file import: force restore on and stop the quit
+                    // handler from clobbering the downloaded session.json.
+                    SettingsStorage::GetInstance().SetRestoreSession(true);
+                    MarkSessionImported();
+                    return true;
                 })) {
                 result.session_synced = true;
             }
