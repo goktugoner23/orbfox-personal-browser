@@ -41,6 +41,11 @@ void MarkSessionImported() { g_session_imported_this_run = true; }
 // Save current session
 void SaveSession() {
     if (!g_tab_manager || !g_session_storage) return;
+    // A session imported this run lives in session.json already; don't overwrite
+    // it with the current live tabs (would discard the import before relaunch).
+    // Guard lives here so every SaveSession() call site (quit, window close,
+    // sync flush) is covered, not just one.
+    if (g_session_imported_this_run) return;
 
     SavedSession session;
     session.active_workspace_index = 0;
@@ -324,10 +329,7 @@ void BrowserApp::OnContextInitialized() {
                                                        queue:nil
                                                   usingBlock:^(NSNotification* note) {
         (void)note;
-        // Don't overwrite an imported session.json with the current live tabs.
-        if (!g_session_imported_this_run) {
-            SaveSession();
-        }
+        SaveSession();  // self-guards against clobbering an imported session
         // Mark clean shutdown so we know we didn't crash
         SessionStorage::MarkCleanShutdown();
     }];
