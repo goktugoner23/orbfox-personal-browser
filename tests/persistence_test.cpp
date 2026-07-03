@@ -692,3 +692,77 @@ TEST_F(PersistenceIntegrationTest, AllSystemsIndependent) {
     EXPECT_EQ(loadedSession.workspaces[0].tabs[0].url, "https://google.com");
     EXPECT_TRUE(loadedSession.workspaces[0].tabs[0].is_pinned);
 }
+
+// ============================================================================
+// Cloud-sync merge tests — the fix for pinned tabs getting wiped by an emptier
+// remote session on sync (MergeAdditive must never delete local data).
+// ============================================================================
+
+namespace {
+SavedTab MakePinned(const std::string& url) {
+    SavedTab t; t.url = url; t.title = url; t.is_pinned = true; return t;
+}
+SavedSession OneWorkspace(const std::string& name, std::vector<SavedTab> tabs) {
+    SavedWorkspace ws; ws.name = name; ws.color = "#007AFF"; ws.tabs = std::move(tabs);
+    SavedSession s; s.workspaces.push_back(std::move(ws)); return s;
+}
+}  // namespace
+
+// The exact incident: local has pinned tabs, remote is a near-empty session.
+// The merge must keep every local pinned tab.
+TEST(SessionMergeTest, SparseRemoteDoesNotDeleteLocalPinnedTabs) {
+    SavedSession local = OneWorkspace("WS 1", {
+        MakePinned("https://mail.google.com/"),
+        MakePinned("https://github.com/"),
+        MakePinned("https://forge.darpha.dev/"),
+    });
+    SavedTab blank; blank.url = "orbfox://bookmarks/"; blank.title = "New Tab";
+    SavedSession remote = OneWorkspace("WS 1", {blank});  // emptier remote, no pins
+
+    SavedSession merged = SessionStorage::MergeAdditive(local, remote);
+
+    ASSERT_EQ(merged.workspaces.size(), 1u);
+    const auto& tabs = merged.workspaces[0].tabs;
+    // All 3 local pins survive; blank (unpinned) remote tab is NOT merged in.
+    ASSERT_EQ(tabs.size(), 3u);
+    EXPECT_EQ(tabs[0].url, "https://mail.google.com/");
+    EXPECT_EQ(tabs[1].url, "https://github.com/");
+    EXPECT_EQ(tabs[2].url, "https://forge.darpha.dev/");
+}
+
+// Remote pins/workspaces missing locally are added (that's the point of syncing).
+TEST(SessionMergeTest, AddsRemotePinsAndWorkspaces) {
+    SavedSession local = OneWorkspace("WS 1", {MakePinned("https://a.com/")});
+    SavedSession remote = OneWorkspace("WS 1", {
+        MakePinned("https://a.com/"),   // dup by url — not added twice
+        MakePinned("https://b.com/"),   // new pin — added
+    });
+    remote.workspaces.push_back(OneWorkspace("WS 2", {MakePinned("https://c.com/")}).workspaces[0]);
+
+    SavedSession merged = SessionStorage::MergeAdditive(local, remote);
+
+    ASSERT_EQ(merged.workspaces.size(), 2u);
+    ASSERT_EQ(merged.workspaces[0].tabs.size(), 2u);   // a + b, no dup
+    EXPECT_EQ(merged.workspaces[0].tabs[1].url, "https://b.com/");
+    ASSERT_EQ(merged.workspaces[1].name, "WS 2");
+    ASSERT_EQ(merged.workspaces[1].tabs.size(), 1u);
+    EXPECT_EQ(merged.workspaces[1].tabs[0].url, "https://c.com/");
+}
+
+// ParseJson round-trips OrbFox's own Save() format (used before merging remote).
+TEST(SessionMergeTest, ParseJsonReadsSavedFormat) {
+    SavedSession s = OneWorkspace("WS 1", {MakePinned("https://x.com/home")});
+    // Reuse Save() via a temp dir, then parse the raw bytes back.
+    std::string dir = MakeUniqueTestDirectory("orbfox_parse_test_");
+    SessionStorage::SetStorageDirectoryForTesting(dir);
+    SessionStorage storage;
+    storage.Save(s);
+    std::string raw = storage.ReadRawJson();
+    SessionStorage::ClearStorageDirectoryForTesting();
+
+    SavedSession parsed = SessionStorage::ParseJson(raw);
+    ASSERT_EQ(parsed.workspaces.size(), 1u);
+    ASSERT_EQ(parsed.workspaces[0].tabs.size(), 1u);
+    EXPECT_EQ(parsed.workspaces[0].tabs[0].url, "https://x.com/home");
+    EXPECT_TRUE(parsed.workspaces[0].tabs[0].is_pinned);
+}

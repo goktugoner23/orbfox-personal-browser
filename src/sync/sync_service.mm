@@ -275,8 +275,19 @@ bool SyncService::ImportSettingsFromJson(const std::string& json) {
 }
 
 bool SyncService::ImportSessionFromJson(const std::string& json) {
-    // Written to disk; applied on next launch (live tabs are not torn down).
-    return SessionStorage().WriteRawJson(json);
+    // Additively merge the remote session into the local one and persist the union
+    // (applied on next launch; live tabs are not torn down). A sparse/empty remote
+    // can never delete local pinned tabs or workspaces — that clobbering is exactly
+    // what wiped pinned tabs before. Writing via Save() also keeps session.json in
+    // OrbFox's native format instead of the cloud's reordered blob.
+    SavedSession remote = SessionStorage::ParseJson(json);
+    if (remote.workspaces.empty()) return false;  // nothing usable; leave local intact
+
+    SaveSession();  // flush current live tabs/workspaces to disk (self-guards if already imported)
+    SessionStorage storage;
+    SavedSession merged = SessionStorage::MergeAdditive(storage.Load(), remote);
+    storage.Save(merged);
+    return true;
 }
 
 // HTTP helpers using NSURLSession

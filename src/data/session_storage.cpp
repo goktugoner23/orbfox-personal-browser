@@ -71,14 +71,16 @@ void SessionStorage::Save(const SavedSession& session) {
 }
 
 SavedSession SessionStorage::Load() {
-    SavedSession session;
-
     std::ifstream file(GetSessionPath());
-    if (!file.is_open()) return session;
+    if (!file.is_open()) return SavedSession();
 
     std::stringstream buffer;
     buffer << file.rdbuf();
-    std::string json = buffer.str();
+    return ParseJson(buffer.str());
+}
+
+SavedSession SessionStorage::ParseJson(const std::string& json) {
+    SavedSession session;
 
     session.active_workspace_index = orbfox::utils::GetJsonInt(json, "active_workspace_index", 0);
 
@@ -142,6 +144,50 @@ SavedSession SessionStorage::Load() {
     }
 
     return session;
+}
+
+SavedSession SessionStorage::MergeAdditive(const SavedSession& local,
+                                           const SavedSession& remote) {
+    // Union merge, biased to never lose local data: keep every local workspace and
+    // tab as-is, then fold in remote workspaces (matched by name) and remote PINNED
+    // tabs (matched by url) that are missing locally. A sparse/empty remote can only
+    // add, never delete — so a stale device can't wipe your pinned tabs on sync.
+    // Open (unpinned) tabs stay local to each device and are not merged across.
+    // ponytail: additive-only — unpinning/closing on one device won't propagate to
+    // others (tabs reappear). Acceptable for "never lose a tab"; revisit if deletes
+    // need to sync. Appends new pins at the end (order is best-effort across devices).
+    SavedSession result = local;
+
+    for (const auto& rws : remote.workspaces) {
+        SavedWorkspace* lws = nullptr;
+        for (auto& w : result.workspaces) {
+            if (w.name == rws.name) { lws = &w; break; }
+        }
+
+        if (!lws) {
+            // Workspace the local device has never seen: bring it with its pinned tabs.
+            SavedWorkspace nw;
+            nw.name = rws.name;
+            nw.color = rws.color;
+            nw.active_tab_index = 0;
+            for (const auto& t : rws.tabs) {
+                if (t.is_pinned) nw.tabs.push_back(t);
+            }
+            result.workspaces.push_back(std::move(nw));
+            continue;
+        }
+
+        for (const auto& t : rws.tabs) {
+            if (!t.is_pinned) continue;
+            bool exists = false;
+            for (const auto& lt : lws->tabs) {
+                if (lt.url == t.url) { exists = true; break; }
+            }
+            if (!exists) lws->tabs.push_back(t);
+        }
+    }
+
+    return result;
 }
 
 std::string SessionStorage::ReadRawJson() {

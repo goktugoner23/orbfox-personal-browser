@@ -37,6 +37,14 @@ public:
     // Load session from disk
     SavedSession Load();
 
+    // Parse a session from a JSON string (same format Save writes / the cloud stores).
+    static SavedSession ParseJson(const std::string& json);
+
+    // Additive merge for cloud sync: keeps all local workspaces/tabs and folds in
+    // remote workspaces (by name) + remote pinned tabs (by url) that are missing.
+    // A sparse remote can only add, never delete — protects against clobbering.
+    static SavedSession MergeAdditive(const SavedSession& local, const SavedSession& remote);
+
     // Raw JSON passthrough for cloud sync (lossless round-trip of session.json).
     // ReadRawJson returns "" if no session is saved.
     std::string ReadRawJson();
