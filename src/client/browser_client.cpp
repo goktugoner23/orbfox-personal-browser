@@ -1006,6 +1006,7 @@ bool BrowserClient::OnBeforeDownload(CefRefPtr<CefBrowser> browser,
     // If we have a dialog callback, show the download dialog
     if (on_download_dialog_) {
         on_download_dialog_(
+            download_item->GetId(),
             suggested_name.ToString(),
             download_item->GetTotalBytes(),
             callback
@@ -1063,7 +1064,19 @@ void BrowserClient::OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
         // Download not yet confirmed or was canceled before starting
         if (download_item->IsCanceled()) {
             download_callbacks_.erase(download_id);
+            DownloadManager::GetInstance().RemoveCancelCallback(download_id);
+            return;
         }
+        // Still pending (dialog is open). Register a cancel callback so that if the user
+        // dismisses the dialog we can actually abort the download — otherwise it lingers
+        // in a pending state and Chromium shows a "(1)" dock badge.
+        download_callbacks_[download_id] = callback;
+        CefRefPtr<CefDownloadItemCallback> pending_cb = callback;
+        DownloadManager::GetInstance().SetCancelCallback(download_id, [pending_cb]() {
+            if (pending_cb) {
+                pending_cb->Cancel();
+            }
+        });
         return;
     }
 

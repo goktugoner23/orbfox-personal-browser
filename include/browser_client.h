@@ -72,8 +72,11 @@ public:
         uint32_t requested_permissions,
         CefRefPtr<CefPermissionPromptCallback> callback)>;
 
-    // Download dialog callback: filename, size, callback to continue with path (empty = cancel)
+    // Download dialog callback: download id, filename, size, callback to continue with path.
+    // If the user cancels, call DownloadManager::CancelDownload(download_id) to actually abort
+    // the pending CEF download (not calling Continue leaves it pending, which shows a dock badge).
     using DownloadDialogCallback = std::function<void(
+        uint32_t download_id,
         const std::string& suggested_name,
         int64_t total_bytes,
         CefRefPtr<CefBeforeDownloadCallback> callback)>;

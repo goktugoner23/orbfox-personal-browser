@@ -771,7 +771,8 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     });
 
     // Handle download dialog
-    client->SetDownloadDialogCallback([weakSelf](const std::string& suggested_name,
+    client->SetDownloadDialogCallback([weakSelf](uint32_t download_id,
+                                                  const std::string& suggested_name,
                                                   int64_t total_bytes,
                                                   CefRefPtr<CefBeforeDownloadCallback> callback) {
         MainWindowController* strongSelf = weakSelf;
@@ -786,6 +787,7 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         dispatch_async(dispatch_get_main_queue(), ^{
             [strongSelf showDownloadDialogForFile:filename
                                              size:total_bytes
+                                       downloadId:download_id
                                          callback:callback];
         });
     });
@@ -1970,6 +1972,7 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 
 - (void)showDownloadDialogForFile:(NSString*)filename
                              size:(int64_t)totalBytes
+                       downloadId:(uint32_t)downloadId
                          callback:(CefRefPtr<CefBeforeDownloadCallback>)callback {
     // Ensure we have a valid filename
     NSString* safeName = filename;
@@ -1990,7 +1993,7 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
             [self saveDownloadToDefaultLocation:safeName callback:callback];
             return;
         } else if ([lastChoice isEqualToString:@"saveAs"]) {
-            [self showSavePanelForFile:safeName callback:callback rememberChoice:NO];
+            [self showSavePanelForFile:safeName downloadId:downloadId callback:callback rememberChoice:NO];
             return;
         }
         // No saved preference, fall through to show dialog
@@ -2028,9 +2031,11 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
         } else if (response == NSAlertSecondButtonReturn) {
             // Remember choice for restarts
             [[NSUserDefaults standardUserDefaults] setObject:@"saveAs" forKey:@"DownloadAction"];
-            [self showSavePanelForFile:safeName callback:callback rememberChoice:NO];
+            [self showSavePanelForFile:safeName downloadId:downloadId callback:callback rememberChoice:NO];
+        } else {
+            // Cancel: actually abort the pending download, otherwise it lingers and shows a dock badge.
+            DownloadManager::GetInstance().CancelDownload(downloadId);
         }
-        // Cancel - don't call Continue, download is canceled
     }];
 }
 
@@ -2083,6 +2088,7 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
 }
 
 - (void)showSavePanelForFile:(NSString*)filename
+                  downloadId:(uint32_t)downloadId
                     callback:(CefRefPtr<CefBeforeDownloadCallback>)callback
               rememberChoice:(BOOL)remember {
     (void)remember;
@@ -2093,8 +2099,10 @@ static const NSTimeInterval kLoadingIndicatorMinDuration = 0.2; // 200ms minimum
     [savePanel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse panelResponse) {
         if (panelResponse == NSModalResponseOK && savePanel.URL) {
             callback->Continue([savePanel.URL.path UTF8String], false);
+        } else {
+            // Canceled: abort the pending download so it doesn't linger as a dock badge.
+            DownloadManager::GetInstance().CancelDownload(downloadId);
         }
-        // If canceled, don't call Continue - download is canceled
     }];
 }
 

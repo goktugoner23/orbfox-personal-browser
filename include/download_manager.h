@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <set>
 #include <mutex>
 #include <functional>
 #include <ctime>
@@ -106,6 +107,9 @@ private:
     mutable std::mutex mutex_;
     std::vector<DownloadItem> downloads_;
     std::map<uint32_t, DownloadCancelCallback> cancel_callbacks_;
+    // Downloads canceled before their cancel callback was registered (race: user hit Cancel
+    // before OnDownloadUpdated fired). Canceled as soon as the callback shows up.
+    std::set<uint32_t> pending_cancels_;
     DownloadUpdateCallback on_update_;
     std::string pending_original_url_;
     bool is_restart_ = false;

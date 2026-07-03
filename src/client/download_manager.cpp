@@ -112,13 +112,25 @@ std::optional<DownloadItem> DownloadManager::GetDownload(uint32_t id) {
 }
 
 void DownloadManager::SetCancelCallback(uint32_t id, DownloadCancelCallback callback) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    cancel_callbacks_[id] = std::move(callback);
+    DownloadCancelCallback cancel_now;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        // If Cancel was requested before this callback existed, honor it immediately.
+        if (pending_cancels_.erase(id) > 0) {
+            cancel_now = std::move(callback);
+        } else {
+            cancel_callbacks_[id] = std::move(callback);
+        }
+    }
+    if (cancel_now) {
+        cancel_now();
+    }
 }
 
 void DownloadManager::RemoveCancelCallback(uint32_t id) {
     std::lock_guard<std::mutex> lock(mutex_);
     cancel_callbacks_.erase(id);
+    pending_cancels_.erase(id);
 }
 
 void DownloadManager::CancelDownload(uint32_t id) {
@@ -141,6 +153,10 @@ void DownloadManager::CancelDownload(uint32_t id) {
         if (cb_it != cancel_callbacks_.end()) {
             cancel_callback = cb_it->second;
             cancel_callbacks_.erase(cb_it);
+        } else {
+            // Callback not registered yet (OnDownloadUpdated hasn't fired). Mark it so
+            // SetCancelCallback cancels the moment the callback arrives.
+            pending_cancels_.insert(id);
         }
 
         update_callback = on_update_;
@@ -405,6 +421,7 @@ void DownloadManager::ResetForTesting() {
     std::lock_guard<std::mutex> lock(mutex_);
     downloads_.clear();
     cancel_callbacks_.clear();
+    pending_cancels_.clear();
     on_update_ = nullptr;
     pending_original_url_.clear();
     is_restart_ = false;

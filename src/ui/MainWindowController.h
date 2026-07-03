@@ -77,6 +77,7 @@
 // Downloads
 - (void)showDownloadDialogForFile:(NSString*)filename
                              size:(int64_t)totalBytes
+                       downloadId:(uint32_t)downloadId
                          callback:(CefRefPtr<CefBeforeDownloadCallback>)callback;
 
 // Find in Page
