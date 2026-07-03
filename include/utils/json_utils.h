@@ -1,6 +1,7 @@
 #ifndef ORBFOX_UTILS_JSON_UTILS_H_
 #define ORBFOX_UTILS_JSON_UTILS_H_
 
+#include <cstdint>
 #include <string>
 
 namespace orbfox {
@@ -16,6 +17,11 @@ std::string GetJsonString(const std::string& json, const std::string& key,
 /// Returns default_value if the key is not found or parsing fails.
 int GetJsonInt(const std::string& json, const std::string& key,
                int default_value = 0);
+
+/// Extracts a 64-bit integer value from a JSON object (e.g. epoch timestamps).
+/// Returns default_value if the key is not found or parsing fails.
+int64_t GetJsonInt64(const std::string& json, const std::string& key,
+                     int64_t default_value = 0);
 
 /// Extracts a boolean value from a JSON object.
 /// Returns default_value if the key is not found or parsing fails.

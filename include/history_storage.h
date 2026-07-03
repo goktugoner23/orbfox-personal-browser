@@ -30,8 +30,17 @@ public:
     // Add a history entry (increments visit_count if URL exists)
     void AddEntry(const std::string& url, const std::string& title);
 
+    // Import an entry preserving its original visit_time/visit_count (for cloud sync).
+    // On URL conflict, keeps the MAX of each so repeated syncs are idempotent and
+    // never lose the more-recent visit or the higher count.
+    void ImportEntry(const std::string& url, const std::string& title,
+                     std::time_t visit_time, int visit_count);
+
     // Query history
     std::vector<HistoryEntry> GetRecentHistory(int limit = 100);
+
+    // Full history, newest first (used to export everything on sync).
+    std::vector<HistoryEntry> GetAllHistory();
     std::vector<HistoryEntry> SearchHistory(const std::string& query, int limit = 50);
     std::vector<HistoryEntry> GetHistoryForDay(std::time_t day_start);
 

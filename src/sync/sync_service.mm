@@ -144,8 +144,8 @@ std::string SyncService::ExportHistoryToJson() {
     HistoryStorage* storage = GetHistoryStorage();
     if (!storage) return "[]";
 
-    // Export last 1000 history entries
-    auto history = storage->GetRecentHistory(1000);
+    // Export the full history so nothing is dropped on sync.
+    auto history = storage->GetAllHistory();
 
     std::ostringstream ss;
     ss << "[";
@@ -258,9 +258,12 @@ bool SyncService::ImportHistoryFromJson(const std::string& json) {
 
         std::string url = GetJsonString(obj, "url", "");
         std::string title = GetJsonString(obj, "title", "");
+        std::time_t visit_time = static_cast<std::time_t>(GetJsonInt64(obj, "visit_time", 0));
+        int visit_count = GetJsonInt(obj, "visit_count", 1);
 
         if (!url.empty()) {
-            storage->AddEntry(url, title);
+            // Preserve the original timestamp/count instead of resetting them.
+            storage->ImportEntry(url, title, visit_time, visit_count);
         }
 
         pos = end + 1;

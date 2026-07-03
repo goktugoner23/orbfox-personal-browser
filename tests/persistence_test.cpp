@@ -87,6 +87,32 @@ TEST_F(HistoryStorageTest, AddEntry_AddsToHistory) {
     EXPECT_EQ(entries[0].title, "Example");
 }
 
+TEST_F(HistoryStorageTest, ImportEntry_PreservesTimeAndCount) {
+    // Sync import must keep the original visit_time/visit_count, not reset them.
+    history_->ImportEntry("https://sync.example.com", "Synced", 1000000000, 42);
+
+    auto entries = history_->GetAllHistory();
+    ASSERT_EQ(entries.size(), 1u);
+    EXPECT_EQ(entries[0].url, "https://sync.example.com");
+    EXPECT_EQ(entries[0].visit_time, 1000000000);
+    EXPECT_EQ(entries[0].visit_count, 42);
+}
+
+TEST_F(HistoryStorageTest, ImportEntry_ConflictKeepsMaxAndIsIdempotent) {
+    history_->ImportEntry("https://dup.example.com", "v1", 1000, 5);
+    // Re-import the same URL with older time / lower count: MAX wins, no drift.
+    history_->ImportEntry("https://dup.example.com", "v2", 500, 3);
+    // Re-import with newer time / higher count: those win.
+    history_->ImportEntry("https://dup.example.com", "v3", 2000, 9);
+    // Import identical data twice: idempotent (count/time unchanged).
+    history_->ImportEntry("https://dup.example.com", "v3", 2000, 9);
+
+    auto entries = history_->GetAllHistory();
+    ASSERT_EQ(entries.size(), 1u);
+    EXPECT_EQ(entries[0].visit_time, 2000);
+    EXPECT_EQ(entries[0].visit_count, 9);
+}
+
 TEST_F(HistoryStorageTest, AddEntry_EmptyUrl_NoEffect) {
     history_->AddEntry("", "No URL");
 

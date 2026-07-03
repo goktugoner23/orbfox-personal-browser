@@ -45,10 +45,9 @@ public:
     // A sparse remote can only add, never delete — protects against clobbering.
     static SavedSession MergeAdditive(const SavedSession& local, const SavedSession& remote);
 
-    // Raw JSON passthrough for cloud sync (lossless round-trip of session.json).
-    // ReadRawJson returns "" if no session is saved.
+    // Raw JSON of the saved session, for uploading to cloud sync.
+    // Returns "" if no session is saved.
     std::string ReadRawJson();
-    bool WriteRawJson(const std::string& json);
 
     // Check if a saved session exists
     [[nodiscard]] bool HasSavedSession();

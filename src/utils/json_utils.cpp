@@ -87,6 +87,28 @@ int GetJsonInt(const std::string& json, const std::string& key, int default_valu
     }
 }
 
+int64_t GetJsonInt64(const std::string& json, const std::string& key, int64_t default_value) {
+    size_t pos = FindKeyValue(json, key);
+    if (pos == std::string::npos || pos >= json.length()) {
+        return default_value;
+    }
+
+    std::string num_str;
+    while (pos < json.length() && (std::isdigit(json[pos]) || json[pos] == '-')) {
+        num_str += json[pos++];
+    }
+
+    if (num_str.empty()) {
+        return default_value;
+    }
+
+    try {
+        return std::stoll(num_str);
+    } catch (const std::exception&) {
+        return default_value;
+    }
+}
+
 bool GetJsonBool(const std::string& json, const std::string& key, bool default_value) {
     size_t pos = FindKeyValue(json, key);
     if (pos == std::string::npos || pos >= json.length()) {

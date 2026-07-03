@@ -85,6 +85,34 @@ void HistoryStorage::AddEntry(const std::string& url, const std::string& title) 
     }
 }
 
+void HistoryStorage::ImportEntry(const std::string& url, const std::string& title,
+                                 std::time_t visit_time, int visit_count) {
+    if (!db_ || url.empty()) return;
+    if (visit_time <= 0) visit_time = std::time(nullptr);
+    if (visit_count < 1) visit_count = 1;
+
+    // Preserve the original visit_time/visit_count; on conflict keep the MAX of each
+    // so re-syncing the same data is idempotent (no drift, no lost recency/counts).
+    const char* sql = R"(
+        INSERT INTO history (url, title, visit_time, visit_count)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(url) DO UPDATE SET
+            title = excluded.title,
+            visit_time = MAX(visit_time, excluded.visit_time),
+            visit_count = MAX(visit_count, excluded.visit_count)
+    )";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, url.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, title.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(stmt, 3, visit_time);
+        sqlite3_bind_int(stmt, 4, visit_count);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+}
+
 std::vector<HistoryEntry> HistoryStorage::GetRecentHistory(int limit) {
     std::vector<HistoryEntry> entries;
     if (!db_) return entries;
@@ -95,6 +123,31 @@ std::vector<HistoryEntry> HistoryStorage::GetRecentHistory(int limit) {
     if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         sqlite3_bind_int(stmt, 1, limit);
 
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            HistoryEntry entry;
+            entry.id = sqlite3_column_int64(stmt, 0);
+            const char* url = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            entry.url = url ? url : "";
+            const char* title = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+            entry.title = title ? title : "";
+            entry.visit_time = sqlite3_column_int64(stmt, 3);
+            entry.visit_count = sqlite3_column_int(stmt, 4);
+            entries.push_back(entry);
+        }
+        sqlite3_finalize(stmt);
+    }
+
+    return entries;
+}
+
+std::vector<HistoryEntry> HistoryStorage::GetAllHistory() {
+    std::vector<HistoryEntry> entries;
+    if (!db_) return entries;
+
+    const char* sql = "SELECT id, url, title, visit_time, visit_count FROM history ORDER BY visit_time DESC";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) == SQLITE_OK) {
         while (sqlite3_step(stmt) == SQLITE_ROW) {
             HistoryEntry entry;
             entry.id = sqlite3_column_int64(stmt, 0);

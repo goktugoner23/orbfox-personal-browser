@@ -199,11 +199,6 @@ std::string SessionStorage::ReadRawJson() {
     return buffer.str();
 }
 
-bool SessionStorage::WriteRawJson(const std::string& json) {
-    if (json.empty()) return false;
-    return orbfox::utils::AtomicWriteFile(GetSessionPath(), json);
-}
-
 bool SessionStorage::HasSavedSession() {
     std::ifstream file(GetSessionPath());
     return file.good();
