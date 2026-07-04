@@ -666,15 +666,20 @@ void BrowserClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
     CefString selection = params->GetSelectionText();
     bool has_selection = !selection.empty();
 
-    // Check if right-clicking on an image
-    bool is_image = (params->GetMediaType() == CM_MEDIATYPE_IMAGE);
-    CefString image_url = params->GetSourceUrl();
+    // Check if right-clicking on media (image, video, or audio). A file opened
+    // directly (e.g. an .mp4 URL) is rendered by Chromium as a <video> element,
+    // so it lands here too. All three share GetSourceUrl() as the media address.
+    cef_context_menu_media_type_t media_type = params->GetMediaType();
+    bool is_image = (media_type == CM_MEDIATYPE_IMAGE);
+    bool is_video = (media_type == CM_MEDIATYPE_VIDEO);
+    bool is_audio = (media_type == CM_MEDIATYPE_AUDIO);
+    CefString media_url = params->GetSourceUrl();
 
-    if (is_image && !image_url.empty()) {
-        // Image context menu
-        model->AddItem(MENU_ID_SAVE_IMAGE, "Save Image As...");
-        model->AddItem(MENU_ID_COPY_IMAGE_ADDRESS, "Copy Image Address");
-        model->AddItem(MENU_ID_OPEN_IMAGE_NEW_TAB, "Open Image in New Tab");
+    if ((is_image || is_video || is_audio) && !media_url.empty()) {
+        const char* noun = is_image ? "Image" : (is_video ? "Video" : "Audio");
+        model->AddItem(MENU_ID_SAVE_IMAGE, std::string("Save ") + noun + " As...");
+        model->AddItem(MENU_ID_COPY_IMAGE_ADDRESS, std::string("Copy ") + noun + " Address");
+        model->AddItem(MENU_ID_OPEN_IMAGE_NEW_TAB, std::string("Open ") + noun + " in New Tab");
         model->AddSeparator();
     }
 
@@ -873,7 +878,6 @@ bool BrowserClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
         bool is_cmd = (event.modifiers & EVENTFLAG_COMMAND_DOWN) != 0;
         bool is_ctrl = (event.modifiers & EVENTFLAG_CONTROL_DOWN) != 0;
         bool is_shift = (event.modifiers & EVENTFLAG_SHIFT_DOWN) != 0;
-        bool is_alt = (event.modifiers & EVENTFLAG_ALT_DOWN) != 0;
         bool is_modifier = is_cmd || is_ctrl;
 
         if (is_modifier) {
