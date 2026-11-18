@@ -721,7 +721,7 @@ TEST_F(PersistenceIntegrationTest, AllSystemsIndependent) {
 
 // ============================================================================
 // Cloud-sync merge tests — the fix for pinned tabs getting wiped by an emptier
-// remote session on sync (MergeAdditive must never delete local data).
+// remote session on sync (Merge with an empty base must never delete local data).
 // ============================================================================
 
 namespace {
@@ -745,7 +745,7 @@ TEST(SessionMergeTest, SparseRemoteDoesNotDeleteLocalPinnedTabs) {
     SavedTab blank; blank.url = "orbfox://bookmarks/"; blank.title = "New Tab";
     SavedSession remote = OneWorkspace("WS 1", {blank});  // emptier remote, no pins
 
-    SavedSession merged = SessionStorage::MergeAdditive(local, remote);
+    SavedSession merged = SessionStorage::Merge(local, remote, SavedSession());
 
     ASSERT_EQ(merged.workspaces.size(), 1u);
     const auto& tabs = merged.workspaces[0].tabs;
@@ -765,7 +765,7 @@ TEST(SessionMergeTest, AddsRemotePinsAndWorkspaces) {
     });
     remote.workspaces.push_back(OneWorkspace("WS 2", {MakePinned("https://c.com/")}).workspaces[0]);
 
-    SavedSession merged = SessionStorage::MergeAdditive(local, remote);
+    SavedSession merged = SessionStorage::Merge(local, remote, SavedSession());
 
     ASSERT_EQ(merged.workspaces.size(), 2u);
     ASSERT_EQ(merged.workspaces[0].tabs.size(), 2u);   // a + b, no dup
@@ -791,4 +791,96 @@ TEST(SessionMergeTest, ParseJsonReadsSavedFormat) {
     ASSERT_EQ(parsed.workspaces[0].tabs.size(), 1u);
     EXPECT_EQ(parsed.workspaces[0].tabs[0].url, "https://x.com/home");
     EXPECT_TRUE(parsed.workspaces[0].tabs[0].is_pinned);
+}
+
+// Three-way merge: base is the session as of the last successful sync.
+
+TEST(SessionMergeTest, LocallyClosedPinStaysClosed) {
+    SavedSession base = OneWorkspace("WS 1", {MakePinned("https://a.com/"), MakePinned("https://b.com/")});
+    SavedSession local = OneWorkspace("WS 1", {MakePinned("https://a.com/")});
+    SavedSession remote = base;
+
+    SavedSession merged = SessionStorage::Merge(local, remote, base);
+
+    ASSERT_EQ(merged.workspaces.size(), 1u);
+    ASSERT_EQ(merged.workspaces[0].tabs.size(), 1u);
+    EXPECT_EQ(merged.workspaces[0].tabs[0].url, "https://a.com/");
+}
+
+TEST(SessionMergeTest, RemotelyClosedPinIsRemovedLocally) {
+    SavedSession base = OneWorkspace("WS 1", {MakePinned("https://a.com/"), MakePinned("https://b.com/")});
+    SavedSession local = base;
+    SavedTab open; open.url = "https://b.com/open"; open.title = "open";
+    local.workspaces[0].tabs.push_back(open);
+    local.workspaces[0].active_tab_index = 2;
+    SavedSession remote = OneWorkspace("WS 1", {MakePinned("https://a.com/")});
+
+    SavedSession merged = SessionStorage::Merge(local, remote, base);
+
+    const auto& ws = merged.workspaces[0];
+    ASSERT_EQ(ws.tabs.size(), 2u);
+    EXPECT_EQ(ws.tabs[0].url, "https://a.com/");
+    EXPECT_EQ(ws.tabs[1].url, "https://b.com/open");
+    EXPECT_LT(ws.active_tab_index, 2);
+}
+
+TEST(SessionMergeTest, NewPinsOnBothSidesAreKept) {
+    SavedSession base = OneWorkspace("WS 1", {MakePinned("https://a.com/")});
+    SavedSession local = OneWorkspace("WS 1", {MakePinned("https://a.com/"), MakePinned("https://c.com/")});
+    SavedSession remote = OneWorkspace("WS 1", {MakePinned("https://a.com/"), MakePinned("https://d.com/")});
+
+    SavedSession merged = SessionStorage::Merge(local, remote, base);
+
+    const auto& tabs = merged.workspaces[0].tabs;
+    ASSERT_EQ(tabs.size(), 3u);
+    EXPECT_EQ(tabs[1].url, "https://c.com/");
+    EXPECT_EQ(tabs[2].url, "https://d.com/");
+}
+
+TEST(SessionMergeTest, LocallyDeletedWorkspaceIsNotReAdded) {
+    SavedSession base = OneWorkspace("WS 1", {MakePinned("https://a.com/")});
+    base.workspaces.push_back(OneWorkspace("WS 2", {MakePinned("https://c.com/")}).workspaces[0]);
+    SavedSession local = OneWorkspace("WS 1", {MakePinned("https://a.com/")});
+    SavedSession remote = base;
+
+    SavedSession merged = SessionStorage::Merge(local, remote, base);
+
+    ASSERT_EQ(merged.workspaces.size(), 1u);
+    EXPECT_EQ(merged.workspaces[0].name, "WS 1");
+}
+
+TEST(SessionMergeTest, RemotelyDeletedWorkspaceDropsUnlessItHoldsOpenTabs) {
+    SavedSession base = OneWorkspace("WS 1", {MakePinned("https://a.com/")});
+    base.workspaces.push_back(OneWorkspace("WS 2", {MakePinned("https://c.com/")}).workspaces[0]);
+    base.workspaces.push_back(OneWorkspace("WS 3", {MakePinned("https://e.com/")}).workspaces[0]);
+    SavedSession local = base;
+    SavedTab open; open.url = "https://e.com/open"; open.title = "open";
+    local.workspaces[2].tabs.push_back(open);
+    local.active_workspace_index = 2;
+    SavedSession remote = OneWorkspace("WS 1", {MakePinned("https://a.com/")});
+
+    SavedSession merged = SessionStorage::Merge(local, remote, base);
+
+    ASSERT_EQ(merged.workspaces.size(), 2u);
+    EXPECT_EQ(merged.workspaces[0].name, "WS 1");
+    EXPECT_EQ(merged.workspaces[1].name, "WS 3");
+    ASSERT_EQ(merged.workspaces[1].tabs.size(), 1u);
+    EXPECT_EQ(merged.workspaces[1].tabs[0].url, "https://e.com/open");
+    EXPECT_EQ(merged.active_workspace_index, 1);
+}
+
+TEST(SessionMergeTest, SyncBaseRoundTripsPerUser) {
+    std::string dir = MakeUniqueTestDirectory("orbfox_sync_base_test_");
+    SessionStorage::SetStorageDirectoryForTesting(dir);
+    SessionStorage storage;
+    storage.Save(OneWorkspace("WS 1", {MakePinned("https://a.com/")}));
+    SessionStorage::SaveSyncBase("user1", storage.ReadRawJson());
+
+    SavedSession mine = SessionStorage::LoadSyncBase("user1");
+    SavedSession other = SessionStorage::LoadSyncBase("user2");
+    SessionStorage::ClearStorageDirectoryForTesting();
+
+    ASSERT_EQ(mine.workspaces.size(), 1u);
+    EXPECT_EQ(mine.workspaces[0].tabs[0].url, "https://a.com/");
+    EXPECT_TRUE(other.workspaces.empty());
 }

@@ -40,10 +40,14 @@ public:
     // Parse a session from a JSON string (same format Save writes / the cloud stores).
     static SavedSession ParseJson(const std::string& json);
 
-    // Additive merge for cloud sync: keeps all local workspaces/tabs and folds in
-    // remote workspaces (by name) + remote pinned tabs (by url) that are missing.
-    // A sparse remote can only add, never delete — protects against clobbering.
-    static SavedSession MergeAdditive(const SavedSession& local, const SavedSession& remote);
+    // Three-way merge for cloud sync; base is the session as of the last successful sync.
+    // A pin or workspace in base but gone on one side was closed there; an empty base only adds.
+    static SavedSession Merge(const SavedSession& local, const SavedSession& remote,
+                              const SavedSession& base);
+
+    // The session last uploaded for this user, kept as the base for the next Merge.
+    static void SaveSyncBase(const std::string& user_id, const std::string& session_json);
+    static SavedSession LoadSyncBase(const std::string& user_id);
 
     // Raw JSON of the saved session, for uploading to cloud sync.
     // Returns "" if no session is saved.
@@ -75,6 +79,7 @@ public:
 
 private:
     static std::string GetSessionPath();
+    static std::string GetSyncBasePath(const std::string& user_id);
     static std::string GetCrashLockPath();
     static std::string GetCrashReportPath();
 };

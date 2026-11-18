@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sync_types.h"
+#include "session_storage.h"
 #include <string>
 #include <functional>
 #include <ctime>
@@ -58,7 +59,7 @@ private:
     bool ImportBookmarksFromJson(const std::string& json);
     bool ImportHistoryFromJson(const std::string& json);
     bool ImportSettingsFromJson(const std::string& json);
-    bool ImportSessionFromJson(const std::string& json);
+    bool ImportSessionFromJson(const std::string& json, const SavedSession& base);
 
     // Firebase REST API helpers
     std::string HttpPut(const std::string& url, const std::string& body, const std::string& token);

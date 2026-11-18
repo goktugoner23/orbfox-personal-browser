@@ -32,22 +32,9 @@ BookmarkStorage* GetBookmarkStorage() {
     return g_bookmark_storage.get();
 }
 
-// Set when a session is imported from a file this run, so the quit handler
-// leaves the imported session.json alone instead of overwriting it with the
-// current live tabs (which would discard the import before the next launch).
-static bool g_session_imported_this_run = false;
-void MarkSessionImported() { g_session_imported_this_run = true; }
-
-// Save current session
-void SaveSession() {
-    if (!g_tab_manager || !g_session_storage) return;
-    // A session imported this run lives in session.json already; don't overwrite
-    // it with the current live tabs (would discard the import before relaunch).
-    // Guard lives here so every SaveSession() call site (quit, window close,
-    // sync flush) is covered, not just one.
-    if (g_session_imported_this_run) return;
-
+static SavedSession BuildLiveSession() {
     SavedSession session;
+    if (!g_tab_manager) return session;
     session.active_workspace_index = 0;
 
     const auto& workspaces = g_tab_manager->GetWorkspaces();
@@ -76,6 +63,26 @@ void SaveSession() {
         session.workspaces.push_back(savedWs);
     }
 
+    return session;
+}
+
+// An imported session.json holds tabs that are not live until the next launch.
+// The live tabs as of the import let SaveSession tell those from tabs closed since.
+static bool g_session_imported_this_run = false;
+static SavedSession g_live_at_import;
+void MarkSessionImported() {
+    g_session_imported_this_run = true;
+    g_live_at_import = BuildLiveSession();
+}
+
+// Save current session
+void SaveSession() {
+    if (!g_tab_manager || !g_session_storage) return;
+
+    SavedSession session = BuildLiveSession();
+    if (g_session_imported_this_run) {
+        session = SessionStorage::Merge(session, g_session_storage->Load(), g_live_at_import);
+    }
     g_session_storage->Save(session);
 }
 
@@ -329,7 +336,7 @@ void BrowserApp::OnContextInitialized() {
                                                        queue:nil
                                                   usingBlock:^(NSNotification* note) {
         (void)note;
-        SaveSession();  // self-guards against clobbering an imported session
+        SaveSession();
         // Mark clean shutdown so we know we didn't crash
         SessionStorage::MarkCleanShutdown();
     }];

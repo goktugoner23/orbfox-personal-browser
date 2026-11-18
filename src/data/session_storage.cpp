@@ -5,6 +5,7 @@
 #include <ctime>
 #include <fstream>
 #include <sstream>
+#include <unordered_set>
 
 #include "utils/filesystem_utils.h"
 #include "utils/json_utils.h"
@@ -146,48 +147,99 @@ SavedSession SessionStorage::ParseJson(const std::string& json) {
     return session;
 }
 
-SavedSession SessionStorage::MergeAdditive(const SavedSession& local,
-                                           const SavedSession& remote) {
-    // Union merge, biased to never lose local data: keep every local workspace and
-    // tab as-is, then fold in remote workspaces (matched by name) and remote PINNED
-    // tabs (matched by url) that are missing locally. A sparse/empty remote can only
-    // add, never delete — so a stale device can't wipe your pinned tabs on sync.
-    // Open (unpinned) tabs stay local to each device and are not merged across.
-    // ponytail: additive-only — unpinning/closing on one device won't propagate to
-    // others (tabs reappear). Acceptable for "never lose a tab"; revisit if deletes
-    // need to sync. Appends new pins at the end (order is best-effort across devices).
-    SavedSession result = local;
+namespace {
+
+const SavedWorkspace* FindWorkspace(const SavedSession& session, const std::string& name) {
+    for (const auto& ws : session.workspaces) {
+        if (ws.name == name) return &ws;
+    }
+    return nullptr;
+}
+
+std::unordered_set<std::string> PinnedUrls(const SavedWorkspace* ws) {
+    std::unordered_set<std::string> urls;
+    if (!ws) return urls;
+    for (const auto& t : ws->tabs) {
+        if (t.is_pinned) urls.insert(t.url);
+    }
+    return urls;
+}
+
+}  // namespace
+
+SavedSession SessionStorage::Merge(const SavedSession& local, const SavedSession& remote,
+                                   const SavedSession& base) {
+    // Workspaces match by name and pinned tabs by url; unpinned tabs stay per-device.
+    SavedSession result;
+    const int active = local.active_workspace_index;
+    const std::string active_name =
+        (active >= 0 && active < static_cast<int>(local.workspaces.size()))
+            ? local.workspaces[active].name : "";
+
+    for (const auto& lws : local.workspaces) {
+        const SavedWorkspace* bws = FindWorkspace(base, lws.name);
+        const SavedWorkspace* rws = FindWorkspace(remote, lws.name);
+        const auto base_pins = PinnedUrls(bws);
+        const auto remote_pins = PinnedUrls(rws);
+
+        SavedWorkspace ws = lws;
+        ws.tabs.clear();
+        std::unordered_set<std::string> urls;
+        for (const auto& t : lws.tabs) {
+            const bool closed_remotely =
+                t.is_pinned && base_pins.count(t.url) && !remote_pins.count(t.url);
+            if (closed_remotely) continue;
+            urls.insert(t.url);
+            ws.tabs.push_back(t);
+        }
+        if (rws) {
+            for (const auto& t : rws->tabs) {
+                // A remote pin that is in base but not local was closed here: skip it.
+                if (t.is_pinned && !base_pins.count(t.url) && urls.insert(t.url).second) {
+                    ws.tabs.push_back(t);
+                }
+            }
+        }
+
+        const bool deleted_remotely = bws && !rws && ws.tabs.empty();
+        if (deleted_remotely) continue;
+        if (ws.active_tab_index >= static_cast<int>(ws.tabs.size())) ws.active_tab_index = 0;
+        if (ws.name == active_name) {
+            result.active_workspace_index = static_cast<int>(result.workspaces.size());
+        }
+        result.workspaces.push_back(std::move(ws));
+    }
 
     for (const auto& rws : remote.workspaces) {
-        SavedWorkspace* lws = nullptr;
-        for (auto& w : result.workspaces) {
-            if (w.name == rws.name) { lws = &w; break; }
-        }
-
-        if (!lws) {
-            // Workspace the local device has never seen: bring it with its pinned tabs.
-            SavedWorkspace nw;
-            nw.name = rws.name;
-            nw.color = rws.color;
-            nw.active_tab_index = 0;
-            for (const auto& t : rws.tabs) {
-                if (t.is_pinned) nw.tabs.push_back(t);
-            }
-            result.workspaces.push_back(std::move(nw));
-            continue;
-        }
-
+        // In base but not local means it was deleted here.
+        if (FindWorkspace(local, rws.name) || FindWorkspace(base, rws.name)) continue;
+        SavedWorkspace ws;
+        ws.name = rws.name;
+        ws.color = rws.color;
         for (const auto& t : rws.tabs) {
-            if (!t.is_pinned) continue;
-            bool exists = false;
-            for (const auto& lt : lws->tabs) {
-                if (lt.url == t.url) { exists = true; break; }
-            }
-            if (!exists) lws->tabs.push_back(t);
+            if (t.is_pinned) ws.tabs.push_back(t);
         }
+        result.workspaces.push_back(std::move(ws));
     }
 
     return result;
+}
+
+std::string SessionStorage::GetSyncBasePath(const std::string& user_id) {
+    return GetStorageDirectory() + "/session_sync_base_" + user_id + ".json";
+}
+
+void SessionStorage::SaveSyncBase(const std::string& user_id, const std::string& session_json) {
+    (void)orbfox::utils::AtomicWriteFile(GetSyncBasePath(user_id), session_json);
+}
+
+SavedSession SessionStorage::LoadSyncBase(const std::string& user_id) {
+    std::ifstream file(GetSyncBasePath(user_id));
+    if (!file.is_open()) return SavedSession();
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return ParseJson(buffer.str());
 }
 
 std::string SessionStorage::ReadRawJson() {

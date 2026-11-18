@@ -18,8 +18,7 @@
 #include <thread>
 
 // Defined in browser_app.mm. SaveSession() flushes live tabs to session.json;
-// MarkSessionImported() tells the close handler not to overwrite an imported
-// session.json on quit (so imported tabs survive to the next launch).
+// MarkSessionImported() makes later saves keep the imported tabs that are not live yet.
 extern void SaveSession();
 extern void MarkSessionImported();
 
@@ -277,18 +276,15 @@ bool SyncService::ImportSettingsFromJson(const std::string& json) {
     return SettingsStorage::GetInstance().FromJson(json);
 }
 
-bool SyncService::ImportSessionFromJson(const std::string& json) {
-    // Additively merge the remote session into the local one and persist the union
-    // (applied on next launch; live tabs are not torn down). A sparse/empty remote
-    // can never delete local pinned tabs or workspaces — that clobbering is exactly
-    // what wiped pinned tabs before. Writing via Save() also keeps session.json in
-    // OrbFox's native format instead of the cloud's reordered blob.
+bool SyncService::ImportSessionFromJson(const std::string& json, const SavedSession& base) {
+    // Merge the remote session into the local one and persist it (applied on next
+    // launch; live tabs are not torn down). An empty base makes the merge add-only.
     SavedSession remote = SessionStorage::ParseJson(json);
     if (remote.workspaces.empty()) return false;  // nothing usable; leave local intact
 
-    SaveSession();  // flush current live tabs/workspaces to disk (self-guards if already imported)
+    SaveSession();  // flush current live tabs/workspaces to disk
     SessionStorage storage;
-    SavedSession merged = SessionStorage::MergeAdditive(storage.Load(), remote);
+    SavedSession merged = SessionStorage::Merge(storage.Load(), remote, base);
     storage.Save(merged);
     return true;
 }
@@ -429,6 +425,7 @@ void SyncService::Upload(SyncCallback callback) {
             std::string sessionResp = HttpPut(sessionUrl, sessionJson, firebaseToken);
             if (!sessionResp.empty() && sessionResp.find("error") == std::string::npos) {
                 result.session_synced = true;
+                SessionStorage::SaveSyncBase(userId, sessionJson);
             }
         }
 
@@ -511,8 +508,8 @@ void SyncService::Download(SyncCallback callback) {
         std::string sessionJson = HttpGet(sessionUrl, firebaseToken);
 
         if (!sessionJson.empty() && sessionJson != "null") {
-            if (RunBoolOnMainThread([this, sessionJson]() {
-                    if (!ImportSessionFromJson(sessionJson)) return false;
+            if (RunBoolOnMainThread([this, sessionJson, userId]() {
+                    if (!ImportSessionFromJson(sessionJson, SessionStorage::LoadSyncBase(userId))) return false;
                     // Same as file import: force restore on and stop the quit
                     // handler from clobbering the downloaded session.json.
                     SettingsStorage::GetInstance().SetRestoreSession(true);
@@ -588,7 +585,7 @@ bool SyncService::ImportAllFromFile(const std::string& path) {
     if (!settings.empty())  ImportSettingsFromJson(settings);
 
     if (!session.empty() && session != "{}") {
-        ImportSessionFromJson(session);
+        ImportSessionFromJson(session, SavedSession());
         // Force restore on so the imported tabs come back, and stop the quit
         // handler from clobbering the imported session.json with live tabs.
         SettingsStorage::GetInstance().SetRestoreSession(true);
